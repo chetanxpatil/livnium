@@ -42,7 +42,7 @@ model-index:
             name: Samples per second (CPU)
 ---
 
-# Livnium — Geometry-Aware Attractor Dynamics for NLI
+# Livnium — Energy-Guided Attractor Network (EGAN) for NLI
 
 NLI classifier on SNLI where inference is not a single forward pass — it is a sequence of geometry-aware state updates before the final readout.
 
