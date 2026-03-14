@@ -105,6 +105,33 @@ python3 eval.py \
 
 ---
 
+## What's Novel
+
+Most classifiers do: `h → linear layer → logits`. One step, no dynamics.
+
+Livnium does: `h₀ → L steps of geometry-aware state evolution → logits`. The final state `h_L` is dynamically shaped before readout — it isn't just a linear projection of `h₀`.
+
+The specific things that are different:
+
+**1. Classification as attractor dynamics, not a lookup.**
+The state `h` moves through space across `L` steps under anchor forces before the classifier reads it. The label isn't computed from the raw embedding — it's read from where the state *settled*.
+
+**2. The force geometry is deliberately inconsistent — and that's measured.**
+Force magnitudes follow cosine divergence `D(h, A) = 0.38 − cos(h, A)`. Force directions are Euclidean radial `n̂ = (h − A) / ‖h − A‖`. These are not the same thing — the true gradient of a cosine energy is tangential on the sphere, not radial. The mean angle between these two directions is **135.2° ± 2.5°** (measured, n=1000). This means the system is running explicit physical forces, not gradient descent on the written energy.
+
+**3. The attractor is a ring, not a point.**
+The equilibrium condition is `cos(h, A_y) = 0.38`, which defines a ring on the hypersphere — not the anchor itself. The system settles to a *proximity zone*, not a target location. Standard energy minimisation would push to the anchor; this stops at the ring.
+
+**4. Proven local contraction.**
+`V(h) = (0.38 − cos(h, A_y))²` is a Lyapunov function that decreases at every step when `δ_θ = 0` (proven analytically, confirmed empirically on 5000 samples). Livnium is a provably locally-contracting pseudo-gradient flow. Most residual classifiers have no such stability guarantee.
+
+**5. Inference is a single unsupervised collapse.**
+Training uses `s_y · D(h, A_y)` — only the correct anchor pulls. At inference, all three anchors compete with no label. The label is implicit in which basin wins. Cost: 1× forward pass through a small MLP, 428× faster than BERT on CPU.
+
+**What it isn't:** global convergence is not proven (finite step size + learned residual `δ_θ` can escape the basin). The geometric inconsistency is not fixed. It isn't yet competitive with fine-tuned transformers on accuracy. Whether iterated attractor dynamics outperform a standard deep residual block at equivalent parameter count is an open question.
+
+---
+
 ## Results — SNLI NLI Classification
 
 ### Best Model: triple_crown_slow
