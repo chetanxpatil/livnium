@@ -64,7 +64,7 @@ python3 train.py \
   --snli-train ../../../data/snli/snli_1.0_train.jsonl \
   --snli-dev   ../../../data/snli/snli_1.0_dev.jsonl \
   --encoder-type pretrained \
-  --quantum-ckpt ../../../pretrained/collapse4/quantum_embeddings_final.pt \
+  --embed-ckpt ../../../pretrained/collapse4/quantum_embeddings_final.pt \
   --output-dir ../../../runs/my_run \
   --dim 256 --num-layers 6 \
   --epochs 10 --batch-size 32 --lr 0.001 \
