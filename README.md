@@ -60,7 +60,7 @@ Force magnitudes are cosine-based; force directions are Euclidean radial. These 
 ```bash
 cd system/snli/model/
 
-python train.py \
+python3 train.py \
   --snli-train ../../../data/snli/snli_1.0_train.jsonl \
   --snli-dev   ../../../data/snli/snli_1.0_dev.jsonl \
   --encoder-type pretrained \
@@ -77,7 +77,7 @@ python train.py \
 ```bash
 cd system/snli/model/
 
-python eval.py \
+python3 eval.py \
   --model-dir ../../../runs/triple_crown_slow \
   --snli-test ../../../data/snli/snli_1.0_dev.jsonl \
   --batch-size 256

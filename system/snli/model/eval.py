@@ -23,7 +23,7 @@ from core import VectorCollapseEngine, BasinField
 from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, SNLIHead
 from embed.text_encoder import PretrainedTextEncoder, QuantumTextEncoder
 from utils.vocab import Vocabulary
-from train_snli_vector import SNLIDataset, load_snli_data
+from train import SNLIDataset, load_snli_data
 
 
 def main():
