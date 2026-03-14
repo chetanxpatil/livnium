@@ -87,8 +87,7 @@ python eval.py \
 
 ## Results — SNLI NLI Classification
 
-### Best Model: triple_crown_slow_20260314_114951
-
+### Best Model: triple_crown_slow
 | Metric | Value |
 |--------|-------|
 | **Dev Accuracy** | **76.32%** |
