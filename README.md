@@ -1,6 +1,6 @@
 ---
 language: en
-license: mit
+license: other
 tags:
   - nli
   - text-classification
