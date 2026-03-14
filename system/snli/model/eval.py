@@ -94,29 +94,30 @@ def main():
 
     # Build encode_fn for pretrained checkpoints (vocab is None in that setting)
     encode_fn = None
-    quantum_ckpt = getattr(model_args, "quantum_ckpt", None)
+    # Support both old checkpoints (quantum_ckpt) and new ones (embed_ckpt)
+    embed_ckpt = getattr(model_args, "embed_ckpt", None) or getattr(model_args, "quantum_ckpt", None)
     # Resolve relative paths against repo root (checkpoint stores path relative to livnium/)
-    if quantum_ckpt and not Path(quantum_ckpt).is_absolute():
-        quantum_ckpt = str(_root / quantum_ckpt)
-    quantum_tokenizer = None
+    if embed_ckpt and not Path(embed_ckpt).is_absolute():
+        embed_ckpt = str(_root / embed_ckpt)
+    pretrained_tokenizer = None
     if encoder_type in ("pretrained", "quantum"):
-        if not quantum_ckpt:
-            raise ValueError("encoder_type=pretrained requires quantum_ckpt in the saved args")
-        quantum_tokenizer = PretrainedTextEncoder(quantum_ckpt)
+        if not embed_ckpt:
+            raise ValueError("encoder_type=pretrained requires embed_ckpt in the saved args")
+        pretrained_tokenizer = PretrainedTextEncoder(embed_ckpt)
 
-        def quantum_encode(text: str, max_len: int = args.max_len):
-            tokens = quantum_tokenizer.tokenize(text)
-            ids = [quantum_tokenizer.word2idx.get(t, quantum_tokenizer.unk_idx) for t in tokens]
+        def pretrained_encode(text: str, max_len: int = args.max_len):
+            tokens = pretrained_tokenizer.tokenize(text)
+            ids = [pretrained_tokenizer.word2idx.get(t, pretrained_tokenizer.unk_idx) for t in tokens]
             ids = ids[:max_len]
             if len(ids) < max_len:
-                ids.extend([quantum_tokenizer.pad_idx] * (max_len - len(ids)))
+                ids.extend([pretrained_tokenizer.pad_idx] * (max_len - len(ids)))
             return ids
 
-        encode_fn = quantum_encode
+        encode_fn = pretrained_encode
 
     if encoder_type in ("pretrained", "quantum"):
         encoder = PretrainedSNLIEncoder(
-            ckpt_path=quantum_ckpt,
+            ckpt_path=embed_ckpt,
         ).to(device)
     else:
         if vocab is None:

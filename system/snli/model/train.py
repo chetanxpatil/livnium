@@ -13,7 +13,7 @@ Run from this directory (model/):
       --snli-train  /path/to/snli_1.0_train.jsonl \\
       --snli-dev    /path/to/snli_1.0_dev.jsonl \\
       --encoder-type pretrained \\
-      --quantum-ckpt /path/to/pretrained/collapse4/embeddings_final.pt \\
+      --embed-ckpt /path/to/pretrained/collapse4/embeddings_final.pt \\
       --dim 256 --batch-size 32 --epochs 3 \\
       --output-dir /path/to/output
 """
@@ -384,7 +384,7 @@ def main():
     parser.add_argument('--encoder-type', choices=['legacy', 'pretrained', 'quantum'], default='pretrained',
                        help='Sentence encoder: pretrained (pretrained embeddings) or legacy (vocab mean-pool). '
                             '"quantum" accepted as alias for "pretrained" for checkpoint compatibility.')
-    parser.add_argument('--quantum-ckpt', type=str, default=None,
+    parser.add_argument('--embed-ckpt', type=str, default=None,
                        help='Path to embeddings_final.pt (required if encoder-type=pretrained)')
     # Geometric encoder knobs
     parser.add_argument('--geom-disable-transformer', action='store_true',
@@ -504,28 +504,28 @@ def main():
     train_samples = load_snli_data(Path(args.snli_train), max_samples=args.max_samples)
     print(f"Loaded {len(train_samples)} training samples")
     
-    quantum_encode_fn = None
+    pretrained_encode_fn = None
     vocab = None
     vocab_id_to_token = None
 
     if args.encoder_type in ('pretrained', 'quantum'):
-        if not args.quantum_ckpt:
-            raise ValueError("encoder-type=pretrained requires --quantum-ckpt pointing to embeddings_final.pt")
-        print(f"Loading pretrained encoder vocab from {args.quantum_ckpt} ...")
-        quantum_tokenizer = PretrainedTextEncoder(args.quantum_ckpt)
-        if args.dim != quantum_tokenizer.dim:
-            print(f"Overriding dim {args.dim} -> {quantum_tokenizer.dim} to match pretrained checkpoint")
-            args.dim = quantum_tokenizer.dim
+        if not args.embed_ckpt:
+            raise ValueError("encoder-type=pretrained requires --embed-ckpt pointing to embeddings_final.pt")
+        print(f"Loading pretrained encoder vocab from {args.embed_ckpt} ...")
+        pretrained_tokenizer = PretrainedTextEncoder(args.embed_ckpt)
+        if args.dim != pretrained_tokenizer.dim:
+            print(f"Overriding dim {args.dim} -> {pretrained_tokenizer.dim} to match pretrained checkpoint")
+            args.dim = pretrained_tokenizer.dim
 
-        def quantum_encode(text: str, max_len: int = args.max_len):
-            tokens = quantum_tokenizer.tokenize(text)
-            ids = [quantum_tokenizer.word2idx.get(t, quantum_tokenizer.unk_idx) for t in tokens]
+        def pretrained_encode(text: str, max_len: int = args.max_len):
+            tokens = pretrained_tokenizer.tokenize(text)
+            ids = [pretrained_tokenizer.word2idx.get(t, pretrained_tokenizer.unk_idx) for t in tokens]
             ids = ids[:max_len]
             if len(ids) < max_len:
-                ids.extend([quantum_tokenizer.pad_idx] * (max_len - len(ids)))
+                ids.extend([pretrained_tokenizer.pad_idx] * (max_len - len(ids)))
             return ids
 
-        quantum_encode_fn = quantum_encode
+        pretrained_encode_fn = pretrained_encode
     else:
         # Build vocabulary from SNLI
         print("Building vocabulary...")
@@ -534,7 +534,7 @@ def main():
         vocab_id_to_token = vocab.id_to_token_list()
     
     # Create datasets
-    train_dataset = SNLIDataset(train_samples, vocab, max_len=args.max_len, encode_fn=quantum_encode_fn)
+    train_dataset = SNLIDataset(train_samples, vocab, max_len=args.max_len, encode_fn=pretrained_encode_fn)
     # Optional oversampling of neutral class
     sampler = None
     if args.neutral_oversample > 1.0:
@@ -554,7 +554,7 @@ def main():
     dev_loader = None
     if args.snli_dev:
         dev_samples = load_snli_data(Path(args.snli_dev))
-        dev_dataset = SNLIDataset(dev_samples, vocab, max_len=args.max_len, encode_fn=quantum_encode_fn)
+        dev_dataset = SNLIDataset(dev_samples, vocab, max_len=args.max_len, encode_fn=pretrained_encode_fn)
         dev_loader = DataLoader(dev_dataset, batch_size=args.batch_size, shuffle=False)
         print(f"Loaded {len(dev_samples)} dev samples")
     
@@ -584,7 +584,7 @@ def main():
     ).to(device)
     if args.encoder_type in ('pretrained', 'quantum'):
         encoder = PretrainedSNLIEncoder(
-            ckpt_path=args.quantum_ckpt,
+            ckpt_path=args.embed_ckpt,
             alpha_first_token=args.alpha_first_token,
         ).to(device)
     else:
