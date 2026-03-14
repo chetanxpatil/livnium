@@ -1,9 +1,8 @@
 """
-QuantumEmbeddingTextEncoder [M5 Optimized]
+PretrainedTextEncoder
 
-Uses a pre-trained Livnium quantum embedding table produced by
-train_quantum_embeddings.py. Drop-in replacement for the legacy
-TextEncoder in nova_v3.
+Uses a pre-trained Livnium embedding table. Drop-in replacement for the
+legacy TextEncoder in model/.
 
 Optimized for M-series: ensures custom BasinField moves to the same device as
 the module (so MPS works correctly).
@@ -14,11 +13,11 @@ import re
 import torch
 import torch.nn as nn
 
-from quantum_embed.vector_collapse import VectorCollapseEngine
-from quantum_embed.basin_field import BasinField
+from .collapse_engine import VectorCollapseEngine
+from .basin_field import BasinField
 
 
-class QuantumTextEncoder(nn.Module):
+class PretrainedTextEncoder(nn.Module):
     def __init__(self, ckpt_path: str):
         super().__init__()
 
@@ -128,3 +127,7 @@ class QuantumTextEncoder(nn.Module):
             update_anchors=False,
         )
         return h_final, trace
+
+
+# Backward-compat alias — saved checkpoints serialise 'QuantumTextEncoder'
+QuantumTextEncoder = PretrainedTextEncoder

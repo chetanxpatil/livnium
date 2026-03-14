@@ -2,18 +2,18 @@
 Livnium SNLI Training Script
 =============================
 Pipeline:
-  quantum_embeddings_final.pt
-      └─► QuantumSNLIEncoder  (mean-pool premise/hypothesis)
+  pretrained/collapse4/embeddings_final.pt
+      └─► PretrainedSNLIEncoder  (mean-pool premise/hypothesis)
               └─► h0 = v_h - v_p  (difference vector)
-                      └─► VectorCollapseEngine  (settles into E/N/C basin)
+                      └─► VectorCollapseEngine  (attractor dynamics → E/N/C basin)
                               └─► SNLIHead  (logits)
 
-Run from this directory (nova_v3/):
-  python train_snli_vector.py \\
+Run from this directory (model/):
+  python train.py \\
       --snli-train  /path/to/snli_1.0_train.jsonl \\
       --snli-dev    /path/to/snli_1.0_dev.jsonl \\
-      --encoder-type quantum \\
-      --quantum-ckpt /path/to/quantum_embeddings_final.pt \\
+      --encoder-type pretrained \\
+      --quantum-ckpt /path/to/pretrained/collapse4/embeddings_final.pt \\
       --dim 256 --batch-size 32 --epochs 3 \\
       --output-dir /path/to/output
 """
@@ -33,14 +33,14 @@ import numpy as np
 from torch.utils.data.sampler import WeightedRandomSampler
 
 # Self-contained path setup — works from any location
-_here = Path(__file__).resolve().parent          # nova_v3/
-_repo = _here.parent                              # snli/  (contains quantum_embed/)
+_here = Path(__file__).resolve().parent          # model/
+_repo = _here.parent                              # snli/  (contains embed/)
 sys.path.insert(0, str(_here))
 sys.path.insert(0, str(_repo))
 
 from core import VectorCollapseEngine, BasinField
-from tasks.snli import SNLIEncoder, QuantumSNLIEncoder, SNLIHead
-from quantum_embed.text_encoder_quantum import QuantumTextEncoder
+from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, SNLIHead
+from embed.text_encoder import PretrainedTextEncoder, QuantumTextEncoder
 from utils.vocab import build_vocab_from_snli
 
 
@@ -381,10 +381,11 @@ def main():
                        help='Class weight multiplier for neutral to emphasize that class')
     parser.add_argument('--neutral-oversample', type=float, default=1.0,
                        help='>1.0 to oversample neutral examples (e.g., 1.5)')
-    parser.add_argument('--encoder-type', choices=['legacy', 'quantum'], default='quantum',
-                       help='Sentence encoder: quantum (pretrained quantum embeddings) or legacy (embedding mean-pool)')
+    parser.add_argument('--encoder-type', choices=['legacy', 'pretrained', 'quantum'], default='pretrained',
+                       help='Sentence encoder: pretrained (pretrained embeddings) or legacy (vocab mean-pool). '
+                            '"quantum" accepted as alias for "pretrained" for checkpoint compatibility.')
     parser.add_argument('--quantum-ckpt', type=str, default=None,
-                       help='Path to quantum_embeddings_final.pt (required if encoder-type=quantum)')
+                       help='Path to embeddings_final.pt (required if encoder-type=pretrained)')
     # Geometric encoder knobs
     parser.add_argument('--geom-disable-transformer', action='store_true',
                        help='Disable transformer interaction layer in geometric encoder')
@@ -507,13 +508,13 @@ def main():
     vocab = None
     vocab_id_to_token = None
 
-    if args.encoder_type == 'quantum':
+    if args.encoder_type in ('pretrained', 'quantum'):
         if not args.quantum_ckpt:
-            raise ValueError("encoder-type=quantum requires --quantum-ckpt pointing to quantum_embeddings_final.pt")
-        print(f"Loading quantum encoder vocab from {args.quantum_ckpt} ...")
-        quantum_tokenizer = QuantumTextEncoder(args.quantum_ckpt)
+            raise ValueError("encoder-type=pretrained requires --quantum-ckpt pointing to embeddings_final.pt")
+        print(f"Loading pretrained encoder vocab from {args.quantum_ckpt} ...")
+        quantum_tokenizer = PretrainedTextEncoder(args.quantum_ckpt)
         if args.dim != quantum_tokenizer.dim:
-            print(f"Overriding dim {args.dim} -> {quantum_tokenizer.dim} to match quantum checkpoint")
+            print(f"Overriding dim {args.dim} -> {quantum_tokenizer.dim} to match pretrained checkpoint")
             args.dim = quantum_tokenizer.dim
 
         def quantum_encode(text: str, max_len: int = args.max_len):
@@ -581,8 +582,8 @@ def main():
         strength_null=args.strength_null,
         adaptive_metric=args.adaptive_metric,
     ).to(device)
-    if args.encoder_type == 'quantum':
-        encoder = QuantumSNLIEncoder(
+    if args.encoder_type in ('pretrained', 'quantum'):
+        encoder = PretrainedSNLIEncoder(
             ckpt_path=args.quantum_ckpt,
             alpha_first_token=args.alpha_first_token,
         ).to(device)
