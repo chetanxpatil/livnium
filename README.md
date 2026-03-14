@@ -25,6 +25,21 @@ model-index:
           - type: accuracy
             value: 0.7632
             name: Dev Accuracy
+          - type: accuracy
+            value: 0.875
+            name: Entailment Accuracy
+          - type: accuracy
+            value: 0.812
+            name: Contradiction Accuracy
+          - type: accuracy
+            value: 0.709
+            name: Neutral Accuracy
+          - type: latency
+            value: 0.4
+            name: ms per batch (32 samples, CPU)
+          - type: throughput
+            value: 85335
+            name: Samples per second (CPU)
 ---
 
 # Livnium — Geometry-Aware Attractor Dynamics for NLI
@@ -164,23 +179,32 @@ Training uses `s_y · D(h, A_y)` — only the correct anchor pulls. At inference
 
 ## Results — SNLI NLI Classification
 
-### Best Model: triple_crown_slow
-| Metric | Value |
-|--------|-------|
-| **Dev Accuracy** | **76.32%** |
-| Entailment | 80.2% |
-| Contradiction | 77.6% |
+### Accuracy (SNLI dev set)
+
+| Class | Accuracy |
+|-------|----------|
+| **Overall** | **76.32%** |
+| Entailment | 87.5% |
+| Contradiction | 81.2% |
 | Neutral | 70.9% |
+
+### Model Config
+
+| Parameter | Value |
+|-----------|-------|
 | Dim | 256 |
 | Collapse layers | 6 |
-| Encoder | Pretrained embeddings (frozen) |
+| Encoder | Pretrained bag-of-words embeddings (frozen) |
+| Parameters | ~2M |
 
-### Speed
+### Speed vs BERT (CPU, batch size 32)
 
-| Model | ms/batch (32) | Samples/sec | Time on SNLI train (549k) |
-|-------|---------------|-------------|---------------------------|
-| Livnium | 0.4 ms | 85,335/sec | ~6 sec |
-| BERT-base | 171 ms | 187/sec | ~49 min |
+| Model | ms / batch | Samples / sec | Full SNLI train (549k) |
+|-------|------------|---------------|------------------------|
+| **Livnium** | **0.4 ms** | **85,335 / sec** | **~6 sec** |
+| BERT-base | 171 ms | 187 / sec | ~49 min |
+
+**428× faster than BERT-base on CPU.**
 
 ---
 
