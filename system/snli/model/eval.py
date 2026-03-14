@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 # Self-contained path setup
 _here = Path(__file__).resolve().parent          # model/
 _repo = _here.parent                              # snli/  (contains embed/)
+_root = _here.parent.parent.parent               # livnium/ (repo root)
 sys.path.insert(0, str(_here))
 sys.path.insert(0, str(_repo))
 
@@ -94,6 +95,9 @@ def main():
     # Build encode_fn for pretrained checkpoints (vocab is None in that setting)
     encode_fn = None
     quantum_ckpt = getattr(model_args, "quantum_ckpt", None)
+    # Resolve relative paths against repo root (checkpoint stores path relative to livnium/)
+    if quantum_ckpt and not Path(quantum_ckpt).is_absolute():
+        quantum_ckpt = str(_root / quantum_ckpt)
     quantum_tokenizer = None
     if encoder_type in ("pretrained", "quantum"):
         if not quantum_ckpt:
