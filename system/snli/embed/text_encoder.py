@@ -32,7 +32,11 @@ class PretrainedTextEncoder(nn.Module):
 
         self.embed = nn.Embedding.from_pretrained(emb, freeze=False, padding_idx=self.pad_idx)
 
-        # Optional collapse state (dynamic basins)
+        # Dynamic basins: during embedding training, collapse dynamics were optionally
+        # used to shape the embedding space with per-label micro-basins (up to 64 per
+        # label E/C/N) that spawn, update, and merge. The checkpoint may carry this state
+        # but use_dynamic_basins=False means it is dormant — inference is pure bag-of-words
+        # mean-pool. This block only activates if the embeddings were retrained with the flag on.
         self.use_dynamic_basins: bool = bool(data.get("use_dynamic_basins", False))
         self.collapse_engine: Optional[VectorCollapseEngine] = None
         self.basin_field: Optional[BasinField] = None
