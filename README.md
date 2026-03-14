@@ -46,6 +46,8 @@ model-index:
 
 NLI classifier on SNLI where inference is not a single forward pass — it is a sequence of geometry-aware state updates before the final readout.
 
+🤗 **Model on HuggingFace:** [chetanxpatil/livnium-snli](https://huggingface.co/chetanxpatil/livnium-snli)
+
 ## Directory Structure
 
 ```
