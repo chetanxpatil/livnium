@@ -39,7 +39,7 @@ sys.path.insert(0, str(_here))
 sys.path.insert(0, str(_repo))
 
 from core import VectorCollapseEngine, BasinField
-from tasks.snli import SNLIEncoder, GeometricSNLIEncoder, SanskritSNLIEncoder, QuantumSNLIEncoder, SNLIHead
+from tasks.snli import SNLIEncoder, QuantumSNLIEncoder, SNLIHead
 from quantum_embed.text_encoder_quantum import QuantumTextEncoder
 from utils.vocab import build_vocab_from_snli
 
@@ -164,13 +164,8 @@ def train_epoch(
     
     for batch in tqdm(dataloader, desc="Training"):
         labels = batch['label'].to(device)
-        if isinstance(encoder, GeometricSNLIEncoder):
-            # Geometric encoder consumes raw text
-            h0, v_p, v_h = encoder.build_initial_state(
-                batch['premise'],
-                batch['hypothesis'],
-                device=device
-            )
+        if False:  # placeholder for future text-only encoders
+            pass
         else:
             prem_ids = batch['prem_ids'].to(device)
             hyp_ids = batch['hyp_ids'].to(device)
@@ -300,12 +295,8 @@ def evaluate(
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Evaluating"):
             labels = batch['label'].to(device)
-            if isinstance(encoder, GeometricSNLIEncoder):
-                h0, v_p, v_h = encoder.build_initial_state(
-                    batch['premise'],
-                    batch['hypothesis'],
-                    device=device
-                )
+            if False:  # placeholder for future text-only encoders
+                pass
             else:
                 prem_ids = batch['prem_ids'].to(device)
                 hyp_ids = batch['hyp_ids'].to(device)
@@ -390,8 +381,8 @@ def main():
                        help='Class weight multiplier for neutral to emphasize that class')
     parser.add_argument('--neutral-oversample', type=float, default=1.0,
                        help='>1.0 to oversample neutral examples (e.g., 1.5)')
-    parser.add_argument('--encoder-type', choices=['legacy', 'geom', 'sanskrit', 'quantum'], default='geom',
-                       help='Sentence encoder: geom (geometric), legacy (embedding mean-pool), sanskrit (phoneme geometry), quantum (pretrained quantum embeddings)')
+    parser.add_argument('--encoder-type', choices=['legacy', 'quantum'], default='quantum',
+                       help='Sentence encoder: quantum (pretrained quantum embeddings) or legacy (embedding mean-pool)')
     parser.add_argument('--quantum-ckpt', type=str, default=None,
                        help='Path to quantum_embeddings_final.pt (required if encoder-type=quantum)')
     # Geometric encoder knobs
@@ -590,26 +581,7 @@ def main():
         strength_null=args.strength_null,
         adaptive_metric=args.adaptive_metric,
     ).to(device)
-    if args.encoder_type == 'geom':
-        encoder = GeometricSNLIEncoder(
-            dim=args.dim,
-            norm_target=None,
-            use_transformer=not args.geom_disable_transformer,
-            nhead=args.geom_nhead,
-            num_layers=args.geom_num_layers,
-            ff_mult=args.geom_ff_mult,
-            dropout=args.geom_dropout,
-            use_attention_pooling=not args.geom_disable_attn_pool,
-            token_norm_cap=args.geom_token_norm_cap if args.geom_token_norm_cap > 0 else None,
-        ).to(device)
-    elif args.encoder_type == 'sanskrit':
-        encoder = SanskritSNLIEncoder(
-            vocab_size=len(vocab),
-            dim=args.dim,
-            pad_idx=vocab.pad_idx,
-            id_to_token=vocab_id_to_token,
-        ).to(device)
-    elif args.encoder_type == 'quantum':
+    if args.encoder_type == 'quantum':
         encoder = QuantumSNLIEncoder(
             ckpt_path=args.quantum_ckpt,
             alpha_first_token=args.alpha_first_token,

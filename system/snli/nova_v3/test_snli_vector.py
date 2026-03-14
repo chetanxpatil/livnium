@@ -20,7 +20,7 @@ sys.path.insert(0, str(_here))
 sys.path.insert(0, str(_repo))
 
 from core import VectorCollapseEngine, BasinField
-from tasks.snli import SNLIEncoder, GeometricSNLIEncoder, SanskritSNLIEncoder, QuantumSNLIEncoder, SNLIHead
+from tasks.snli import SNLIEncoder, QuantumSNLIEncoder, SNLIHead
 from quantum_embed.text_encoder_quantum import QuantumTextEncoder
 from utils.vocab import Vocabulary
 from train_snli_vector import SNLIDataset, load_snli_data
@@ -110,32 +110,7 @@ def main():
 
         encode_fn = quantum_encode
 
-    if encoder_type == "geom":
-        encoder = GeometricSNLIEncoder(
-            dim=model_args.dim,
-            norm_target=None,
-            use_transformer=not getattr(model_args, "geom_disable_transformer", False),
-            nhead=getattr(model_args, "geom_nhead", 4),
-            num_layers=getattr(model_args, "geom_num_layers", 1),
-            ff_mult=getattr(model_args, "geom_ff_mult", 2),
-            dropout=getattr(model_args, "geom_dropout", 0.1),
-            use_attention_pooling=not getattr(model_args, "geom_disable_attn_pool", False),
-            token_norm_cap=(
-                getattr(model_args, "geom_token_norm_cap", 3.0)
-                if getattr(model_args, "geom_token_norm_cap", 3.0) > 0
-                else None
-            ),
-        ).to(device)
-    elif encoder_type == "sanskrit":
-        if vocab is None:
-            raise ValueError("Sanskrit encoder requires a saved vocabulary")
-        encoder = SanskritSNLIEncoder(
-            vocab_size=len(vocab),
-            dim=model_args.dim,
-            pad_idx=vocab.pad_idx,
-            id_to_token=vocab_id_to_token,
-        ).to(device)
-    elif encoder_type == "quantum":
+    if encoder_type == "quantum":
         encoder = QuantumSNLIEncoder(
             ckpt_path=quantum_ckpt,
         ).to(device)
@@ -186,14 +161,7 @@ def main():
             labels = batch['label'].to(device)
             gold_labels = batch['gold_label']
             
-            if isinstance(encoder, GeometricSNLIEncoder):
-                h0, v_p, v_h = encoder.build_initial_state(
-                    batch['premise'],
-                    batch['hypothesis'],
-                    device=device
-                )
-            else:
-                h0, v_p, v_h = encoder.build_initial_state(prem_ids, hyp_ids)
+            h0, v_p, v_h = encoder.build_initial_state(prem_ids, hyp_ids)
             
             if use_dynamic_basins and basin_field is not None:
                 h_final, trace = collapse_engine.collapse_dynamic(

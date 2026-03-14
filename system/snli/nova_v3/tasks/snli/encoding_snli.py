@@ -10,8 +10,6 @@ from typing import List, Sequence, Tuple, Optional
 
 # Use absolute import so module works when run as a script entry point
 from text.encoder import TextEncoder
-from text.geom_encoder import GeometricTextEncoder, tokenize
-from text import SanskritTextEncoder
 from quantum_embed.text_encoder_quantum import QuantumTextEncoder
 
 
