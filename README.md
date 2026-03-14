@@ -223,3 +223,22 @@ Define `V(h) = D(h, A_y)² = (0.38 − cos(h, A_y))²`
 **Livnium is a provably locally-contracting pseudo-gradient flow.**
 
 See `runs/livnium_collapse_equation.md` for the full derivation and empirical direction mismatch analysis (135.2° ± 2.5° between Euclidean and cosine gradients).
+
+---
+
+## Citation
+
+If you use this work in your research, please cite:
+
+```bibtex
+@misc{patil2026livnium,
+  author       = {Patil, Chetan},
+  title        = {Livnium: Energy-Guided Attractor Network (EGAN) for Natural Language Inference},
+  year         = {2026},
+  publisher    = {GitHub},
+  howpublished = {\url{https://github.com/chetanxpatil/livnium}},
+  note         = {Model available at \url{https://huggingface.co/chetanxpatil/livnium-snli}}
+}
+```
+
+For questions or collaboration: [GitHub](https://github.com/chetanxpatil) · [HuggingFace](https://huggingface.co/chetanxpatil)
