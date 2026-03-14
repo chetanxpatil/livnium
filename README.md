@@ -8,10 +8,11 @@ NLI classifier on SNLI where inference is not a single forward pass — it is a 
 livnium/
 ├── pretrained/
 │   └── collapse4/
-│       └── embeddings_final.pt          ← pre-trained word embeddings
+│       └── quantum_embeddings_final.pt  ← pre-trained word embeddings
 ├── runs/
-│   └── triple_crown_slow_20260314_114951/
-│       └── best_model.pt                ← ⭐ BEST MODEL: 76.32% dev acc
+│   └── triple_crown_slow/
+│       ├── best_model.pt                ← ⭐ BEST MODEL: 76.32% dev acc
+│       └── test_errors.jsonl            ← misclassified examples
 └── system/
     └── snli/
         ├── model/                        ← main model: train + eval
@@ -63,7 +64,7 @@ python train.py \
   --snli-train ../../../data/snli/snli_1.0_train.jsonl \
   --snli-dev   ../../../data/snli/snli_1.0_dev.jsonl \
   --encoder-type pretrained \
-  --quantum-ckpt ../../../pretrained/collapse4/embeddings_final.pt \
+  --quantum-ckpt ../../../pretrained/collapse4/quantum_embeddings_final.pt \
   --output-dir ../../../runs/my_run \
   --dim 256 --num-layers 6 \
   --epochs 10 --batch-size 32 --lr 0.001 \
@@ -77,7 +78,7 @@ python train.py \
 cd system/snli/model/
 
 python eval.py \
-  --model-dir ../../../runs/triple_crown_slow_20260314_114951 \
+  --model-dir ../../../runs/triple_crown_slow \
   --snli-test ../../../data/snli/snli_1.0_dev.jsonl \
   --batch-size 256
 ```
