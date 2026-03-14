@@ -55,6 +55,26 @@ Force magnitudes are cosine-based; force directions are Euclidean radial. These 
 
 ---
 
+## Data
+
+**SNLI** (for training/eval the classifier):
+```bash
+wget https://nlp.stanford.edu/projects/snli/snli_1.0.zip
+unzip snli_1.0.zip -d data/snli/
+```
+Or via HuggingFace: `datasets.load_dataset("snli")`
+Homepage: https://nlp.stanford.edu/projects/snli/
+
+**WikiText-103** (for training the pretrained embeddings):
+```bash
+wget https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-v1.zip
+unzip wikitext-103-v1.zip -d data/wikitext/
+```
+Or via HuggingFace: `datasets.load_dataset("wikitext", "wikitext-103-v1")`
+Homepage: https://huggingface.co/datasets/Salesforce/wikitext
+
+---
+
 ## How to Train
 
 ```bash
