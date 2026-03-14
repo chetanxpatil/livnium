@@ -71,6 +71,7 @@ wget https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-v1.zip
 unzip wikitext-103-v1.zip -d data/wikitext/
 ```
 Or via HuggingFace: `datasets.load_dataset("wikitext", "wikitext-103-v1")`
+Or via Kaggle: https://www.kaggle.com/datasets/vadimkurochkin/wikitext-103
 Homepage: https://huggingface.co/datasets/Salesforce/wikitext
 
 ---
