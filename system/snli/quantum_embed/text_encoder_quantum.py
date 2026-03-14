@@ -14,8 +14,8 @@ import re
 import torch
 import torch.nn as nn
 
-from vector_collapse import VectorCollapseEngine
-from basin_field import BasinField
+from quantum_embed.vector_collapse import VectorCollapseEngine
+from quantum_embed.basin_field import BasinField
 
 
 class QuantumTextEncoder(nn.Module):

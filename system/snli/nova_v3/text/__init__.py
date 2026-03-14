@@ -5,6 +5,5 @@ Task-agnostic text encoding.
 """
 
 from .encoder import TextEncoder
-from .quantum_text_encoder import QuantumTextEncoder
 
-__all__ = ['TextEncoder', 'QuantumTextEncoder']
+__all__ = ['TextEncoder']

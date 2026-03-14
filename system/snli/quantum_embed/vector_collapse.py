@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from basin_field import (
+from quantum_embed.basin_field import (
     BasinField,
     route_to_basin_vectorized,
     maybe_spawn_vectorized,
