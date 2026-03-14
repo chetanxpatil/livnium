@@ -1,3 +1,32 @@
+---
+language: en
+license: mit
+tags:
+  - nli
+  - text-classification
+  - attractor-dynamics
+  - geometry
+  - snli
+  - pytorch
+datasets:
+  - snli
+metrics:
+  - accuracy
+model-index:
+  - name: Livnium
+    results:
+      - task:
+          type: natural-language-inference
+          name: Natural Language Inference
+        dataset:
+          name: SNLI
+          type: snli
+        metrics:
+          - type: accuracy
+            value: 0.7632
+            name: Dev Accuracy
+---
+
 # Livnium — Geometry-Aware Attractor Dynamics for NLI
 
 NLI classifier on SNLI where inference is not a single forward pass — it is a sequence of geometry-aware state updates before the final readout.
