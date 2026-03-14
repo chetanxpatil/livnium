@@ -3,7 +3,7 @@
 ## Directory Structure
 
 ```
-livnium-sacred/
+livnium/
 ├── runs/
 │   └── triple_crown_slow_20260314_114951/
 │       └── best_model.pt                       ← ⭐ BEST MODEL: 76.32% dev acc
