@@ -1,56 +1,84 @@
-# Livnium — Geometry-Aware State Evolution for NLI
+# Livnium — Geometry-Aware Attractor Dynamics for NLI
+
+NLI classifier on SNLI where inference is not a single forward pass — it is a sequence of geometry-aware state updates before the final readout.
 
 ## Directory Structure
 
 ```
 livnium/
+├── pretrained/
+│   └── collapse4/
+│       └── embeddings_final.pt          ← pre-trained word embeddings
 ├── runs/
 │   └── triple_crown_slow_20260314_114951/
-│       └── best_model.pt                       ← ⭐ BEST MODEL: 76.32% dev acc
-├── quantum-embeddings/
-│   └── collapse4/quantum_embeddings_final.pt   ← pre-trained quantum embeddings
+│       └── best_model.pt                ← ⭐ BEST MODEL: 76.32% dev acc
 └── system/
     └── snli/
-        ├── nova_v3/
-        │   ├── train_snli_vector.py             ← TRAIN
-        │   ├── test_snli_vector.py              ← TEST
-        │   ├── core/                            ← VectorCollapseEngine, BasinField
-        │   ├── tasks/snli/                      ← QuantumSNLIEncoder, SNLIHead
-        │   ├── text/                            ← text encoders
-        │   └── utils/                           ← vocab helpers
-        └── quantum_embed/
-            ├── text_encoder_quantum.py
-            ├── vector_collapse.py
-            └── basin_field.py
+        ├── model/                        ← main model: train + eval
+        │   ├── train.py                  ← TRAIN
+        │   ├── eval.py                   ← EVAL
+        │   ├── core/                     ← VectorCollapseEngine, BasinField, physics_laws
+        │   ├── tasks/snli/               ← PretrainedSNLIEncoder, SNLIHead
+        │   ├── text/                     ← text encoders (vocab-based)
+        │   └── utils/                    ← vocab helpers
+        └── embed/                        ← pretrained embedding module
+            ├── text_encoder.py           ← PretrainedTextEncoder
+            ├── collapse_engine.py        ← lightweight collapse for embed module
+            └── basin_field.py            ← basin field dynamics
 ```
+
+---
+
+## The Update Rule
+
+At each collapse step `t = 0…L-1`:
+
+```
+h_{t+1} = h_t
+         + δ_θ(h_t)                              ← learned residual
+         - s_y · D(h_t, A_y) · n̂(h_t, A_y)      ← anchor force (training: correct label only)
+         - β · B(h_t) · n̂(h_t, A_N)              ← neutral boundary force
+```
+
+```
+D(h, A)  = 0.38 − cos(h, A)               ← divergence from equilibrium cosine
+n̂(h, A) = (h − A) / ‖h − A‖              ← Euclidean radial direction
+B(h)     = 1 − |cos(h,A_E) − cos(h,A_C)|  ← E–C boundary proximity
+```
+
+Three learned anchor vectors `A_E`, `A_C`, `A_N` define the label geometry. The attractor is a ring at `cos(h, A_y) = 0.38`, not the anchor itself.
+
+At inference all three anchors compete simultaneously — whichever basin has the strongest geometric pull wins.
+
+Force magnitudes are cosine-based; force directions are Euclidean radial. These are geometrically inconsistent (true cosine gradient is tangential). Correct description: **discrete-time attractor dynamics with anchor-directed forces. Energy-like, not exact gradient flow.**
 
 ---
 
 ## How to Train
 
 ```bash
-cd /path/to/livnium-sacred
+cd system/snli/model/
 
-python3 system/snli/nova_v3/train_snli_vector.py \
-  --snli-train data/snli/snli_1.0_train.jsonl \
-  --snli-dev   data/snli/snli_1.0_dev.jsonl \
-  --encoder-type quantum \
-  --quantum-ckpt quantum-embeddings/collapse4/quantum_embeddings_final.pt \
-  --output-dir runs/my_run \
+python train.py \
+  --snli-train ../../../data/snli/snli_1.0_train.jsonl \
+  --snli-dev   ../../../data/snli/snli_1.0_dev.jsonl \
+  --encoder-type pretrained \
+  --quantum-ckpt ../../../pretrained/collapse4/embeddings_final.pt \
+  --output-dir ../../../runs/my_run \
   --dim 256 --num-layers 6 \
   --epochs 10 --batch-size 32 --lr 0.001 \
   --lambda-traj 0.1 --lambda-fn 0.15 --lambda-rep 0.1 --margin-rep 0.3 \
   --adaptive-metric
 ```
 
-## How to Test
+## How to Eval
 
 ```bash
-cd /path/to/livnium-sacred
+cd system/snli/model/
 
-python3 system/snli/nova_v3/test_snli_vector.py \
-  --model-dir runs/triple_crown_slow_20260314_114951 \
-  --snli-test data/snli/snli_1.0_dev.jsonl \
+python eval.py \
+  --model-dir ../../../runs/triple_crown_slow_20260314_114951 \
+  --snli-test ../../../data/snli/snli_1.0_dev.jsonl \
   --batch-size 256
 ```
 
@@ -60,8 +88,6 @@ python3 system/snli/nova_v3/test_snli_vector.py \
 
 ### Best Model: triple_crown_slow_20260314_114951
 
-**Checkpoint:** `runs/triple_crown_slow_20260314_114951/best_model.pt`
-
 | Metric | Value |
 |--------|-------|
 | **Dev Accuracy** | **76.32%** |
@@ -70,29 +96,27 @@ python3 system/snli/nova_v3/test_snli_vector.py \
 | Neutral | 70.9% |
 | Dim | 256 |
 | Collapse layers | 6 |
-| Encoder | Quantum embeddings (pre-trained) |
+| Encoder | Pretrained embeddings (frozen) |
 
-**Architecture:**
-- Encoder: QuantumTextEncoder (pre-trained, frozen)
-- Initial state: `h₀ = v_p − v_h` (premise − hypothesis difference)
-- Inference: single collapse pass, all three E/C/N anchors compete simultaneously
-- Classification head: SNLIHead takes `(h_final, v_p, v_h)`
-- Dynamics: discrete-time attractor with learned residual + anchor forces + adaptive metric
+### Speed
 
-### Physics & Theory
+| Model | ms/batch (32) | Samples/sec | Time on SNLI train (549k) |
+|-------|---------------|-------------|---------------------------|
+| Livnium | 0.4 ms | 85,335/sec | ~6 sec |
+| BERT-base | 171 ms | 187/sec | ~49 min |
 
-The collapse update rule:
+---
+
+## Lyapunov Analysis
+
+Define `V(h) = D(h, A_y)² = (0.38 − cos(h, A_y))²`
+
+`V = 0` at the attractor ring. When `δ_θ = 0`, `V` decreases at every step (mean `ΔV = −0.00131`). Analytically:
 
 ```
-h_{t+1} = h_t + δ_θ(h_t) − s_y · D(h_t, A_y) · n̂(h_t, A_y) − β · B(h_t) · n̂(h_t, A_N)
+∇_h cos · n̂ = −(β · sin²θ) / (α · ‖h − A‖)  ≤ 0
 ```
 
-Where:
-- `D(h, A) = BARRIER − cos(h, A)` — divergence from anchor (BARRIER = 0.38)
-- `n̂(h, A) = (h − A) / ‖h − A‖` — Euclidean radial direction
-- `B(h) = 1 − |cos(h, A_E) − cos(h, A_C)|` — E-C boundary proximity
+**Livnium is a provably locally-contracting pseudo-gradient flow.**
 
-See `runs/livnium_collapse_equation.md` for full derivation, Lyapunov stability analysis, and empirical direction mismatch (135.2° ± 2.5° between Euclidean and cosine gradients).
-
-**Collapse = "don't search, settle"**
-The difference vector settles into the nearest E/N/C basin in a single local pass — no global pairwise comparison needed.
+See `runs/livnium_collapse_equation.md` for the full derivation and empirical direction mismatch analysis (135.2° ± 2.5° between Euclidean and cosine gradients).

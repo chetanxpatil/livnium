@@ -1,7 +1,7 @@
 """
-Vector collapse dynamics for quantum_embed (Fast Vectorized)
+Vector collapse dynamics for embed/ (Fast Vectorized)
 
-Mirrors nova_v3 semantics with a lightweight implementation:
+Mirrors model/ semantics with a lightweight implementation:
 - legacy static collapse with three learned anchors
 - collapse_dynamic that routes to per-label basins (E/C/N) and optionally
   spawns/prunes anchors during training.
@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from quantum_embed.basin_field import (
+from .basin_field import (
     BasinField,
     route_to_basin_vectorized,
     maybe_spawn_vectorized,

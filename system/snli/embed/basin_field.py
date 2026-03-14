@@ -1,7 +1,7 @@
 """
-Dynamic Basin Field for quantum_embed (Vectorized)
+Dynamic Basin Field for embed/ (Vectorized)
 
-Matches nova_v3 semantics: per-label micro-basins that can be routed to,
+Matches model/ semantics: per-label micro-basins that can be routed to,
 updated, spawned, and pruned during training.
 """
 

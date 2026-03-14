@@ -14,14 +14,14 @@ import numpy as np
 from torch.utils.data import DataLoader
 
 # Self-contained path setup
-_here = Path(__file__).resolve().parent          # nova_v3/
-_repo = _here.parent                              # snli/  (contains quantum_embed/)
+_here = Path(__file__).resolve().parent          # model/
+_repo = _here.parent                              # snli/  (contains embed/)
 sys.path.insert(0, str(_here))
 sys.path.insert(0, str(_repo))
 
 from core import VectorCollapseEngine, BasinField
-from tasks.snli import SNLIEncoder, QuantumSNLIEncoder, SNLIHead
-from quantum_embed.text_encoder_quantum import QuantumTextEncoder
+from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, SNLIHead
+from embed.text_encoder import PretrainedTextEncoder, QuantumTextEncoder
 from utils.vocab import Vocabulary
 from train_snli_vector import SNLIDataset, load_snli_data
 
@@ -91,14 +91,14 @@ def main():
     encoder_type = getattr(model_args, "encoder_type", "legacy")
     vocab_id_to_token = vocab.id_to_token_list() if hasattr(vocab, "id_to_token_list") else None
 
-    # Build encode_fn for quantum checkpoints (vocab is None in that setting)
+    # Build encode_fn for pretrained checkpoints (vocab is None in that setting)
     encode_fn = None
     quantum_ckpt = getattr(model_args, "quantum_ckpt", None)
     quantum_tokenizer = None
-    if encoder_type == "quantum":
+    if encoder_type in ("pretrained", "quantum"):
         if not quantum_ckpt:
-            raise ValueError("encoder_type=quantum requires quantum_ckpt in the saved args")
-        quantum_tokenizer = QuantumTextEncoder(quantum_ckpt)
+            raise ValueError("encoder_type=pretrained requires quantum_ckpt in the saved args")
+        quantum_tokenizer = PretrainedTextEncoder(quantum_ckpt)
 
         def quantum_encode(text: str, max_len: int = args.max_len):
             tokens = quantum_tokenizer.tokenize(text)
@@ -110,8 +110,8 @@ def main():
 
         encode_fn = quantum_encode
 
-    if encoder_type == "quantum":
-        encoder = QuantumSNLIEncoder(
+    if encoder_type in ("pretrained", "quantum"):
+        encoder = PretrainedSNLIEncoder(
             ckpt_path=quantum_ckpt,
         ).to(device)
     else:

@@ -9,7 +9,7 @@ __pycache__/
 data/
 snli-cache/
 minilm-cache/
-quantum-embeddings/
+pretrained/
 
 # Model weights
 *.pt
