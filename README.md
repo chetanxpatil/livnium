@@ -203,8 +203,8 @@ Training uses `s_y · D(h, A_y)` — only the correct anchor pulls. At inference
 
 | Model | ms / batch | Samples / sec | Full SNLI train (549k) |
 |-------|------------|---------------|------------------------|
-| **Livnium** | **0.4 ms** | **85,335 / sec** | **~6 sec** |
-| BERT-base | 171 ms | 187 / sec | ~49 min |
+| **Livnium** | **0.4 ms** | **85,335 / sec** | **~6 sec** | (at inference)
+| BERT-base | 171 ms | 187 / sec | ~49 min | (at inference)
 
 **428× faster than BERT-base on CPU.**
 
