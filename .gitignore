@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+
+# Data & caches (large — not tracked)
+data/
+snli-cache/
+minilm-cache/
+pretrained/
+
+# Model weights
+*.pt
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+venv/
+.venv/
+
+# Archive (local only)
+archive/
+
+# Eyes (audit trail — local only)
+eyes/
