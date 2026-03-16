@@ -1,0 +1,9 @@
+- dataset:
+    id: snli
+    task_id: default
+  value: 0.7632
+  date: "2026-03-15"
+  notes: "Livnium attractor dynamics, dim=256, 6 collapse layers, pretrained bag-of-words encoder. Evaluated on SNLI dev set."
+  source:
+    url: https://huggingface.co/chetanxpatil/livnium-snli
+    name: Livnium SNLI model
