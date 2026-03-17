@@ -39,7 +39,7 @@ sys.path.insert(0, str(_here))
 sys.path.insert(0, str(_repo))
 
 from core import VectorCollapseEngine, BasinField
-from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, SNLIHead
+from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, BERTSNLIEncoder, SNLIHead, LinearSNLIHead
 from embed.text_encoder import PretrainedTextEncoder, QuantumTextEncoder
 from utils.vocab import build_vocab_from_snli
 
@@ -164,8 +164,10 @@ def train_epoch(
     
     for batch in tqdm(dataloader, desc="Training"):
         labels = batch['label'].to(device)
-        if False:  # placeholder for future text-only encoders
-            pass
+        if getattr(encoder, 'is_bert', False):
+            h0, v_p, v_h = encoder.build_initial_state(
+                batch['premise'], batch['hypothesis'], device=device
+            )
         else:
             prem_ids = batch['prem_ids'].to(device)
             hyp_ids = batch['hyp_ids'].to(device)
@@ -295,8 +297,10 @@ def evaluate(
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Evaluating"):
             labels = batch['label'].to(device)
-            if False:  # placeholder for future text-only encoders
-                pass
+            if getattr(encoder, 'is_bert', False):
+                h0, v_p, v_h = encoder.build_initial_state(
+                    batch['premise'], batch['hypothesis'], device=device
+                )
             else:
                 prem_ids = batch['prem_ids'].to(device)
                 hyp_ids = batch['hyp_ids'].to(device)
@@ -381,9 +385,16 @@ def main():
                        help='Class weight multiplier for neutral to emphasize that class')
     parser.add_argument('--neutral-oversample', type=float, default=1.0,
                        help='>1.0 to oversample neutral examples (e.g., 1.5)')
-    parser.add_argument('--encoder-type', choices=['legacy', 'pretrained', 'quantum'], default='pretrained',
-                       help='Sentence encoder: pretrained (pretrained embeddings) or legacy (vocab mean-pool). '
+    parser.add_argument('--encoder-type', choices=['legacy', 'pretrained', 'quantum', 'bert'], default='pretrained',
+                       help='Sentence encoder: pretrained (pretrained embeddings), legacy (vocab mean-pool), '
+                            'or bert (frozen bert-base-uncased, dim=768). '
                             '"quantum" accepted as alias for "pretrained" for checkpoint compatibility.')
+    parser.add_argument('--bert-model', type=str, default='bert-base-uncased',
+                       help='HuggingFace model name for BERT encoder (default: bert-base-uncased)')
+    parser.add_argument('--head-type', choices=['attractor', 'linear'], default='attractor',
+                       help='Classification head: attractor (full SNLIHead with geometry features) '
+                            'or linear (single Linear(dim, 3) baseline). '
+                            'Use linear + bert to establish the A/B baseline.')
     parser.add_argument('--embed-ckpt', type=str, default=None,
                        help='Path to embeddings_final.pt (required if encoder-type=pretrained)')
     # Geometric encoder knobs
@@ -508,7 +519,13 @@ def main():
     vocab = None
     vocab_id_to_token = None
 
-    if args.encoder_type in ('pretrained', 'quantum'):
+    if args.encoder_type == 'bert':
+        # BERT tokenizes internally — no encode_fn needed.
+        # dim is fixed at 768 (BERT hidden size).
+        print(f"Loading frozen BERT encoder ({args.bert_model}) ...")
+        args.dim = 768
+        pretrained_encode_fn = lambda text, max_len=args.max_len: [0] * max_len  # dummy, unused
+    elif args.encoder_type in ('pretrained', 'quantum'):
         if not args.embed_ckpt:
             raise ValueError("encoder-type=pretrained requires --embed-ckpt pointing to embeddings_final.pt")
         print(f"Loading pretrained encoder vocab from {args.embed_ckpt} ...")
@@ -582,7 +599,12 @@ def main():
         strength_null=args.strength_null,
         adaptive_metric=args.adaptive_metric,
     ).to(device)
-    if args.encoder_type in ('pretrained', 'quantum'):
+    if args.encoder_type == 'bert':
+        encoder = BERTSNLIEncoder(
+            model_name=args.bert_model,
+            freeze=True,
+        ).to(device)
+    elif args.encoder_type in ('pretrained', 'quantum'):
         encoder = PretrainedSNLIEncoder(
             ckpt_path=args.embed_ckpt,
             alpha_first_token=args.alpha_first_token,
@@ -593,7 +615,14 @@ def main():
             dim=args.dim,
             pad_idx=vocab.pad_idx,
         ).to(device)
-    head = SNLIHead(dim=args.dim).to(device)
+
+    # Head: attractor (full geometry) or linear (baseline probe)
+    if args.head_type == 'linear':
+        head = LinearSNLIHead(dim=args.dim).to(device)
+        print("Head: LinearSNLIHead (baseline)")
+    else:
+        head = SNLIHead(dim=args.dim).to(device)
+        print("Head: SNLIHead (attractor geometry)")
 
     # Freeze encoder if requested (A/B experiment: isolates encoder effect)
     # encoder.train() is kept intentionally — quantum encoder has no dropout/batchnorm
@@ -687,6 +716,7 @@ def main():
                     'args': args,
                     'basin_field': basin_field.state_dict() if basin_field is not None else None,
                     'use_dynamic_basins': use_dynamic_basins,
+                    'head_type': getattr(args, 'head_type', 'attractor'),
                 }, output_dir / 'best_model.pt')
                 print(f"✓ Saved best model (acc: {best_acc:.4f})")
     
