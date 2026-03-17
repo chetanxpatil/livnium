@@ -1,0 +1,530 @@
+\documentclass[11pt]{article}
+
+% ─── Packages ───────────────────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{bm}
+
+\newtheorem{theorem}{Theorem}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue,
+}
+
+% ─── Macros ─────────────────────────────────────────────────────────────────
+\newcommand{\vech}{\bm{h}}
+\newcommand{\anchor}[1]{A_{#1}}
+\newcommand{\barrier}{\tau}
+\newcommand{\dive}{D}
+\newcommand{\nhat}{\hat{\bm{n}}}
+\newcommand{\R}{\mathbb{R}}
+
+\title{Iterative Attractor Dynamics for Classification:\\Energy-Guided Basin Settling as an Alternative to Linear Readout}
+
+\author{
+    Chetan Patil \\
+    \texttt{chetan12patil@gmail.com} \\
+    \url{https://github.com/chetanxpatil/livnium}
+}
+
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+% ═══════════════════════════════════════════════════════════════════════════
+\begin{abstract}
+We present Livnium, a classification head implemented as a discrete-time
+dynamical system. Instead of projecting an encoded representation to logits
+via a single linear layer, Livnium evolves the hidden state through
+$L$ steps of geometry-aware updates under learned anchor forces before
+readout. Three anchor vectors define label basins in a shared embedding
+space; the state vector $\vech$ moves under cosine-based divergence forces
+until it settles near one basin, and the label is read from which basin
+captured it. We define a Lyapunov function $V(\vech) = (\barrier -
+\cos(\vech, \anchor{y}))^2$ and prove that, in the absence of the learned
+residual, the dynamics are locally contracting. The approach is evaluated
+on the Stanford Natural Language Inference (SNLI) benchmark, achieving
+76\% dev accuracy with a bag-of-words encoder, 428$\times$ faster than
+BERT-base at inference on CPU. We report the geometric properties of the
+force field, including a measured 135.2\textdegree{} mismatch between
+the implemented Euclidean radial forces and the true cosine gradient,
+and discuss implications for convergence. Code and pretrained weights
+are publicly available.
+\end{abstract}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+
+The standard neural network classifier computes $y = \text{softmax}(Wh + b)$:
+a single affine transformation from a learned representation $h$ to class
+logits. This is a static map --- the label is determined by a single
+projection of the representation.
+
+We explore an alternative: what if the classification head were a small
+dynamical system that \emph{evolves} the representation through several
+steps before producing a label? Instead of computing the label from the
+raw encoding $h_0$, we let the state evolve:
+\[
+    h_0 \;\to\; h_1 \;\to\; \cdots \;\to\; h_L \;\to\; \text{logits}
+\]
+where each update step applies learned residuals and geometric forces
+from label-specific anchor vectors. The final state $h_L$ is the result
+of a settling process, not a one-shot projection.
+
+This idea has historical roots. Hopfield networks \citep{hopfield1982}
+used energy minimisation for content-addressable memory. Modern
+equilibrium models \citep{bai2019deep} compute representations as fixed
+points of implicit layers. Our approach sits between the two: it uses
+an explicit, finite-step dynamical rule with interpretable geometric
+structure, rather than an implicit fixed-point iteration.
+
+The contribution of this paper is:
+\begin{enumerate}
+    \item A concrete update rule for attractor-based classification
+          with three label basins and cosine-ring equilibria (Section~\ref{sec:method}).
+    \item A Lyapunov analysis showing local contraction of the base
+          dynamics (Section~\ref{sec:lyapunov}).
+    \item An empirical characterisation of the geometric inconsistency
+          between the implemented forces and true cosine gradients
+          (Section~\ref{sec:geometry}).
+    \item SNLI results with analysis of per-class behavior and
+          inference speed (Section~\ref{sec:experiments}).
+\end{enumerate}
+
+We emphasize that this work replaces only the classification head.
+The encoder (a bag-of-words mean pooling in our experiments) is
+orthogonal to the attractor dynamics. The question we address is:
+\emph{does iterative basin settling outperform or complement a linear
+readout, given the same input representation?}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Method}
+\label{sec:method}
+
+\subsection{Setup}
+
+Given a premise $p$ and hypothesis $q$, an encoder produces sentence
+vectors $\bm{v}_p, \bm{v}_q \in \R^d$. The initial state for the
+collapse dynamics is:
+\[
+    h_0 = \bm{v}_q - \bm{v}_p + \epsilon, \quad \epsilon \sim \mathcal{N}(0, 0.01^2 I)
+\]
+The difference vector captures the directional relationship between
+premise and hypothesis. The small noise $\epsilon$ breaks symmetry
+in the attractor landscape.
+
+\subsection{Label Geometry}
+
+Three learned anchor vectors $\anchor{E}, \anchor{C}, \anchor{N} \in \R^d$
+(entailment, contradiction, neutral) define the geometry of the label
+space. Each anchor is unit-normalised during the forward pass. The
+\emph{equilibrium} for each label is not the anchor point itself but a
+\textbf{cosine-similarity ring}:
+\[
+    \cos(h, \anchor{y}) = \barrier
+\]
+where $\barrier = 0.38$ is a fixed barrier constant. This defines a
+$(d-2)$-dimensional manifold on the unit hypersphere --- a ``ring''
+at a fixed angular distance from each anchor.
+
+\subsection{Update Rule}
+
+At each step $t = 0, \ldots, L-1$:
+\begin{equation}
+\label{eq:update}
+    h_{t+1} = h_t
+    + \delta_\theta(h_t)
+    - s_y \cdot \dive(h_t, \anchor{y}) \cdot \nhat(h_t, \anchor{y})
+    - \beta \cdot B(h_t) \cdot \nhat(h_t, \anchor{N})
+\end{equation}
+where:
+\begin{align}
+    \dive(h, A) &= \barrier - \cos(h, A) \label{eq:divergence} \\
+    \nhat(h, A) &= \frac{h - A}{\|h - A\|} \label{eq:direction} \\
+    B(h) &= 1 - |\cos(h, \anchor{E}) - \cos(h, \anchor{C})| \label{eq:boundary}
+\end{align}
+
+The terms in \eqref{eq:update} are:
+\begin{itemize}
+    \item $\delta_\theta(h_t)$: a learned residual (2-layer MLP with Tanh).
+    \item $s_y \cdot \dive \cdot \nhat$: the \textbf{anchor force}. When
+          $\cos(h, A_y) < \barrier$, divergence is positive and the force
+          pulls $h$ toward the anchor. When $\cos(h, A_y) > \barrier$,
+          the force pushes $h$ away. The equilibrium ring acts as an
+          attractor, not the anchor itself.
+    \item $\beta \cdot B(h) \cdot \nhat(h, A_N)$: the \textbf{neutral
+          boundary force}. $B(h)$ measures equidistance from $\anchor{E}$
+          and $\anchor{C}$; when $h$ sits on the E--C boundary, $B \approx 1$
+          and the force pulls $h$ toward neutral territory.
+\end{itemize}
+
+During training, only the anchor corresponding to the correct label $y$
+exerts force ($s_y > 0$; other strengths are zero). During inference,
+all three anchors act simultaneously with their respective strengths,
+and the label is determined by which basin the state settles nearest.
+
+A soft norm cap prevents unbounded growth:
+\[
+    h \leftarrow \begin{cases}
+        h \cdot \frac{10}{\|h\| + 10^{-8}} & \text{if } \|h\| > 10 \\
+        h & \text{otherwise}
+    \end{cases}
+\]
+
+\subsection{Classification Head}
+
+After $L$ collapse steps, the final state $h_L$ is passed to a
+two-layer classification head along with auxiliary geometric features:
+cosine alignment between $\bm{v}_p$ and $\bm{v}_q$, opposition signal
+$\cos(-\bm{v}_p, \bm{v}_q)$, Euclidean distance $\|\bm{v}_q - \bm{v}_p\|$,
+norm features, and a learned neutral alignment signal. The head outputs
+logits for the three SNLI classes.
+
+\subsection{Dynamic Basin Field}
+
+During training, a \textbf{basin field} maintains multiple micro-basins
+per label. Each basin has a center vector updated via exponential moving
+average on the unit sphere. New basins are spawned when tension (divergence
+magnitude) stays high and alignment is low, indicating an underserved
+region of the label manifold. Basins are periodically pruned and merged.
+
+At inference, the basin field is read-only: the system routes each
+sample to the nearest basin using label-free cosine similarity. No
+ground-truth labels are used during inference routing.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Lyapunov Analysis}
+\label{sec:lyapunov}
+
+Define the candidate Lyapunov function:
+\begin{equation}
+\label{eq:lyapunov}
+    V(h) = \big(\barrier - \cos(h, \anchor{y})\big)^2 = \dive(h, \anchor{y})^2
+\end{equation}
+
+$V = 0$ exactly on the equilibrium ring $\cos(h, A_y) = \barrier$.
+
+\begin{theorem}[Local contraction without learned residual]
+When $\delta_\theta = 0$ and only the correct anchor force acts,
+$V(h_{t+1}) \leq V(h_t)$ for sufficiently small force strength $s_y$.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+The anchor force component is $-s_y \cdot \dive(h, A) \cdot \nhat(h, A)$.
+The change in cosine alignment due to this force involves:
+\[
+    \nabla_h \cos(h, A) \cdot \nhat(h, A)
+    = -\frac{\beta \sin^2\theta}{\alpha \|h - A\|}
+\]
+where $\alpha = \|h\|$, $\beta = \|A\|$, and $\theta$ is the angle
+between $h$ and $A$. Since $\sin^2\theta \geq 0$ and all norms are
+positive, the dot product is non-positive. Therefore the anchor force
+moves $\cos(h, A)$ toward $\barrier$ (reduces $|\dive|$), which
+reduces $V$.
+\end{proof}
+
+Empirical verification (5,000 samples, $\delta_\theta$ scale varied):
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lcc@{}}
+\toprule
+$\delta_\theta$ scale & $V(h_{t+1}) \leq V(h_t)$ & mean $\Delta V$ \\
+\midrule
+0.001 & 100.0\% & $-0.00131$ \\
+0.01  & 99.3\%  & $-0.00112$ \\
+0.05  & 70.9\%  & $-0.00040$ \\
+0.10  & 61.3\%  & $+0.00001$ \\
+\bottomrule
+\end{tabular}
+\caption{Lyapunov descent rate as the learned residual strength increases.
+The base dynamics are contracting; the MLP residual can partially oppose
+contraction at larger scales.}
+\label{tab:lyapunov}
+\end{table}
+
+\textbf{Limitation.} Global convergence is not proven. The learned
+residual $\delta_\theta$ can dominate the anchor force at large scales,
+and finite step sizes can overshoot the attractor ring. The Lyapunov
+guarantee is local and conditional on $\delta_\theta$ being small
+relative to the anchor force.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Geometric Inconsistency}
+\label{sec:geometry}
+
+A notable property of the update rule is that the force magnitude is
+cosine-based (Eq.~\ref{eq:divergence}) but the force direction is
+Euclidean radial (Eq.~\ref{eq:direction}). The true gradient of cosine
+similarity with respect to $h$ is tangential on the hypersphere, not
+radial.
+
+To quantify this, we measured the angle between the implemented force
+direction $\nhat(h, A)$ and the true cosine gradient direction
+$\nabla_h \cos(h, A) / \|\nabla_h \cos(h, A)\|$ across 1,000 random
+samples in $\R^{256}$:
+
+\begin{equation}
+    \text{mean angle} = 135.2^{\circ} \pm 2.5^{\circ}
+\end{equation}
+
+This means the system applies forces that are roughly orthogonal-plus-opposing
+to the true gradient. In physical terms, this is a \textbf{non-conservative
+force field} --- there is no scalar potential whose gradient produces
+these forces.
+
+Despite this, the system converges empirically. We interpret the anchor
+force as a discrete-time attractor rule that happens to use cosine as a
+distance proxy, not as gradient descent on an energy surface. The
+Euclidean direction provides a consistent ``pull toward the anchor''
+that, combined with the cosine-based magnitude, produces effective basin
+capture even though the geometry is formally inconsistent.
+
+This inconsistency may even be beneficial: the non-conservative
+``sideways'' component could act as implicit regularisation, preventing
+the state from collapsing directly onto the anchor and instead
+encouraging exploration of the attractor ring.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Dataset and Encoder}
+
+We evaluate on the Stanford Natural Language Inference (SNLI) dataset
+\citep{bowman2015snli}, which contains approximately 570k sentence pairs
+labeled as entailment, contradiction, or neutral.
+
+The encoder is a pretrained bag-of-words model: a learned embedding table
+(trained on WikiText-103 \citep{merity2016wikitext}) followed by mean
+pooling over tokens. This produces 256-dimensional sentence vectors.
+The encoder is frozen during attractor head training.
+
+\subsection{Configuration}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+Parameter & Value \\
+\midrule
+Embedding dimension & 256 \\
+Collapse steps $L$ & 6 \\
+Barrier constant $\barrier$ & 0.38 \\
+Anchor strengths $s_E, s_C$ & 0.1 \\
+Anchor strength $s_N$ & 0.05 \\
+Neutral boundary boost $\beta$ & 0.05 \\
+Total parameters & ${\sim}2$M \\
+\bottomrule
+\end{tabular}
+\caption{Model configuration.}
+\label{tab:config}
+\end{table}
+
+\subsection{Results}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lc@{}}
+\toprule
+Class & Dev Accuracy \\
+\midrule
+Overall & \textbf{76.00\%} \\
+Entailment & 80.6\% \\
+Contradiction & 75.2\% \\
+Neutral & 72.2\% \\
+\bottomrule
+\end{tabular}
+\caption{SNLI dev set accuracy (label-free inference routing).}
+\label{tab:results}
+\end{table}
+
+For context, bag-of-words baselines typically achieve ${\sim}80\%$ on
+SNLI, decomposable attention \citep{parikh2016decomposable} reaches
+${\sim}86\%$, and fine-tuned BERT \citep{devlin2019bert} achieves
+${\sim}90\%$.
+
+Our result is below the bag-of-words baseline. However, the attractor
+head receives mean-pooled bag-of-words vectors, which are known to
+lose word order. Sentences such as ``a dog bites a man'' and ``a man
+bites a dog'' produce nearly identical encodings, creating an
+encoder-side ceiling that is difficult to separate from head-side
+limitations. A controlled comparison with a frozen BERT encoder would
+isolate the attractor head's contribution.
+
+\subsection{Inference Speed}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Component & ms / batch (32) & Samples / sec \\
+\midrule
+Livnium attractor head & 0.4 & 85,335 \\
+\bottomrule
+\end{tabular}
+\caption{Head-only inference speed on CPU. This excludes encoding time
+and is not directly comparable to end-to-end BERT timings.}
+\label{tab:speed}
+\end{table}
+
+\subsection{Neutral Class Analysis}
+
+Neutral is the weakest class (72.2\% vs.\ 80.6\% for entailment).
+The confusion matrix shows that neutral samples are frequently
+misclassified as both entailment and contradiction. The neutral boundary
+force (Eq.~\ref{eq:boundary}) was specifically designed to address this,
+pulling states toward neutral when they are equidistant from the E and C
+anchors. Without it, neutral accuracy drops further.
+
+The neutral class is intrinsically harder because it is defined by
+the \emph{absence} of a strong entailment or contradiction signal.
+With a bag-of-words encoder that loses word order, many genuinely
+neutral pairs produce embeddings that overlap with entailment or
+contradiction pairs.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Related Work}
+\label{sec:related}
+
+\textbf{Hopfield networks} \citep{hopfield1982} pioneered energy-based
+attractor dynamics for memory retrieval. Modern Hopfield networks
+\citep{ramsauer2020hopfield} extend this to continuous states with
+exponential storage capacity.
+
+\textbf{Deep equilibrium models} (DEQ) \citep{bai2019deep} compute
+representations as fixed points of an implicit layer, using root-finding
+rather than explicit unrolling. Livnium uses explicit $L$-step dynamics
+with no fixed-point solver.
+
+\textbf{Neural ODEs} \citep{chen2018neural} parameterise continuous-time
+dynamics. Livnium operates in discrete time with interpretable geometric
+forces rather than a learned vector field.
+
+\textbf{Prototype networks} \citep{snell2017prototypical} classify by
+distance to class prototypes. Livnium's anchors serve a similar role,
+but the state is iteratively refined rather than directly compared.
+
+\textbf{Natural language inference} baselines range from
+bag-of-words \citep{bowman2015snli} to decomposable attention
+\citep{parikh2016decomposable} to fine-tuned transformers
+\citep{devlin2019bert}. Our work is orthogonal to the encoder and
+addresses only the classification head.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Limitations and Future Work}
+\label{sec:limitations}
+
+\begin{enumerate}
+    \item \textbf{Encoder ceiling.} The bag-of-words encoder cannot
+          distinguish word order, which limits accuracy regardless of the
+          classification head. A fair evaluation requires a controlled
+          comparison: frozen BERT encoder with attractor head vs.\ frozen
+          BERT encoder with linear head.
+    \item \textbf{No global convergence.} The Lyapunov guarantee is local
+          and conditional on the learned residual being small. Finite
+          step sizes and the learned MLP can cause the state to escape
+          basins.
+    \item \textbf{Geometric inconsistency.} The 135\textdegree{} mismatch
+          between Euclidean radial forces and true cosine gradients is
+          acknowledged but not resolved. Whether replacing the direction
+          with the true tangential gradient would improve or harm
+          performance is an open question.
+    \item \textbf{Limited benchmarking.} Results are reported on SNLI
+          only. Evaluation on MultiNLI, adversarial NLI, and
+          out-of-distribution robustness tasks would better characterise
+          the approach.
+    \item \textbf{Hyperparameter sensitivity.} The barrier constant
+          $\barrier = 0.38$, force strengths, and number of collapse
+          steps were tuned manually. A principled selection method
+          is needed.
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+
+We have presented a classification head that operates as an iterative
+dynamical system rather than a static projection. The core idea ---
+replacing $h \to Wh + b$ with $h_0 \to h_1 \to \cdots \to h_L$ under
+geometric anchor forces --- is simple and fast, and comes with a partial
+stability guarantee via a Lyapunov function.
+
+The current results do not exceed standard baselines on SNLI. However,
+the approach opens a different design axis: classification heads with
+built-in iterative refinement, interpretable trajectory dynamics, and
+geometric stability properties. Whether this axis leads to practical
+gains remains to be demonstrated with stronger encoders and broader
+evaluation.
+
+Code: \url{https://github.com/chetanxpatil/livnium} \\
+Model: \url{https://huggingface.co/chetanxpatil/livnium-snli}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\bibliographystyle{plainnat}
+\begin{thebibliography}{10}
+
+\bibitem[Bai et~al.(2019)]{bai2019deep}
+S.~Bai, J.~Z. Kolter, and V.~Koltun.
+\newblock Deep equilibrium models.
+\newblock In \emph{NeurIPS}, 2019.
+
+\bibitem[Bowman et~al.(2015)]{bowman2015snli}
+S.~Bowman, G.~Angeli, C.~Potts, and C.~Manning.
+\newblock A large annotated corpus for learning natural language inference.
+\newblock In \emph{EMNLP}, 2015.
+
+\bibitem[Chen et~al.(2018)]{chen2018neural}
+R.~T.~Q. Chen, Y.~Rubanova, J.~Bettencourt, and D.~Duvenaud.
+\newblock Neural ordinary differential equations.
+\newblock In \emph{NeurIPS}, 2018.
+
+\bibitem[Devlin et~al.(2019)]{devlin2019bert}
+J.~Devlin, M.-W. Chang, K.~Lee, and K.~Toutanova.
+\newblock {BERT}: Pre-training of deep bidirectional transformers for
+  language understanding.
+\newblock In \emph{NAACL-HLT}, 2019.
+
+\bibitem[Hopfield(1982)]{hopfield1982}
+J.~J. Hopfield.
+\newblock Neural networks and physical systems with emergent collective
+  computational abilities.
+\newblock \emph{PNAS}, 79(8):2554--2558, 1982.
+
+\bibitem[Merity et~al.(2016)]{merity2016wikitext}
+S.~Merity, C.~Xiong, J.~Bradbury, and R.~Socher.
+\newblock Pointer sentinel mixture models.
+\newblock \emph{arXiv:1609.07843}, 2016.
+
+\bibitem[Parikh et~al.(2016)]{parikh2016decomposable}
+A.~Parikh, O.~T{\"a}ckstr{\"o}m, D.~Das, and J.~Uszkoreit.
+\newblock A decomposable attention model for natural language inference.
+\newblock In \emph{EMNLP}, 2016.
+
+\bibitem[Ramsauer et~al.(2020)]{ramsauer2020hopfield}
+H.~Ramsauer, B.~Sch{\"a}fl, J.~Lehner, P.~Seidl, M.~Widrich,
+  T.~Adler, L.~Gruber, M.~Holzleitner, M.~Pavlovi{\'c}, G.~Sandve,
+  V.~Greiff, D.~Kreil, M.~Kopp, G.~Klambauer, J.~Brandstetter,
+  and S.~Hochreiter.
+\newblock Hopfield networks is all you need.
+\newblock In \emph{ICLR}, 2021.
+
+\bibitem[Snell et~al.(2017)]{snell2017prototypical}
+J.~Snell, K.~Swersky, and R.~Zemel.
+\newblock Prototypical networks for few-shot learning.
+\newblock In \emph{NeurIPS}, 2017.
+
+\end{thebibliography}
+
+\end{document}
