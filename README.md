@@ -48,6 +48,7 @@ NLI classifier on SNLI where inference is not a single forward pass — it is a 
 
 📄 **Paper (PDF):** [Livnium.pdf](https://github.com/chetanxpatil/livnium/blob/main/Livnium.pdf)
 📝 **LaTeX source:** [livnium_paper.tex](https://github.com/chetanxpatil/livnium/blob/main/livnium_paper.tex)
+🌐 **Zenodo preprint:** [zenodo.org/records/19058910](https://zenodo.org/records/19058910)
 🤗 **Model on HuggingFace:** [chetanxpatil/livnium-snli](https://huggingface.co/chetanxpatil/livnium-snli)
 
 ## Directory Structure
@@ -236,9 +237,9 @@ If you use this work in your research, please cite:
   author       = {Patil, Chetan},
   title        = {Iterative Attractor Dynamics for Classification: A Dynamical Classification Head with Anchor-Guided Basin Settling},
   year         = {2026},
-  publisher    = {GitHub},
-  howpublished = {\url{https://github.com/chetanxpatil/livnium}},
-  note         = {PDF: \url{https://github.com/chetanxpatil/livnium/blob/main/Livnium.pdf}. Model: \url{https://huggingface.co/chetanxpatil/livnium-snli}}
+  publisher    = {Zenodo},
+  howpublished = {\url{https://zenodo.org/records/19058910}},
+  note         = {Code: \url{https://github.com/chetanxpatil/livnium}. Model: \url{https://huggingface.co/chetanxpatil/livnium-snli}}
 }
 ```
 
