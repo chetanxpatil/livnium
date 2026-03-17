@@ -13,6 +13,7 @@
 \usepackage{bm}
 
 \newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
 
 \hypersetup{
     colorlinks=true,
@@ -29,7 +30,7 @@
 \newcommand{\nhat}{\hat{\bm{n}}}
 \newcommand{\R}{\mathbb{R}}
 
-\title{Iterative Attractor Dynamics for Classification:\\Energy-Guided Basin Settling as an Alternative to Linear Readout}
+\title{Iterative Attractor Dynamics for Classification:\\A Dynamical Classification Head with Anchor-Guided Basin Settling}
 
 \author{
     Chetan Patil \\
@@ -50,13 +51,14 @@ via a single linear layer, Livnium evolves the hidden state through
 $L$ steps of geometry-aware updates under learned anchor forces before
 readout. Three anchor vectors define label basins in a shared embedding
 space; the state vector $\vech$ moves under cosine-based divergence forces
-until it settles near one basin, and the label is read from which basin
-captured it. We define a Lyapunov function $V(\vech) = (\barrier -
-\cos(\vech, \anchor{y}))^2$ and prove that, in the absence of the learned
-residual, the dynamics are locally contracting. The approach is evaluated
-on the Stanford Natural Language Inference (SNLI) benchmark, achieving
-76\% dev accuracy with a bag-of-words encoder, 428$\times$ faster than
-BERT-base at inference on CPU. We report the geometric properties of the
+until it settles near one basin, and the hidden state is iteratively
+refined under anchor-guided forces before final readout. We define a
+Lyapunov function $V(\vech) = (\barrier - \cos(\vech, \anchor{y}))^2$
+and show that, in the absence of the learned residual, the dynamics are
+locally contracting (a first-order local descent argument, not a global
+stability proof). The approach is evaluated on the Stanford Natural
+Language Inference (SNLI) benchmark, achieving 76\% dev accuracy with a
+frozen bag-of-words encoder. We report the geometric properties of the
 force field, including a measured 135.2\textdegree{} mismatch between
 the implemented Euclidean radial forces and the true cosine gradient,
 and discuss implications for convergence. Code and pretrained weights
@@ -106,8 +108,8 @@ The contribution of this paper is:
 We emphasize that this work replaces only the classification head.
 The encoder (a bag-of-words mean pooling in our experiments) is
 orthogonal to the attractor dynamics. The question we address is:
-\emph{does iterative basin settling outperform or complement a linear
-readout, given the same input representation?}
+\emph{does iterative basin settling provide useful inductive bias
+relative to a standard readout when the encoder is held fixed?}
 
 % ═══════════════════════════════════════════════════════════════════════════
 \section{Method}
@@ -172,8 +174,10 @@ The terms in \eqref{eq:update} are:
 
 During training, only the anchor corresponding to the correct label $y$
 exerts force ($s_y > 0$; other strengths are zero). During inference,
-all three anchors act simultaneously with their respective strengths,
-and the label is determined by which basin the state settles nearest.
+all three anchors act simultaneously with fixed hyperparameter strengths
+($s_E = s_C = 0.1$, $s_N = 0.05$; these are the same values used during
+training, not learned or adapted), and the label is determined by which
+basin the state settles nearest.
 
 A soft norm cap prevents unbounded growth:
 \[
@@ -185,12 +189,16 @@ A soft norm cap prevents unbounded growth:
 
 \subsection{Classification Head}
 
-After $L$ collapse steps, the final state $h_L$ is passed to a
-two-layer classification head along with auxiliary geometric features:
-cosine alignment between $\bm{v}_p$ and $\bm{v}_q$, opposition signal
-$\cos(-\bm{v}_p, \bm{v}_q)$, Euclidean distance $\|\bm{v}_q - \bm{v}_p\|$,
-norm features, and a learned neutral alignment signal. The head outputs
-logits for the three SNLI classes.
+The full classification pipeline is: encoder $\to$ attractor dynamics
+$\to$ readout network. After $L$ collapse steps, the refined state
+$h_L$ is passed to a two-layer readout MLP along with auxiliary
+geometric features: cosine alignment between $\bm{v}_p$ and $\bm{v}_q$,
+opposition signal $\cos(-\bm{v}_p, \bm{v}_q)$, Euclidean distance
+$\|\bm{v}_q - \bm{v}_p\|$, norm features, and a learned neutral
+alignment signal. The readout MLP outputs logits for the three SNLI
+classes. We note that the final label decision is made by this readout
+network, not purely by basin membership; the attractor dynamics refine
+the representation that the readout network receives.
 
 \subsection{Dynamic Basin Field}
 
@@ -215,20 +223,24 @@ Define the candidate Lyapunov function:
 \end{equation}
 
 $V = 0$ exactly on the equilibrium ring $\cos(h, A_y) = \barrier$.
+$V$ serves as a local diagnostic measuring distance from the target
+ring, not a global energy function for the full system.
 
-\begin{theorem}[Local contraction without learned residual]
+\begin{proposition}[Local contraction without learned residual]
 When $\delta_\theta = 0$ and only the correct anchor force acts,
 $V(h_{t+1}) \leq V(h_t)$ for sufficiently small force strength $s_y$.
-\end{theorem}
+This is a first-order local descent argument, not a global stability
+proof.
+\end{proposition}
 
 \begin{proof}[Proof sketch]
 The anchor force component is $-s_y \cdot \dive(h, A) \cdot \nhat(h, A)$.
 The change in cosine alignment due to this force involves:
 \[
     \nabla_h \cos(h, A) \cdot \nhat(h, A)
-    = -\frac{\beta \sin^2\theta}{\alpha \|h - A\|}
+    = -\frac{r \sin^2\theta}{\alpha \|h - A\|}
 \]
-where $\alpha = \|h\|$, $\beta = \|A\|$, and $\theta$ is the angle
+where $\alpha = \|h\|$, $r = \|A\|$, and $\theta$ is the angle
 between $h$ and $A$. Since $\sin^2\theta \geq 0$ and all norms are
 positive, the dot product is non-positive. Therefore the anchor force
 moves $\cos(h, A)$ toward $\barrier$ (reduces $|\dive|$), which
@@ -375,8 +387,10 @@ Component & ms / batch (32) & Samples / sec \\
 Livnium attractor head & 0.4 & 85,335 \\
 \bottomrule
 \end{tabular}
-\caption{Head-only inference speed on CPU. This excludes encoding time
-and is not directly comparable to end-to-end BERT timings.}
+\caption{Head-only inference speed on CPU. This measures only the
+attractor dynamics and readout, excluding all encoding time. It is
+\textbf{not} an end-to-end comparison: a fair speed comparison would
+need to include the encoder for both systems.}
 \label{tab:speed}
 \end{table}
 
@@ -428,6 +442,12 @@ addresses only the classification head.
 \label{sec:limitations}
 
 \begin{enumerate}
+    \item \textbf{Train/inference mismatch.} During training, only the
+          correct-label anchor exerts force; during inference, all three
+          anchors act simultaneously. This means the dynamics the model
+          learns are not identical to the dynamics used at test time.
+          The mismatch may limit settling accuracy and is a structural
+          gap that future work should address.
     \item \textbf{Encoder ceiling.} The bag-of-words encoder cannot
           distinguish word order, which limits accuracy regardless of the
           classification head. A fair evaluation requires a controlled
