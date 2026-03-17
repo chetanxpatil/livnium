@@ -103,3 +103,70 @@ class PretrainedSNLIEncoder(nn.Module):
 
 # Backward-compat alias — saved checkpoints reference 'QuantumSNLIEncoder'
 QuantumSNLIEncoder = PretrainedSNLIEncoder
+
+
+class BERTSNLIEncoder(nn.Module):
+    """
+    Frozen BERT encoder for A/B comparison against bag-of-words.
+
+    Uses bert-base-uncased CLS token as sentence representation.
+    Weights are frozen by default — only the attractor head (or linear
+    baseline) trains. This isolates the question: does the attractor head
+    outperform a linear head given identical, high-quality features?
+
+    dim = 768 (BERT hidden size, fixed)
+
+    Usage in train.py: pass raw text strings to build_initial_state
+    instead of token ID tensors — BERT tokenizes internally.
+    Detect via: getattr(encoder, 'is_bert', False)
+    """
+
+    is_bert: bool = True
+
+    def __init__(self, model_name: str = "bert-base-uncased", freeze: bool = True):
+        super().__init__()
+        from transformers import BertModel, BertTokenizerFast
+        self.tokenizer = BertTokenizerFast.from_pretrained(model_name)
+        self.bert = BertModel.from_pretrained(model_name)
+        self.dim = self.bert.config.hidden_size  # 768
+        self.pad_idx = self.tokenizer.pad_token_id
+        if freeze:
+            for p in self.bert.parameters():
+                p.requires_grad_(False)
+
+    def _encode(self, texts: list, max_len: int, device) -> torch.Tensor:
+        """Tokenize and encode a list of strings → CLS token [B, 768]."""
+        enc = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=max_len,
+            return_tensors="pt",
+        )
+        enc = {k: v.to(device) for k, v in enc.items()}
+        out = self.bert(**enc)
+        return out.last_hidden_state[:, 0, :]  # CLS token
+
+    def build_initial_state(
+        self,
+        premises: list,
+        hypotheses: list,
+        add_noise: bool = True,
+        max_len: int = 128,
+        device=None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            premises:   list of raw premise strings
+            hypotheses: list of raw hypothesis strings
+        Returns:
+            (h0, v_p, v_h) where h0 = v_h - v_p, all [B, 768]
+        """
+        if device is None:
+            device = next(self.bert.parameters()).device
+        v_p = self._encode(premises, max_len, device)
+        v_h = self._encode(hypotheses, max_len, device)
+        h0 = v_h - v_p
+        if add_noise:
+            h0 = h0 + 0.01 * torch.randn_like(h0)
+        return h0, v_p, v_h

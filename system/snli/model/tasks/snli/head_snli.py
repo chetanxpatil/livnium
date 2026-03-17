@@ -115,3 +115,32 @@ class SNLIHead(nn.Module):
             ec_ambiguity,
         ], dim=-1)
         return self.fc(features)
+
+
+class LinearSNLIHead(nn.Module):
+    """
+    Baseline linear classification head for A/B comparison with SNLIHead.
+
+    Maps h_final directly to logits via a single linear layer.
+    No extra geometric features, no interaction — pure linear probe.
+
+    Same interface as SNLIHead: forward(h_final, v_p, v_h) → logits (B, 3).
+    v_p and v_h are accepted but ignored, keeping the call-site identical.
+
+    Use this to answer: does the attractor head beat a linear probe on the
+    same frozen BERT features? If yes, the dynamics are adding real value.
+    """
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.fc = nn.Linear(dim, 3)
+
+    def forward(
+        self,
+        h_final: torch.Tensor,
+        v_p: torch.Tensor,
+        v_h: torch.Tensor,
+    ) -> torch.Tensor:
+        if h_final.dim() == 1:
+            h_final = h_final.unsqueeze(0)
+        return self.fc(h_final)
