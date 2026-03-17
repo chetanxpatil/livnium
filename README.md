@@ -42,10 +42,12 @@ model-index:
             name: Samples per second (CPU)
 ---
 
-# Livnium — Energy-Guided Attractor Network (EGAN) for NLI
+# Livnium — A Dynamical Classification Head with Anchor-Guided Basin Settling
 
 NLI classifier on SNLI where inference is not a single forward pass — it is a sequence of geometry-aware state updates before the final readout.
 
+📄 **Paper (PDF):** [Livnium.pdf](https://github.com/chetanxpatil/livnium/blob/main/Livnium.pdf)
+📝 **LaTeX source:** [livnium_paper.tex](https://github.com/chetanxpatil/livnium/blob/main/livnium_paper.tex)
 🤗 **Model on HuggingFace:** [chetanxpatil/livnium-snli](https://huggingface.co/chetanxpatil/livnium-snli)
 
 ## Directory Structure
@@ -173,7 +175,7 @@ The equilibrium condition is `cos(h, A_y) = 0.38`, which defines a ring on the h
 `V(h) = (0.38 − cos(h, A_y))²` is a Lyapunov function that decreases at every step when `δ_θ = 0` (proven analytically, confirmed empirically on 5000 samples). Livnium is a provably locally-contracting pseudo-gradient flow. Most residual classifiers have no such stability guarantee.
 
 **5. Inference is a single unsupervised collapse.**
-Training uses `s_y · D(h, A_y)` — only the correct anchor pulls. At inference, all three anchors compete with no label. The label is implicit in which basin wins. Cost: 1× forward pass through a small MLP, 428× faster than BERT on CPU.
+Training uses `s_y · D(h, A_y)` — only the correct anchor pulls. At inference, all three anchors compete with no label. The label is implicit in which basin wins. Note: the train/inference mismatch (single vs. all anchors) is a known structural gap documented in the paper.
 
 **What it isn't:** global convergence is not proven (finite step size + learned residual `δ_θ` can escape the basin). The geometric inconsistency is not fixed. It isn't yet competitive with fine-tuned transformers on accuracy. Whether iterated attractor dynamics outperform a standard deep residual block at equivalent parameter count is an open question.
 
@@ -199,14 +201,13 @@ Training uses `s_y · D(h, A_y)` — only the correct anchor pulls. At inference
 | Encoder | Pretrained bag-of-words embeddings (frozen) |
 | Parameters | ~2M |
 
-### Speed vs BERT (CPU, batch size 32)
+### Head-only Speed (CPU, batch size 32)
 
-| Model | ms / batch | Samples / sec | Full SNLI train (549k) |
-|-------|------------|---------------|------------------------|
-| **Livnium** | **0.4 ms** | **85,335 / sec** | **~6 sec** | (at inference)
-| BERT-base | 171 ms | 187 / sec | ~49 min | (at inference)
+| Component | ms / batch | Samples / sec |
+|-----------|------------|---------------|
+| **Livnium attractor head** | **0.4 ms** | **85,335 / sec** |
 
-**428× faster than BERT-base on CPU.**
+> ⚠️ This measures only the attractor dynamics + readout, **excluding encoding time**. It is not an end-to-end comparison with BERT — a fair comparison would need to include the encoder for both systems.
 
 ---
 
@@ -220,7 +221,7 @@ Define `V(h) = D(h, A_y)² = (0.38 − cos(h, A_y))²`
 ∇_h cos · n̂ = −(β · sin²θ) / (α · ‖h − A‖)  ≤ 0
 ```
 
-**Livnium is a provably locally-contracting pseudo-gradient flow.**
+**Livnium is a locally-contracting pseudo-gradient flow** (first-order local descent argument; global convergence is not proven).
 
 See `runs/livnium_collapse_equation.md` for the full derivation and empirical direction mismatch analysis (135.2° ± 2.5° between Euclidean and cosine gradients).
 
@@ -233,11 +234,11 @@ If you use this work in your research, please cite:
 ```bibtex
 @misc{patil2026livnium,
   author       = {Patil, Chetan},
-  title        = {Livnium: Energy-Guided Attractor Network (EGAN) for Natural Language Inference},
+  title        = {Iterative Attractor Dynamics for Classification: A Dynamical Classification Head with Anchor-Guided Basin Settling},
   year         = {2026},
   publisher    = {GitHub},
   howpublished = {\url{https://github.com/chetanxpatil/livnium}},
-  note         = {Model available at \url{https://huggingface.co/chetanxpatil/livnium-snli}}
+  note         = {PDF: \url{https://github.com/chetanxpatil/livnium/blob/main/Livnium.pdf}. Model: \url{https://huggingface.co/chetanxpatil/livnium-snli}}
 }
 ```
 
