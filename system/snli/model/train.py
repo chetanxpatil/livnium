@@ -39,7 +39,7 @@ sys.path.insert(0, str(_here))
 sys.path.insert(0, str(_repo))
 
 from core import VectorCollapseEngine, BasinField
-from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, BERTSNLIEncoder, SNLIHead, LinearSNLIHead
+from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, BERTSNLIEncoder, LlamaCppBERTSNLIEncoder, SNLIHead, LinearSNLIHead
 from embed.text_encoder import PretrainedTextEncoder, QuantumTextEncoder
 from utils.vocab import build_vocab_from_snli
 
@@ -385,12 +385,19 @@ def main():
                        help='Class weight multiplier for neutral to emphasize that class')
     parser.add_argument('--neutral-oversample', type=float, default=1.0,
                        help='>1.0 to oversample neutral examples (e.g., 1.5)')
-    parser.add_argument('--encoder-type', choices=['legacy', 'pretrained', 'quantum', 'bert'], default='pretrained',
+    parser.add_argument('--encoder-type', choices=['legacy', 'pretrained', 'quantum', 'bert', 'llamacpp'], default='pretrained',
                        help='Sentence encoder: pretrained (pretrained embeddings), legacy (vocab mean-pool), '
-                            'or bert (frozen bert-base-uncased, dim=768). '
+                            'bert (frozen bert-base-uncased via HuggingFace, dim=768), '
+                            'llamacpp (frozen BERT GGUF via llama.cpp, dim=768, fast CPU inference). '
                             '"quantum" accepted as alias for "pretrained" for checkpoint compatibility.')
     parser.add_argument('--bert-model', type=str, default='bert-base-uncased',
                        help='HuggingFace model name for BERT encoder (default: bert-base-uncased)')
+    parser.add_argument('--llamacpp-model', type=str, default=None,
+                       help='Path to BERT GGUF file for --encoder-type llamacpp. '
+                            'Download from: https://huggingface.co/ggml-org/bert-base-uncased-Q8_0-GGUF')
+    parser.add_argument('--embed-cache', type=str, default=None,
+                       help='Path to pre-computed embedding cache (.pt) for llamacpp encoder. '
+                            'Build once with precompute_embeddings.py for 20-50x training speedup.')
     parser.add_argument('--head-type', choices=['attractor', 'linear'], default='attractor',
                        help='Classification head: attractor (full SNLIHead with geometry features) '
                             'or linear (single Linear(dim, 3) baseline). '
@@ -519,7 +526,24 @@ def main():
     vocab = None
     vocab_id_to_token = None
 
-    if args.encoder_type == 'bert':
+    if args.encoder_type == 'llamacpp':
+        # llama.cpp BERT — tokenizes internally, no encode_fn needed.
+        # dim auto-detected from the GGUF (768 for bert-base-uncased).
+        if not args.llamacpp_model:
+            raise ValueError(
+                "--encoder-type llamacpp requires --llamacpp-model /path/to/bert.gguf\n"
+                "Download from: https://huggingface.co/ggml-org/bert-base-uncased-Q8_0-GGUF"
+            )
+        print(f"Loading llama.cpp BERT encoder from {args.llamacpp_model} ...")
+        # Create encoder early to probe dim before building collapse engine + head.
+        _probe_encoder = LlamaCppBERTSNLIEncoder(
+            model_path=args.llamacpp_model,
+            cache_path=getattr(args, 'embed_cache', None),
+        )
+        args.dim = _probe_encoder.dim
+        print(f"  llama.cpp BERT dim = {args.dim}")
+        pretrained_encode_fn = lambda text, max_len=args.max_len: [0] * max_len  # dummy, unused for is_bert encoders
+    elif args.encoder_type == 'bert':
         # BERT tokenizes internally — no encode_fn needed.
         # dim is fixed at 768 (BERT hidden size).
         print(f"Loading frozen BERT encoder ({args.bert_model}) ...")
@@ -599,7 +623,11 @@ def main():
         strength_null=args.strength_null,
         adaptive_metric=args.adaptive_metric,
     ).to(device)
-    if args.encoder_type == 'bert':
+    if args.encoder_type == 'llamacpp':
+        # Reuse the probe encoder we already created above (avoid double-loading the GGUF).
+        encoder = _probe_encoder
+        encoder.to(device)
+    elif args.encoder_type == 'bert':
         encoder = BERTSNLIEncoder(
             model_name=args.bert_model,
             freeze=True,

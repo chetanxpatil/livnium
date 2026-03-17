@@ -5,6 +5,6 @@ Task-specific heads that attach to the core physics engine.
 """
 
 from .snli.head_snli import SNLIHead
-from .snli.encoding_snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder
+from .snli.encoding_snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, LlamaCppBERTSNLIEncoder
 
-__all__ = ['SNLIHead', 'SNLIEncoder', 'PretrainedSNLIEncoder', 'QuantumSNLIEncoder']
+__all__ = ['SNLIHead', 'SNLIEncoder', 'PretrainedSNLIEncoder', 'QuantumSNLIEncoder', 'LlamaCppBERTSNLIEncoder']
