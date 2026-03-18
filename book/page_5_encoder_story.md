@@ -156,8 +156,10 @@ The experiment is clean: **everything identical, only the quality of h0 changes.
 |---|---|---|---|---|
 | 1 | Legacy (random BoW) | Embeddings + engine + head | ~56% | No semantic knowledge, order-blind |
 | 2 | Pretrained Livnium BoW | Embeddings + engine + head | 76.32% | Semantically shaped vectors, but still mean-pool |
-| 3 | Frozen BERT (llama.cpp) | Engine + head only | 84–87%? | Contextual, order-aware, negation-aware |
-| 4? | Frozen BERT + tunable projection | Projection + engine + head | ?% | Add a trainable linear layer on top of BERT before h0 |
+| 3 | Frozen BERT (HuggingFace) | Engine + head only | ~61% | BERT frozen — collapse engine can't reshape BERT's geometry |
+| 4 | Joint BERT (bi-encoder) | BERT + engine + head | **82.06%** | BERT fine-tunes alongside collapse dynamics (5 epochs) |
+| 5 | Joint BERT (cross-encoder) | BERT + engine + head | in progress | [CLS] premise [SEP] hypothesis — fixes role-reversal failures |
+| 6? | Livnium-native encoder | Small encoder + engine + head | target: 84%+ | Ditch BERT entirely — see Page 6 |
 
 Stage 4 is a potential next step: keep BERT frozen but add a small trainable linear layer (768 → 256) that projects BERT vectors into the Livnium embedding space before computing `h0`. This would let the model learn which dimensions of the BERT space are most useful for the collapse dynamics, without needing to fine-tune BERT itself.
 
