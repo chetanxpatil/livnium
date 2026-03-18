@@ -215,12 +215,37 @@ or
 
 ---
 
-## Immediate Next Steps (this week)
+## The Eyebrow-Raiser Problem
 
-1. **Run full dev set grad-V** (Priority 1a) — 30 mins, resolves the noise question
-2. **Plot energy descent curves** for 10 examples (Priority 2b) — strongest visual for the paper
-3. **Resume Livnium-native training** to epoch 20 (Priority 5a) — already almost there
-4. **Draft Section 4 of the paper** — the core discovery section, while results are fresh
+The current result is strong but has one vulnerability: **single-seed validation**.
+A serious reader's first question will be: "Did the network recover this law consistently, or was it one lucky checkpoint?"
+
+The equivalent of a "hard, undeniable verification test" for this work is:
+
+**Multi-seed replication** — train 3 independent runs from scratch, show grad-V replaces the MLP in all of them. That turns "interesting finding" into "reproducible law."
+
+Ranked by impact on credibility:
+
+1. **Multi-seed replication** (Priority 1b) — does the grad-V collapse hold across independent seeds? This is the #1 gap called out in the paper's own limitations section. If yes across 3 seeds, the claim becomes structural, not incidental.
+
+2. **Cross-dataset transfer** (new) — run the same grad-V replacement on MultiNLI. If the recovered law holds on out-of-distribution data, it's not a SNLI artifact. Your paper already lists this as future work.
+
+3. **Trajectory identity check** (new) — not just same accuracy, but same basin decisions. For each sample, does learned-updater and grad-V land in the same basin at step L? If agreement is >95%, the two are functionally identical, not just numerically close.
+
+4. **Speed/compression table** (Priority 2 hint) — replacing 1.2M-parameter MLP with closed-form ∇V is a free compression win. One table: parameters, FLOPs per step, latency. Makes the practical case concrete.
+
+5. **One clear figure** — learned updater vs grad-V: same early motion, same fixed-point collapse. The tunnel test is already this, but one visual that shows both trajectories overlaid would be undeniable.
+
+**Bottom line:** the next eyebrow-raiser is exact reproducibility of the recovered law across runs and datasets, not a new experiment type.
+
+---
+
+## Immediate Next Steps (tomorrow)
+
+1. **Multi-seed replication** — train 2 more independent BERT-joint runs (different seeds), run grad-V on each, check if law holds. This is the single highest-leverage experiment.
+2. **Trajectory identity check** — compare basin decisions between full and grad-V on full dev set. One number: % samples where both land in same basin.
+3. **Run full dev set grad-V** (Priority 1a) — already done (9,842 samples, 82.21% vs 82.05%). ✅
+4. **Plot energy descent curves** for 10 examples (Priority 2b) — strongest visual for the paper.
 
 ---
 
