@@ -105,10 +105,7 @@ def encode_samples(encoder, raw, device, batch_size=64):
 
 @torch.no_grad()
 def run_full(engine, h0):
-    h = h0.clone()
-    for _ in range(engine.num_layers):
-        h = engine.step(h)
-    return h
+    return engine.collapse(h0)[0]
 
 
 @torch.no_grad()
