@@ -45,17 +45,18 @@
 
 % ═══════════════════════════════════════════════════════════════════════════
 \begin{abstract}
-We train an iterative classification head for natural language inference
-in which a hidden state evolves through multiple update steps before
-label readout. The update is implemented as a learned MLP (1.2M parameters),
-trained end-to-end on SNLI.
+We show that a trained neural update in an iterative NLI classifier
+can be removed and replaced with a closed-form energy gradient---with
+no retraining and no loss in performance (82.21\% vs 82.05\% on SNLI
+dev, $n=9{,}842$).
 
-We find that the learned update is unnecessary. Replacing the trained MLP
-with the analytical gradient of an energy function over anchor cosine
-similarities,
+We train an iterative classification head in which a hidden state
+evolves through multiple update steps before label readout, implemented
+as a learned MLP (1.2M parameters) trained end-to-end on SNLI.
+We find that this MLP is unnecessary. Replacing it with the analytical
+gradient of an energy function over anchor cosine similarities,
 $V(\vech) = -\lse(\beta \cdot \cos(\vech, \anchor{k}))$,
-produces identical performance on the full SNLI dev set
-(82.21\% vs 82.05\%; $n=9{,}842$) without retraining. The trained
+produces identical performance without retraining. The trained
 network had converged to performing gradient descent on a simple,
 interpretable energy landscape---a result verified by ablation, not
 assumed by design.
@@ -82,6 +83,10 @@ through a sequence of learned updates before classification, guided by
 anchor vectors that define label-specific basins in representation space.
 
 The key finding is that the learned update is not required.
+
+We verify this by deleting the trained MLP entirely and replacing it
+with the analytical gradient of an energy function---no retraining,
+no accuracy loss.
 
 We train such a system on SNLI with a 1.2M-parameter MLP as the update
 rule. After training, we replace the MLP with the analytical gradient of
@@ -309,7 +314,8 @@ The system \emph{is} a gradient flow on $V(h)$.}
 \label{tab:collapse}
 \end{table}
 
-The key finding is in Table~\ref{tab:collapse}: the analytical gradient
+The key result is that removing the learned MLP does not degrade
+performance. Table~\ref{tab:collapse} shows the analytical gradient
 of Eq.~\ref{eq:energy} matches the trained system. On the full dev set
 ($n=9{,}842$), Grad-V actually \emph{outperforms} the trained system by
 +0.16pp overall and +1.02pp on neutral recall. The learned MLP
@@ -325,7 +331,7 @@ function over anchor similarities---a natural measure of semantic basin
 proximity. The system learned to perform gradient descent on this energy
 without being told to.
 
-\subsection{Stability Across $\beta$}
+\subsection{Stability Across \texorpdfstring{$\beta$}{beta}}
 
 We swept $\beta \in \{0.5, 1, 2, 5, 10, 20, 50\}$ at $\alpha = 0.2$.
 All values within $\beta \in [1, 50]$ produce accuracy within $\pm 1\%$
@@ -482,11 +488,11 @@ input-specific information after step 3---the final state is
 input-agnostic.
 
 \paragraph{Energy signature.}
-Correctly classified samples show mean energy descent
-$\Delta V = +0.046$ (ascending---moving toward lower-energy basins),
-while error samples show $\Delta V = -0.002$ (flat---stuck at the
-fixed point). The dynamics are contracting for correct predictions and
-stagnant for errors.
+Correctly classified samples show mean energy descent $\Delta V = +0.046$
+(ascending---moving toward lower-energy basins), while error samples
+show $\Delta V = -0.002$ (flat---stuck at the fixed point).
+The dynamics are contracting for correct predictions and stagnant
+for errors.
 
 \paragraph{Implication.}
 The accuracy bottleneck is not the classification head or the energy
@@ -529,7 +535,7 @@ structural feature of the anchor geometry.
 \section{Discussion}
 \label{sec:discussion}
 
-\subsection{Why Does the MLP Learn $\nabla V$?}
+\subsection{Why Does the MLP Learn \texorpdfstring{$\nabla V$}{grad V}?}
 
 The trained collapse rule (Eq.~\ref{eq:trained_update}) uses
 cosine-magnitude forces with Euclidean-radial directions---a
@@ -541,7 +547,7 @@ forces, effectively rotating the force field toward the true gradient.
 The end-to-end training signal (cross-entropy on the final label)
 provides sufficient pressure to discover this correction.
 
-\subsection{What Is the Energy $V(h)$?}
+\subsection{What Is the Energy \texorpdfstring{$V(h)$}{V(h)}?}
 
 The energy $V(h) = -\lse(\beta \cdot \cos(h, \anchor{k}))$ is the
 negative log-partition function of a Boltzmann distribution over anchor
