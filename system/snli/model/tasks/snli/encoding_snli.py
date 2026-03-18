@@ -254,6 +254,358 @@ class LlamaCppBERTSNLIEncoder(nn.Module):
         )
 
 
+class CrossEncoderBERTSNLIEncoder(nn.Module):
+    """
+    Cross-encoder BERT for NLI — the correct architecture for relational reasoning.
+
+    Feeds BOTH sentences into BERT simultaneously:
+        [CLS] premise [SEP] hypothesis [SEP]
+
+    BERT's attention heads can now attend across sentences — "man" in the premise
+    can directly attend to "dog" in the hypothesis. Role structure, negation,
+    quantifier mismatches — all visible inside the transformer, not lost before
+    the collapse engine sees anything.
+
+    Returns:
+        h0  = joint CLS token  — has seen both sentences via cross-attention
+        v_p = mean pool of premise tokens  — for SNLIHead geometry features
+        v_h = mean pool of hypothesis tokens — for SNLIHead geometry features
+
+    One BERT forward pass. No separate encodings. No information loss.
+
+    Compare to BERTSNLIEncoder (bi-encoder):
+        BERTSNLIEncoder:       BERT(prem) → v_p
+                               BERT(hyp)  → v_h
+                               h0 = v_h - v_p   ← relation recovered post-hoc
+        CrossEncoderBERTSNLIEncoder:
+                               BERT([prem SEP hyp]) → h0, v_p, v_h  ← relation built-in
+
+    This is how SOTA NLI models (>90%) work.
+    """
+
+    is_bert: bool = True
+
+    def __init__(self, model_name: str = "bert-base-uncased", freeze: bool = False):
+        super().__init__()
+        from transformers import BertModel, BertTokenizerFast
+        self.tokenizer = BertTokenizerFast.from_pretrained(model_name)
+        self.bert = BertModel.from_pretrained(model_name)
+        self.dim = self.bert.config.hidden_size  # 768
+        self.pad_idx = self.tokenizer.pad_token_id
+        if freeze:
+            for p in self.bert.parameters():
+                p.requires_grad_(False)
+
+    def build_initial_state(
+        self,
+        premises: list,
+        hypotheses: list,
+        add_noise: bool = True,
+        max_len: int = 256,   # longer — holds premise + SEP + hypothesis
+        device=None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Joint encoding: [CLS] premise [SEP] hypothesis [SEP]
+
+        Returns:
+            h0  : (B, dim) — joint CLS, cross-attended
+            v_p : (B, dim) — mean pool of premise tokens (token_type_id=0, excl CLS/SEP)
+            v_h : (B, dim) — mean pool of hypothesis tokens (token_type_id=1, excl SEP)
+        """
+        if device is None:
+            device = next(self.bert.parameters()).device
+
+        # Tokenize jointly — HuggingFace builds:
+        #   input_ids:       [CLS] p1..pN [SEP] h1..hM [SEP]
+        #   token_type_ids:   0    0..0    0     1..1    1
+        enc = self.tokenizer(
+            premises,
+            hypotheses,
+            padding=True,
+            truncation=True,
+            max_length=max_len,
+            return_tensors="pt",
+            return_token_type_ids=True,
+        )
+        enc = {k: v.to(device) for k, v in enc.items()}
+
+        outputs = self.bert(**enc)
+        hidden = outputs.last_hidden_state   # (B, seq_len, dim)
+
+        # h0 = joint CLS — entire cross-attended representation
+        h0 = hidden[:, 0, :]                 # (B, dim)
+
+        # Segment-aware mean pooling for SNLIHead geometry features.
+        # token_type_ids=0 → premise side (positions 1..N, skip CLS at 0)
+        # token_type_ids=1 → hypothesis side (positions N+2..M+2, skip final SEP)
+        token_type_ids = enc["token_type_ids"]   # (B, seq_len)
+        attention_mask = enc["attention_mask"]   # (B, seq_len)
+
+        # v_p: premise tokens (type=0), excluding position 0 (CLS)
+        prem_mask = (token_type_ids == 0) & (attention_mask == 1)
+        prem_mask[:, 0] = False              # drop CLS from premise mean
+        prem_vecs = hidden * prem_mask.unsqueeze(-1).float()
+        v_p = prem_vecs.sum(dim=1) / prem_mask.float().sum(dim=1, keepdim=True).clamp(min=1)
+
+        # v_h: hypothesis tokens (type=1)
+        hyp_mask = (token_type_ids == 1) & (attention_mask == 1)
+        hyp_vecs = hidden * hyp_mask.unsqueeze(-1).float()
+        v_h = hyp_vecs.sum(dim=1) / hyp_mask.float().sum(dim=1, keepdim=True).clamp(min=1)
+
+        if add_noise:
+            h0 = h0 + 0.01 * torch.randn_like(h0)
+
+        return h0, v_p, v_h
+
+
+class LivniumNativeEncoder(nn.Module):
+    """
+    Livnium-native sentence encoder — no BERT, no pretrained weights.
+
+    Trained end-to-end against the Livnium attractor objective.
+    Maps raw text directly into the Livnium coordinate space using a small
+    transformer (default: ~3M params vs BERT's 110M).
+
+    This is Stage 4 of the Livnium pipeline: once the BERT-based model has
+    discovered the attractor geometry, this encoder is trained to reproduce
+    that geometry from scratch — without any external language model.
+
+    Architecture:
+        - Token embedding table (vocab_size × dim)
+        - Sinusoidal positional encoding (not learned)
+        - Segment embeddings (0 = premise, 1 = hypothesis, for cross-encoding)
+        - N-layer transformer encoder (pre-norm, batch_first)
+        - CLS token output as h0 (cross-encoder) or v_h - v_p (bi-encoder)
+
+    Cross-encoder mode (default, use_cross_encoder=True):
+        [CLS] premise [SEP] hypothesis [SEP] → joint encoding
+        - Attention spans both sentences, like CrossEncoderBERTSNLIEncoder
+        - Fixes role-reversal failures ("man bites dog" ≠ "dog bites man")
+        - h0 = joint CLS token
+
+    Bi-encoder mode (use_cross_encoder=False):
+        Encode premise and hypothesis independently, h0 = v_h - v_p.
+        Faster but loses cross-sentence signal.
+
+    Parameter count at dim=64, 2 layers:
+        Transformer (all layers)  ~100K
+        Embeddings (50K × 64)     ~3.2M
+        Total                     ~3.3M   (33x smaller than BERT)
+
+    Usage in train.py:
+        python train.py --encoder-type livnium \\
+                        --livnium-dim 64 \\
+                        --livnium-layers 2 \\
+                        --livnium-nhead 4 \\
+                        --livnium-cross-encoder \\
+                        ...
+
+    Anchor initialisation (recommended):
+        Use extract_livnium_basis.py to project trained BERT+Livnium anchors
+        into livnium_dim space, then pass --livnium-basis to train.py.
+        This seeds the collapse engine with meaningful anchor positions
+        instead of random initialisations.
+    """
+
+    is_bert: bool = False  # uses token IDs — train_epoch passes prem_ids/hyp_ids
+
+    def __init__(
+        self,
+        vocab_size: int,
+        dim: int = 64,
+        pad_idx: int = 0,
+        num_layers: int = 2,
+        nhead: int = 4,
+        ff_mult: int = 4,
+        dropout: float = 0.1,
+        max_seq_len: int = 256,
+        use_cross_encoder: bool = True,
+    ):
+        import math
+        super().__init__()
+        self.dim = dim
+        self.pad_idx = pad_idx
+        self.use_cross_encoder = use_cross_encoder
+        self._math = math
+
+        # Token embeddings
+        self.embed = nn.Embedding(vocab_size, dim, padding_idx=pad_idx)
+
+        # Segment embeddings — 0=premise, 1=hypothesis (cross-encoder only)
+        if use_cross_encoder:
+            self.segment_embed = nn.Embedding(2, dim)
+
+        # Sinusoidal positional encoding (fixed, not learned — saves params)
+        self.register_buffer('pos_enc', self._make_sinusoidal(max_seq_len, dim))
+
+        # Learnable special tokens
+        self.cls_token = nn.Parameter(torch.randn(1, 1, dim) * 0.02)
+        if use_cross_encoder:
+            self.sep_token = nn.Parameter(torch.randn(1, 1, dim) * 0.02)
+
+        # Transformer encoder — pre-norm (more stable training from scratch)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=dim,
+            nhead=nhead,
+            dim_feedforward=dim * ff_mult,
+            dropout=dropout,
+            batch_first=True,
+            norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.norm = nn.LayerNorm(dim)
+
+        # Weight initialisation — small uniform for embeddings, standard for transformer
+        nn.init.uniform_(self.embed.weight, -0.05, 0.05)
+        if use_cross_encoder:
+            nn.init.uniform_(self.segment_embed.weight, -0.01, 0.01)
+
+    @staticmethod
+    def _make_sinusoidal(max_len: int, dim: int) -> torch.Tensor:
+        """Standard sinusoidal positional encoding. Shape: (1, max_len, dim)."""
+        import math
+        pe = torch.zeros(max_len, dim)
+        pos = torch.arange(max_len).unsqueeze(1).float()
+        div = torch.exp(torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim))
+        pe[:, 0::2] = torch.sin(pos * div)
+        if dim % 2 == 0:
+            pe[:, 1::2] = torch.cos(pos * div)
+        else:
+            pe[:, 1::2] = torch.cos(pos * div[:-1])
+        return pe.unsqueeze(0)  # (1, max_len, dim)
+
+    def _encode_single(self, token_ids: torch.Tensor) -> torch.Tensor:
+        """
+        Encode a single sentence batch → CLS representation.
+
+        Args:
+            token_ids: (B, L) long tensor
+
+        Returns:
+            (B, dim) — CLS token output after transformer
+        """
+        B, L = token_ids.shape
+        x = self.embed(token_ids)                            # (B, L, dim)
+        x = x + self.pos_enc[:, :L, :]                      # add positions
+
+        # Prepend CLS token
+        cls = self.cls_token.expand(B, -1, -1)              # (B, 1, dim)
+        x = torch.cat([cls, x], dim=1)                      # (B, L+1, dim)
+
+        # Padding mask: True = ignore that position
+        # CLS is always attended; pad tokens are masked out
+        cls_valid = torch.zeros(B, 1, dtype=torch.bool, device=token_ids.device)
+        pad_mask = torch.cat([cls_valid, token_ids == self.pad_idx], dim=1)
+
+        x = self.transformer(x, src_key_padding_mask=pad_mask)
+        x = self.norm(x)
+        return x[:, 0, :]                                    # CLS output (B, dim)
+
+    def _encode_joint(
+        self,
+        prem_ids: torch.Tensor,
+        hyp_ids: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Cross-encode: [CLS] premise [SEP] hypothesis [SEP]
+
+        BERT's cross-attention trick at 33x fewer parameters.
+        Attention can span both sentences — role structure, negation,
+        quantifier mismatches are all visible inside the transformer.
+
+        Returns:
+            h0  : (B, dim) — joint CLS, cross-attended
+            v_p : (B, dim) — mean pool of premise tokens (excl padding)
+            v_h : (B, dim) — mean pool of hypothesis tokens (excl padding)
+        """
+        B = prem_ids.shape[0]
+        L_p = prem_ids.shape[1]
+        L_h = hyp_ids.shape[1]
+        device = prem_ids.device
+
+        # Embed + positional encoding
+        e_p = self.embed(prem_ids) + self.pos_enc[:, :L_p, :]     # (B, L_p, dim)
+        e_h = self.embed(hyp_ids) + self.pos_enc[:, :L_h, :]      # (B, L_h, dim)
+
+        # Segment embeddings mark which sentence each token belongs to
+        zeros = torch.zeros(B, L_p, dtype=torch.long, device=device)
+        ones  = torch.ones(B, L_h, dtype=torch.long, device=device)
+        e_p = e_p + self.segment_embed(zeros)
+        e_h = e_h + self.segment_embed(ones)
+
+        # Special tokens (expanded to batch)
+        cls = self.cls_token.expand(B, -1, -1)   # (B, 1, dim)
+        sep = self.sep_token.expand(B, -1, -1)   # (B, 1, dim)
+
+        # Full sequence: [CLS] premise [SEP] hypothesis [SEP]
+        # positions:      0     1..L_p  L_p+1 L_p+2..L_p+1+L_h  L_p+2+L_h
+        x = torch.cat([cls, e_p, sep, e_h, sep], dim=1)   # (B, 1+L_p+1+L_h+1, dim)
+
+        # Padding mask — False = attend, True = ignore
+        false1 = torch.zeros(B, 1, dtype=torch.bool, device=device)
+        prem_pad = (prem_ids == self.pad_idx)               # (B, L_p)
+        hyp_pad  = (hyp_ids  == self.pad_idx)               # (B, L_h)
+        pad_mask = torch.cat([false1, prem_pad, false1, hyp_pad, false1], dim=1)
+
+        # Transformer forward
+        x = self.transformer(x, src_key_padding_mask=pad_mask)
+        x = self.norm(x)
+
+        # Extract outputs
+        h0 = x[:, 0, :]                                    # joint CLS  (B, dim)
+
+        # v_p — mean of premise region, excluding padding
+        prem_region = x[:, 1:1+L_p, :]                    # (B, L_p, dim)
+        prem_valid  = (~prem_pad).float().unsqueeze(-1)    # (B, L_p, 1)
+        v_p = (prem_region * prem_valid).sum(1) / prem_valid.sum(1).clamp(min=1)
+
+        # v_h — mean of hypothesis region, excluding padding
+        hyp_start  = 1 + L_p + 1
+        hyp_region = x[:, hyp_start:hyp_start+L_h, :]     # (B, L_h, dim)
+        hyp_valid  = (~hyp_pad).float().unsqueeze(-1)
+        v_h = (hyp_region * hyp_valid).sum(1) / hyp_valid.sum(1).clamp(min=1)
+
+        return h0, v_p, v_h
+
+    def build_initial_state(
+        self,
+        prem_ids: torch.Tensor,
+        hyp_ids: torch.Tensor,
+        add_noise: bool = True,
+        **kwargs,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Build h0, v_p, v_h from token ID tensors.
+
+        Cross-encoder (default): h0 is the joint CLS token — attends across both.
+        Bi-encoder: h0 = v_h - v_p, sentences encoded independently.
+        """
+        if self.use_cross_encoder:
+            h0, v_p, v_h = self._encode_joint(prem_ids, hyp_ids)
+        else:
+            v_p = self._encode_single(prem_ids)
+            v_h = self._encode_single(hyp_ids)
+            h0 = v_h - v_p
+
+        if add_noise:
+            h0 = h0 + 0.01 * torch.randn_like(h0)
+        return h0, v_p, v_h
+
+    def param_count(self) -> dict:
+        """Breakdown of parameter counts by component."""
+        embed_params = sum(p.numel() for p in self.embed.parameters())
+        transformer_params = sum(p.numel() for p in self.transformer.parameters())
+        other = sum(p.numel() for n, p in self.named_parameters()
+                    if 'embed' not in n and 'transformer' not in n)
+        total = sum(p.numel() for p in self.parameters())
+        return {
+            'embeddings': embed_params,
+            'transformer': transformer_params,
+            'other': other,
+            'total': total,
+        }
+
+
 class BERTSNLIEncoder(nn.Module):
     """
     Frozen BERT encoder for A/B comparison against bag-of-words.

@@ -39,33 +39,45 @@ sys.path.insert(0, str(_here))
 sys.path.insert(0, str(_repo))
 
 from core import VectorCollapseEngine, BasinField
-from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, BERTSNLIEncoder, LlamaCppBERTSNLIEncoder, SNLIHead, LinearSNLIHead
+from tasks.snli import SNLIEncoder, PretrainedSNLIEncoder, QuantumSNLIEncoder, BERTSNLIEncoder, CrossEncoderBERTSNLIEncoder, LlamaCppBERTSNLIEncoder, LivniumNativeEncoder, SNLIHead, BinaryHead, LinearSNLIHead
 from embed.text_encoder import PretrainedTextEncoder, QuantumTextEncoder
 from utils.vocab import build_vocab_from_snli
 
 
 class SNLIDataset(Dataset):
     """SNLI dataset."""
-    
-    def __init__(self, samples: List[Dict], vocab=None, max_len: int = 128, encode_fn=None):
+
+    def __init__(self, samples: List[Dict], vocab=None, max_len: int = 128, encode_fn=None,
+                 binary_target: Optional[str] = None):
         """
         Args:
             samples: SNLI examples
             vocab: vocabulary object with .encode(...) (optional if encode_fn supplied)
             max_len: max sequence length for padding/truncation
             encode_fn: callable(text: str, max_len: int) -> List[int] (overrides vocab.encode)
+            binary_target: if set (e.g. 'entailment'), remap labels to binary:
+                           target class → 1, everything else → 0.
+                           Used for specialist training.
         """
         self.samples = samples
         self.vocab = vocab
         self.max_len = max_len
         self.encode_fn = encode_fn
-        
-        # Label mapping
-        self.label_map = {
-            'entailment': 0,
-            'contradiction': 1,
-            'neutral': 2
-        }
+        self.binary_target = binary_target
+
+        if binary_target is not None:
+            # Binary label map: target=1, all others=0
+            all_labels = ['entailment', 'contradiction', 'neutral']
+            if binary_target not in all_labels:
+                raise ValueError(f"binary_target must be one of {all_labels}, got '{binary_target}'")
+            self.label_map = {lbl: (1 if lbl == binary_target else 0) for lbl in all_labels}
+        else:
+            # Standard 3-class label mapping
+            self.label_map = {
+                'entailment': 0,
+                'contradiction': 1,
+                'neutral': 2
+            }
         if self.vocab is None and self.encode_fn is None:
             raise ValueError("SNLIDataset needs either a vocab or encode_fn")
     
@@ -283,6 +295,7 @@ def evaluate(
     *,
     use_dynamic_basins: bool = False,
     basin_field: Optional[BasinField] = None,
+    num_classes: int = 3,
 ):
     """Evaluate model."""
     model.eval()
@@ -327,11 +340,12 @@ def evaluate(
     
     accuracy = correct / total if total > 0 else 0.0
     
-    # Confusion matrix
-    confusion = np.zeros((3, 3), dtype=int)
+    # Confusion matrix (size depends on num_classes: 3 for full model, 2 for specialists)
+    confusion = np.zeros((num_classes, num_classes), dtype=int)
     for p, l in zip(all_predictions, all_labels):
-        confusion[l, p] += 1
-    
+        if 0 <= l < num_classes and 0 <= p < num_classes:
+            confusion[l, p] += 1
+
     return accuracy, confusion
 
 
@@ -385,13 +399,53 @@ def main():
                        help='Class weight multiplier for neutral to emphasize that class')
     parser.add_argument('--neutral-oversample', type=float, default=1.0,
                        help='>1.0 to oversample neutral examples (e.g., 1.5)')
-    parser.add_argument('--encoder-type', choices=['legacy', 'pretrained', 'quantum', 'bert', 'llamacpp'], default='pretrained',
-                       help='Sentence encoder: pretrained (pretrained embeddings), legacy (vocab mean-pool), '
-                            'bert (frozen bert-base-uncased via HuggingFace, dim=768), '
-                            'llamacpp (frozen BERT GGUF via llama.cpp, dim=768, fast CPU inference). '
+    parser.add_argument('--encoder-type', choices=['legacy', 'pretrained', 'quantum', 'bert', 'crossbert', 'llamacpp', 'livnium'], default='pretrained',
+                       help='Sentence encoder type. '
+                            'bert: bi-encoder — BERT(premise) and BERT(hypothesis) encoded separately. '
+                            'crossbert: cross-encoder — BERT([premise SEP hypothesis]) jointly. '
+                            '  Cross-encoder lets BERT attend across both sentences simultaneously, '
+                            '  fixing role-reversal and relational reasoning failures. '
+                            '  This is how SOTA NLI models work. Recommended over bert. '
+                            'llamacpp: frozen BERT GGUF via llama.cpp (fast CPU inference). '
+                            'livnium: Livnium-native encoder — no BERT, trained end-to-end in '
+                            '  Livnium attractor space. Small transformer (~3M params). '
+                            '  Use --livnium-basis to initialise anchors from a trained checkpoint. '
                             '"quantum" accepted as alias for "pretrained" for checkpoint compatibility.')
     parser.add_argument('--bert-model', type=str, default='bert-base-uncased',
                        help='HuggingFace model name for BERT encoder (default: bert-base-uncased)')
+    parser.add_argument('--bert-lr', type=float, default=2e-5,
+                       help='Learning rate for BERT weights in joint training (default 2e-5). '
+                            'Much smaller than --lr because BERT weights are pretrained and fragile. '
+                            'Only used with --encoder-type bert (without --freeze-encoder). '
+                            'Collapse engine and head always use --lr.')
+    # ── Livnium-native encoder args ───────────────────────────────────────────
+    parser.add_argument('--livnium-dim', type=int, default=64,
+                       help='Embedding dimension for the Livnium-native encoder. '
+                            'Collapse engine and head will also use this dimension. '
+                            'Default: 64 (vs BERT\'s 768 — 12x smaller per dimension).')
+    parser.add_argument('--livnium-layers', type=int, default=2,
+                       help='Number of transformer layers in the Livnium-native encoder. '
+                            'Default: 2  (~100K transformer params at dim=64).')
+    parser.add_argument('--livnium-nhead', type=int, default=4,
+                       help='Number of attention heads in the Livnium-native encoder. '
+                            'Must divide --livnium-dim evenly. Default: 4.')
+    parser.add_argument('--livnium-ff-mult', type=int, default=4,
+                       help='Feedforward multiplier for the Livnium-native encoder. '
+                            'FFN hidden dim = livnium_dim × ff_mult. Default: 4.')
+    parser.add_argument('--livnium-cross-encoder', action='store_true', default=True,
+                       help='Use cross-encoder mode for the Livnium-native encoder: '
+                            '[CLS] premise [SEP] hypothesis [SEP]. '
+                            'Attention spans both sentences — fixes role-reversal. '
+                            'Enabled by default. Pass --no-livnium-cross-encoder to use bi-encoder.')
+    parser.add_argument('--no-livnium-cross-encoder', dest='livnium_cross_encoder', action='store_false',
+                       help='Use bi-encoder mode: encode premise and hypothesis separately, '
+                            'h0 = v_h - v_p. Faster but loses cross-sentence signal.')
+    parser.add_argument('--livnium-basis', type=str, default=None,
+                       help='Path to a Livnium basis file produced by extract_livnium_basis.py. '
+                            'When provided, the collapse engine anchors (E, N, C) are initialised '
+                            'from the projected anchors in the basis file instead of randomly. '
+                            'The projection matrix is NOT used — the encoder learns freely. '
+                            'This seeds the geometry so training converges faster.')
     parser.add_argument('--llamacpp-model', type=str, default=None,
                        help='Path to BERT GGUF file for --encoder-type llamacpp. '
                             'Download from: https://huggingface.co/ggml-org/bert-base-uncased-Q8_0-GGUF')
@@ -500,6 +554,28 @@ def main():
     parser.add_argument('--freeze-encoder', action='store_true',
                        help='Freeze encoder weights. Only collapse engine and head '
                             'are trained. Used for A/B experiment isolating encoder effect.')
+    # ── Specialist / binary training ─────────────────────────────────────────
+    parser.add_argument('--binary-label', choices=['entailment', 'contradiction', 'neutral'],
+                       default=None,
+                       help='Train a binary specialist model. '
+                            'Labels are remapped: target class → 1, others → 0. '
+                            'The collapse engine learns a clean geometry for one class. '
+                            'Used in Stage 1 of the 3-specialist pipeline.')
+    parser.add_argument('--resume', type=str, default=None,
+                       help='Path to latest_checkpoint.pt to resume training from. '
+                            'Restores model weights, optimizer state, basin field, '
+                            'best_acc, and epoch counter so training continues exactly '
+                            'where it left off. Use the same --epochs as the original run '
+                            'or set higher to extend.')
+    parser.add_argument('--init-from-specialists', type=str, default=None,
+                       help='Comma-separated paths to 3 specialist checkpoints: '
+                            'E_ckpt,C_ckpt,N_ckpt (in that order). '
+                            'Each specialist\'s primary anchor (anchor_entail) '
+                            'seeds the corresponding anchor in the full model: '
+                            '  E-specialist → anchor_entail '
+                            '  C-specialist → anchor_contra '
+                            '  N-specialist → anchor_neutral. '
+                            'Used in Stage 2 of the 3-specialist pipeline.')
 
     args = parser.parse_args()
 
@@ -508,11 +584,21 @@ def main():
     _physics.BARRIER = args.barrier
     print(f"Livnium BARRIER = {args.barrier}  (default 0.38)")
 
-    # Device — CPU is fastest for dynamic basin training (basin field is CPU-bound;
-    # MPS causes constant CPU↔GPU transfers that kill throughput ~20x).
-    # Use CUDA only if available. MPS intentionally skipped for this pipeline.
+    # Device selection:
+    # - llamacpp encoder: CPU only. Basin field is the bottleneck; MPS causes
+    #   constant CPU↔GPU transfers (every cache lookup returns a CPU tensor)
+    #   that kill throughput ~20x. llama.cpp also runs outside PyTorch entirely.
+    # - bert encoder (joint training): MPS is safe and fast. BERT forward+backward
+    #   (110M params) is the bottleneck; everything stays on GPU — no transfers.
+    #   5-10x speedup on Apple Silicon vs CPU.
     if torch.cuda.is_available():
         device = torch.device('cuda')
+    elif (
+        args.encoder_type in ('bert', 'crossbert', 'livnium')
+        and hasattr(torch.backends, 'mps')
+        and torch.backends.mps.is_available()
+    ):
+        device = torch.device('mps')
     else:
         device = torch.device('cpu')
     print(f"Using device: {device}")
@@ -526,7 +612,18 @@ def main():
     vocab = None
     vocab_id_to_token = None
 
-    if args.encoder_type == 'llamacpp':
+    if args.encoder_type == 'livnium':
+        # Livnium-native encoder uses its own smaller dim, not 768.
+        # dim is set here so it propagates to the collapse engine and head.
+        print(f"Livnium-native encoder: dim={args.livnium_dim}, "
+              f"layers={args.livnium_layers}, nhead={args.livnium_nhead}, "
+              f"cross={'yes' if args.livnium_cross_encoder else 'no (bi-encoder)'}")
+        # Build vocab from SNLI — same as legacy encoder
+        print("Building vocabulary ...")
+        vocab = build_vocab_from_snli(train_samples, min_count=2)
+        print(f"Vocabulary size: {len(vocab)}")
+        vocab_id_to_token = vocab.id_to_token_list()
+    elif args.encoder_type == 'llamacpp':
         # llama.cpp BERT — tokenizes internally, no encode_fn needed.
         # dim auto-detected from the GGUF (768 for bert-base-uncased).
         if not args.llamacpp_model:
@@ -574,8 +671,29 @@ def main():
         print(f"Vocabulary size: {len(vocab)}")
         vocab_id_to_token = vocab.id_to_token_list()
     
+    # ── Resolve dim BEFORE building any models ───────────────────────────────
+    # BERT-based encoders always produce 768-dim vectors.
+    # Livnium-native encoder uses --livnium-dim (default 64).
+    # This must happen here — before VectorCollapseEngine is created —
+    # otherwise the engine gets built with the default dim=256 and
+    # mismatches the encoder output and any checkpoint being resumed.
+    if args.encoder_type in ('bert', 'crossbert'):
+        args.dim = 768
+    elif args.encoder_type == 'livnium':
+        args.dim = args.livnium_dim
+
+    # Binary mode: remap labels and report
+    if args.binary_label:
+        print(f"\n[Specialist mode] Binary target: '{args.binary_label}' → label 1 | others → label 0")
+        num_classes = 2
+    else:
+        num_classes = 3
+
     # Create datasets
-    train_dataset = SNLIDataset(train_samples, vocab, max_len=args.max_len, encode_fn=pretrained_encode_fn)
+    train_dataset = SNLIDataset(
+        train_samples, vocab, max_len=args.max_len, encode_fn=pretrained_encode_fn,
+        binary_target=args.binary_label,
+    )
     # Optional oversampling of neutral class
     sampler = None
     if args.neutral_oversample > 1.0:
@@ -595,7 +713,10 @@ def main():
     dev_loader = None
     if args.snli_dev:
         dev_samples = load_snli_data(Path(args.snli_dev))
-        dev_dataset = SNLIDataset(dev_samples, vocab, max_len=args.max_len, encode_fn=pretrained_encode_fn)
+        dev_dataset = SNLIDataset(
+            dev_samples, vocab, max_len=args.max_len, encode_fn=pretrained_encode_fn,
+            binary_target=args.binary_label,
+        )
         dev_loader = DataLoader(dev_dataset, batch_size=args.batch_size, shuffle=False)
         print(f"Loaded {len(dev_samples)} dev samples")
     
@@ -623,14 +744,44 @@ def main():
         strength_null=args.strength_null,
         adaptive_metric=args.adaptive_metric,
     ).to(device)
-    if args.encoder_type == 'llamacpp':
+    if args.encoder_type == 'livnium':
+        # Livnium-native encoder — pure PyTorch, trains end-to-end in Livnium space.
+        # MPS is safe here: everything stays on GPU, no CPU↔MPS transfers.
+        encoder = LivniumNativeEncoder(
+            vocab_size=len(vocab),
+            dim=args.livnium_dim,
+            pad_idx=vocab.pad_idx,
+            num_layers=args.livnium_layers,
+            nhead=args.livnium_nhead,
+            ff_mult=args.livnium_ff_mult,
+            dropout=0.1,
+            max_seq_len=args.max_len * 2 + 3,  # prem + hyp + CLS + 2×SEP
+            use_cross_encoder=args.livnium_cross_encoder,
+        ).to(device)
+        param_info = encoder.param_count()
+        print(f"  LivniumNativeEncoder params: {param_info['total']:,}  "
+              f"(embed={param_info['embeddings']:,}  transformer={param_info['transformer']:,})")
+    elif args.encoder_type == 'llamacpp':
         # Reuse the probe encoder we already created above (avoid double-loading the GGUF).
         encoder = _probe_encoder
         encoder.to(device)
+    elif args.encoder_type == 'crossbert':
+        # Cross-encoder: [CLS] premise [SEP] hypothesis [SEP] → joint BERT
+        # BERT attention spans both sentences — fixes role reversal and relational
+        # reasoning failures that bi-encoder misses. This is the SOTA NLI approach.
+        print(f"Loading cross-encoder BERT ({args.bert_model}) — joint premise+hypothesis encoding ...")
+        args.dim = 768
+        encoder = CrossEncoderBERTSNLIEncoder(
+            model_name=args.bert_model,
+            freeze=args.freeze_encoder,
+        ).to(device)
     elif args.encoder_type == 'bert':
+        # Bi-encoder: BERT(premise) and BERT(hypothesis) separately.
+        # freeze=False here — joint training by default.
+        # Pass --freeze-encoder to fall back to frozen BERT (A/B baseline).
         encoder = BERTSNLIEncoder(
             model_name=args.bert_model,
-            freeze=True,
+            freeze=args.freeze_encoder,
         ).to(device)
     elif args.encoder_type in ('pretrained', 'quantum'):
         encoder = PretrainedSNLIEncoder(
@@ -644,46 +795,143 @@ def main():
             pad_idx=vocab.pad_idx,
         ).to(device)
 
-    # Head: attractor (full geometry) or linear (baseline probe)
-    if args.head_type == 'linear':
+    # Head: binary specialist, attractor (full geometry), or linear (baseline probe)
+    if args.binary_label:
+        head = BinaryHead(dim=args.dim).to(device)
+        print(f"Head: BinaryHead (specialist: {args.binary_label})")
+    elif args.head_type == 'linear':
         head = LinearSNLIHead(dim=args.dim).to(device)
         print("Head: LinearSNLIHead (baseline)")
     else:
         head = SNLIHead(dim=args.dim).to(device)
         print("Head: SNLIHead (attractor geometry)")
 
-    # Freeze encoder if requested (A/B experiment: isolates encoder effect)
-    # encoder.train() is kept intentionally — quantum encoder has no dropout/batchnorm
-    # so train/eval mode is identical. Only gradients are disabled.
+    # Freeze encoder if requested (A/B experiment: isolates encoder effect).
+    # For --encoder-type bert without --freeze-encoder, BERT trains jointly.
+    # For llamacpp/pretrained encoders, freeze_encoder is a no-op (no grad params).
     if args.freeze_encoder:
         for p in encoder.parameters():
             p.requires_grad_(False)
 
-    # Optimizer — excludes encoder params when frozen so Adam holds no stale references
-    optimizer = optim.Adam(
-        list(collapse_engine.parameters()) +
-        (list(encoder.parameters()) if not args.freeze_encoder else []) +
-        list(head.parameters()),
-        lr=args.lr,
+    # Optimizer — differential learning rates for joint BERT fine-tuning.
+    # BERT weights need a tiny lr (2e-5) to avoid catastrophic forgetting.
+    # Collapse engine + head are randomly initialised → use full --lr.
+    joint_bert = (
+        args.encoder_type in ('bert', 'crossbert')
+        and not args.freeze_encoder
+        and len(list(encoder.parameters())) > 0
     )
+    if joint_bert:
+        optimizer = optim.AdamW([
+            {'params': encoder.parameters(),        'lr': args.bert_lr, 'weight_decay': 0.01},
+            {'params': collapse_engine.parameters(),'lr': args.lr,      'weight_decay': args.weight_decay},
+            {'params': head.parameters(),           'lr': args.lr,      'weight_decay': args.weight_decay},
+        ])
+        print(f"Optimizer: AdamW  BERT lr={args.bert_lr}  engine+head lr={args.lr}  (joint training)")
+    else:
+        optimizer = optim.AdamW(
+            list(collapse_engine.parameters()) +
+            (list(encoder.parameters()) if not args.freeze_encoder else []) +
+            list(head.parameters()),
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+
+    # ── Specialist anchor initialisation ─────────────────────────────────────
+    if getattr(args, 'init_from_specialists', None):
+        spec_paths = [p.strip() for p in args.init_from_specialists.split(',')]
+        if len(spec_paths) != 3:
+            raise ValueError(
+                "--init-from-specialists expects exactly 3 comma-separated paths: E,C,N\n"
+                f"Got {len(spec_paths)}: {spec_paths}"
+            )
+        spec_labels = ['entailment', 'contradiction', 'neutral']
+        spec_anchor_attrs = ['anchor_entail', 'anchor_contra', 'anchor_neutral']
+        print("\n── Loading specialist checkpoints for anchor initialisation ──")
+        for spec_path, spec_lbl, anchor_attr in zip(spec_paths, spec_labels, spec_anchor_attrs):
+            ckpt = torch.load(spec_path, map_location=device, weights_only=False)
+            spec_state = ckpt['collapse_engine']
+            # Each specialist was trained with 'anchor_entail' as its primary anchor
+            primary_key = 'anchor_entail'
+            if primary_key not in spec_state:
+                print(f"  [WARN] {spec_lbl} specialist has no '{primary_key}' in checkpoint — skipping")
+                continue
+            src_vec = spec_state[primary_key].to(device)
+            if src_vec.shape != getattr(collapse_engine, anchor_attr).shape:
+                print(f"  [WARN] {spec_lbl} specialist anchor shape {src_vec.shape} "
+                      f"!= {anchor_attr} shape {getattr(collapse_engine, anchor_attr).shape} — skipping")
+                continue
+            with torch.no_grad():
+                getattr(collapse_engine, anchor_attr).copy_(src_vec)
+            print(f"  ✓  {spec_lbl} specialist → {anchor_attr}  (from {spec_path})")
+        print("── Specialist initialisation complete ──\n")
+
+    # ── Livnium basis anchor initialisation ──────────────────────────────────
+    # When a basis file is provided (produced by extract_livnium_basis.py),
+    # initialise the collapse engine's anchors from the projected versions
+    # of the BERT-space anchors. This gives the model a meaningful starting
+    # geometry instead of random anchor positions.
+    if getattr(args, 'livnium_basis', None) and args.encoder_type == 'livnium':
+        basis_path = Path(args.livnium_basis)
+        if not basis_path.exists():
+            print(f"  [WARN] --livnium-basis path not found: {basis_path}  — anchors will be random")
+        else:
+            print(f"\n── Loading Livnium basis for anchor initialisation: {basis_path} ──")
+            basis = torch.load(basis_path, map_location=device, weights_only=False)
+            basis_dim = basis['basis_dim']
+            if basis_dim != args.livnium_dim:
+                print(f"  [WARN] basis_dim={basis_dim} != livnium_dim={args.livnium_dim} — skipping anchor init")
+            else:
+                for anchor_attr in ('anchor_entail', 'anchor_contra', 'anchor_neutral'):
+                    if anchor_attr in basis:
+                        src = basis[anchor_attr].to(device)
+                        with torch.no_grad():
+                            getattr(collapse_engine, anchor_attr).copy_(src)
+                        print(f"  ✓ {anchor_attr} initialised from Livnium basis")
+            print(f"── Livnium basis initialisation complete ──\n")
 
     # Loss with optional class weighting and label smoothing
-    class_weights = torch.tensor([1.0, 1.0, args.neutral_weight], device=device, dtype=torch.float)
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.label_smoothing)
+    if args.binary_label:
+        # Binary cross-entropy: equal weight for both classes
+        criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+    else:
+        class_weights = torch.tensor([1.0, 1.0, args.neutral_weight], device=device, dtype=torch.float)
+        criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.label_smoothing)
 
     # Output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Resume from checkpoint ────────────────────────────────────────────────
+    start_epoch = 0
+    best_acc = 0.0
+    global_step = 0
+
+    if args.resume:
+        print(f"\nResuming from {args.resume} ...")
+        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
+        collapse_engine.load_state_dict(ckpt['collapse_engine'])
+        head.load_state_dict(ckpt['head'])
+        if 'encoder' in ckpt and ckpt['encoder']:
+            try:
+                encoder.load_state_dict(ckpt['encoder'])
+            except Exception as e:
+                print(f"  [WARN] Could not restore encoder weights: {e}")
+        if 'optimizer' in ckpt:
+            optimizer.load_state_dict(ckpt['optimizer'])
+        if basin_field is not None and ckpt.get('basin_field') is not None:
+            basin_field.load_state_dict(ckpt['basin_field'])
+        start_epoch  = ckpt.get('epoch', 0)       # epoch that just finished
+        best_acc     = ckpt.get('best_acc', 0.0)
+        global_step  = ckpt.get('global_step', 0)
+        print(f"  ✓ Resumed from epoch {start_epoch}  best_acc={best_acc:.4f}  global_step={global_step}")
 
     # Training loop
     print("\n" + "=" * 70)
     print("Training")
     print("=" * 70)
 
-    best_acc = 0.0
-    global_step = 0
-
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         print(f"\nEpoch {epoch + 1}/{args.epochs}")
 
         # Train
@@ -721,17 +969,29 @@ def main():
                 device,
                 use_dynamic_basins=use_dynamic_basins,
                 basin_field=basin_field,
+                num_classes=num_classes,
             )
             print(f"Dev Acc: {dev_acc:.4f}")
-            # Label mapping: 0=entailment, 1=contradiction, 2=neutral
-            print("\nConfusion Matrix (rows=true, cols=pred):")
-            print("      E    C    N")
-            for i, label in enumerate(['E', 'C', 'N']):
-                print(f"{label}  {confusion[i]}")
-            e_rec = confusion[0,0] / confusion[0].sum() if confusion[0].sum() > 0 else 0
-            c_rec = confusion[1,1] / confusion[1].sum() if confusion[1].sum() > 0 else 0
-            n_rec = confusion[2,2] / confusion[2].sum() if confusion[2].sum() > 0 else 0
-            print(f"Per-class recall → E: {e_rec*100:.1f}%  C: {c_rec*100:.1f}%  N: {n_rec*100:.1f}%")
+            if args.binary_label:
+                # Binary confusion matrix: 0=negative, 1=positive (target)
+                target_short = args.binary_label[0].upper()
+                print(f"\nConfusion Matrix (rows=true, cols=pred) — specialist '{args.binary_label}':")
+                print(f"       NOT-{target_short}   {target_short}")
+                for i, lbl in enumerate([f'NOT-{target_short}', target_short]):
+                    print(f"{lbl:<8}  {confusion[i]}")
+                pos_rec = confusion[1,1] / confusion[1].sum() if confusion[1].sum() > 0 else 0
+                neg_rec = confusion[0,0] / confusion[0].sum() if confusion[0].sum() > 0 else 0
+                print(f"Recall → {target_short}: {pos_rec*100:.1f}%  NOT-{target_short}: {neg_rec*100:.1f}%")
+            else:
+                # Label mapping: 0=entailment, 1=contradiction, 2=neutral
+                print("\nConfusion Matrix (rows=true, cols=pred):")
+                print("      E    C    N")
+                for i, label in enumerate(['E', 'C', 'N']):
+                    print(f"{label}  {confusion[i]}")
+                e_rec = confusion[0,0] / confusion[0].sum() if confusion[0].sum() > 0 else 0
+                c_rec = confusion[1,1] / confusion[1].sum() if confusion[1].sum() > 0 else 0
+                n_rec = confusion[2,2] / confusion[2].sum() if confusion[2].sum() > 0 else 0
+                print(f"Per-class recall → E: {e_rec*100:.1f}%  C: {c_rec*100:.1f}%  N: {n_rec*100:.1f}%")
             
             # Save best model
             if dev_acc > best_acc:
@@ -747,6 +1007,23 @@ def main():
                     'head_type': getattr(args, 'head_type', 'attractor'),
                 }, output_dir / 'best_model.pt')
                 print(f"✓ Saved best model (acc: {best_acc:.4f})")
+
+        # Always save latest checkpoint after every epoch so training can be resumed.
+        # Includes optimizer state so AdamW momentum buffers carry over correctly.
+        torch.save({
+            'collapse_engine': collapse_engine.state_dict(),
+            'encoder': encoder.state_dict(),
+            'head': head.state_dict(),
+            'vocab': vocab,
+            'args': args,
+            'optimizer': optimizer.state_dict(),
+            'basin_field': basin_field.state_dict() if basin_field is not None else None,
+            'use_dynamic_basins': use_dynamic_basins,
+            'head_type': getattr(args, 'head_type', 'attractor'),
+            'epoch': epoch + 1,          # epoch that just completed
+            'best_acc': best_acc,
+            'global_step': global_step,
+        }, output_dir / 'latest_checkpoint.pt')
     
     print("\n" + "=" * 70)
     print("Training complete!")
