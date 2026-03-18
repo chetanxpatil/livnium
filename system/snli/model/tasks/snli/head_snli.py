@@ -117,6 +117,62 @@ class SNLIHead(nn.Module):
         return self.fc(features)
 
 
+class BinaryHead(nn.Module):
+    """
+    Binary classification head for specialist training.
+
+    Identical geometry to SNLIHead but outputs 2 logits instead of 3.
+    Used when training a single specialist model with --binary-label:
+      label=1  → target class (e.g. Entailment)
+      label=0  → everything else
+
+    After specialist training, the collapse engine's primary anchor
+    (anchor_entail) is geometrically shaped for that specialist class
+    and can be transferred to seed the full 3-class model.
+    """
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.neutral_dir = nn.Parameter(torch.randn(dim))
+        self.fc = nn.Sequential(
+            nn.Linear(dim + 11, dim + 11),
+            nn.ReLU(),
+            nn.Linear(dim + 11, 2)      # ← 2 classes: [negative, positive]
+        )
+        self.neutral_scale = nn.Parameter(torch.tensor(1.0))
+
+    def forward(self, h_final: torch.Tensor, v_p: torch.Tensor, v_h: torch.Tensor) -> torch.Tensor:
+        if h_final.dim() == 1:
+            h_final = h_final.unsqueeze(0)
+            v_p = v_p.unsqueeze(0)
+            v_h = v_h.unsqueeze(0)
+
+        v_p_n = F.normalize(v_p, dim=-1)
+        v_h_n = F.normalize(v_h, dim=-1)
+        neutral_dir_n = F.normalize(self.neutral_dir, dim=0)
+
+        align = (v_p_n * v_h_n).sum(dim=-1, keepdim=True)
+        opp   = (-v_p_n * v_h_n).sum(dim=-1, keepdim=True)
+        align_neutral_p = self.neutral_scale * (v_p_n * neutral_dir_n.unsqueeze(0)).sum(dim=-1, keepdim=True)
+        align_neutral_h = self.neutral_scale * (v_h_n * neutral_dir_n.unsqueeze(0)).sum(dim=-1, keepdim=True)
+
+        energy      = 9 * ((1 + align) / 2)
+        expose_neg  = (1 - align) / 2
+        ec_ambiguity = 1.0 - align ** 2
+
+        dist_p_h = (v_h - v_p).norm(p=2, dim=-1, keepdim=True)
+        r_p      = v_p.norm(p=2, dim=-1, keepdim=True)
+        r_h      = v_h.norm(p=2, dim=-1, keepdim=True)
+        r_final  = h_final.norm(p=2, dim=-1, keepdim=True)
+
+        features = torch.cat([
+            h_final, align, opp, energy, expose_neg,
+            dist_p_h, r_p, r_h, r_final,
+            align_neutral_p, align_neutral_h, ec_ambiguity,
+        ], dim=-1)
+        return self.fc(features)
+
+
 class LinearSNLIHead(nn.Module):
     """
     Baseline linear classification head for A/B comparison with SNLIHead.

@@ -1,0 +1,172 @@
+================================================================================
+Livnium Training Log — BERT Joint Training Run 1
+================================================================================
+Date        : 2026-03-18
+Model       : bert-base-uncased (HuggingFace, joint training)
+Device      : MPS (Apple Silicon)
+Encoder     : BERTSNLIEncoder (freeze=False — weights trained jointly)
+Head        : SNLIHead (attractor geometry)
+Optimizer   : AdamW  BERT lr=2e-05  engine+head lr=1e-3
+Dynamic Basins: DISABLED (--disable-dynamic-basins)
+Batch size  : 64
+Epochs      : 5
+lambda-rep  : 0.1
+margin-rep  : 0.3
+lambda-fn   : 0.05
+BARRIER     : 0.38
+
+Command:
+  caffeinate -i python3 train.py \
+    --snli-train ../../../data/snli/snli_1.0_train.jsonl \
+    --snli-dev   ../../../data/snli/snli_1.0_dev.jsonl \
+    --encoder-type bert \
+    --bert-model bert-base-uncased \
+    --output-dir ../../../pretrained/bert-joint \
+    --epochs 5 \
+    --batch-size 64 \
+    --lr 1e-3 \
+    --bert-lr 2e-5 \
+    --lambda-rep 0.1 \
+    --margin-rep 0.3 \
+    --lambda-fn 0.05 \
+    --disable-dynamic-basins
+
+================================================================================
+Training Samples : 549,288
+Dev Samples      : 9,842
+Batches/epoch    : 8,583
+Speed            : ~1.20 it/s  (~2 hours/epoch)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+Epoch 1/5
+────────────────────────────────────────────────────────────────────────────────
+Train Loss : 0.6659
+Train Acc  : 0.7289
+
+Dev Acc    : 0.7909  ✓ NEW BEST
+
+Confusion Matrix (rows=true, cols=pred):
+      E    C    N
+E  [3143   40  146]
+C  [ 371 2511  396]
+N  [ 841  264 2130]
+
+Per-class recall:
+  E: 94.4%
+  C: 76.6%
+  N: 65.8%
+
+────────────────────────────────────────────────────────────────────────────────
+Epoch 2/5
+────────────────────────────────────────────────────────────────────────────────
+Train Loss : 0.5153
+Train Acc  : 0.8058
+
+Dev Acc    : 0.8095  ✓ NEW BEST
+
+Confusion Matrix (rows=true, cols=pred):
+      E    C    N
+E  [3057   41  231]
+C  [ 212 2643  423]
+N  [ 673  295 2267]
+
+Per-class recall:
+  E: 91.8%
+  C: 80.6%
+  N: 70.1%
+
+────────────────────────────────────────────────────────────────────────────────
+Epoch 3/5
+────────────────────────────────────────────────────────────────────────────────
+Train Loss : 0.4734
+Train Acc  : 0.8243
+
+Dev Acc    : 0.8146  ✓ NEW BEST
+
+Confusion Matrix (rows=true, cols=pred):
+      E    C    N
+E  [3129   50  150]
+C  [ 256 2651  371]
+N  [ 720  278 2237]
+
+Per-class recall:
+  E: 94.0%
+  C: 80.9%
+  N: 69.1%
+
+────────────────────────────────────────────────────────────────────────────────
+Epoch 4/5
+────────────────────────────────────────────────────────────────────────────────
+Train Loss : 0.4451
+Train Acc  : 0.8363
+
+Dev Acc    : 0.8150  ✓ NEW BEST
+
+Confusion Matrix (rows=true, cols=pred):
+      E    C    N
+E  [3148   28  153]
+C  [ 246 2568  464]
+N  [ 735  195 2305]
+
+Per-class recall:
+  E: 94.6%
+  C: 78.3%
+  N: 71.3%
+
+────────────────────────────────────────────────────────────────────────────────
+Epoch 5/5
+────────────────────────────────────────────────────────────────────────────────
+Train Loss : 0.4259
+Train Acc  : 0.8443
+
+Dev Acc    : 0.8206  ✓ NEW BEST
+
+Confusion Matrix (rows=true, cols=pred):
+      E    C    N
+E  [3089   37  203]
+C  [ 212 2684  382]
+N  [ 621  311 2303]
+
+Per-class recall:
+  E: 92.8%
+  C: 81.9%
+  N: 71.2%
+
+================================================================================
+FINAL RESULT
+================================================================================
+Best Dev Accuracy : 0.8206  (82.06%)
+Best Epoch        : 5
+Checkpoint        : ../../../pretrained/bert-joint/best_model.pt
+
+================================================================================
+PROGRESSION SUMMARY
+================================================================================
+Epoch 1 : 79.09%  (+start)
+Epoch 2 : 80.95%  (+1.86)
+Epoch 3 : 81.46%  (+0.51)
+Epoch 4 : 81.50%  (+0.04)
+Epoch 5 : 82.06%  (+0.56)
+
+================================================================================
+CONTEXT & COMPARISON
+================================================================================
+Previous best (frozen BERT, 3 epochs, lr=1e-3, batch=32) : 61.03%
+This run (joint BERT, 5 epochs, lr=2e-5 BERT)            : 82.06%
+Delta                                                      : +21.03%
+
+BERT-base SOTA on SNLI                                     : ~91%
+Remaining gap to SOTA                                      : ~9%
+
+Weakness: Neutral recall at 71.2% — 621 N examples predicted as E
+Fix: --neutral-weight 1.5 on next run to pressure neutral class
+
+================================================================================
+NEXT STEPS
+================================================================================
+1. Resume with --neutral-weight 1.5 to fix N recall (target: 75%+)
+2. Lower bert-lr to 1e-5 (BERT well-shaped after 5 epochs, slow it down)
+3. Implement portal mechanism for confused vectors at E/C boundary
+4. Re-enable dynamic basins on MPS (fix CPU<->GPU transfer issue)
+================================================================================
