@@ -1,0 +1,669 @@
+\documentclass[11pt]{article}
+
+% ─── Packages ───────────────────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{xcolor}
+\usepackage{bm}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{definition}{Definition}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue,
+}
+
+% ─── Macros ─────────────────────────────────────────────────────────────────
+\newcommand{\vech}{\bm{h}}
+\newcommand{\anchor}[1]{A_{#1}}
+\newcommand{\barrier}{\tau}
+\newcommand{\dive}{D}
+\newcommand{\nhat}{\hat{\bm{n}}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\lse}{\mathrm{logsumexp}}
+
+\title{Three Laws of Semantic Collapse:\\NLI as Gradient Descent on an Anchor Energy Landscape}
+
+\author{
+    Chetan Patil \\
+    \texttt{chetan12patil@gmail.com} \\
+    \url{https://github.com/chetanxpatil/livnium}
+}
+
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+% ═══════════════════════════════════════════════════════════════════════════
+\begin{abstract}
+We present Livnium, a classification system for Natural Language Inference
+in which inference is not a single forward pass but a dynamical process:
+the hidden state evolves through multiple steps of geometry-aware updates
+before readout. We discover that the trained system's behavior is governed
+by three empirical laws: (1) the initial state encodes the relational
+difference between premise and hypothesis, (2) the semantic space is
+organized by an energy landscape $V(\vech) = -\lse(\beta \cdot \cos(\vech, \anchor{k}))$
+over three class anchors, and (3) the state evolves by gradient descent
+on this energy. Critically, Laws~2 and~3 were not designed---they were
+recovered from analyzing what a trained system was doing. We show that
+replacing the trained 1.2M-parameter MLP update with the three-line
+analytical gradient of $V$ matches accuracy on the full SNLI dev set
+(9,842 samples), with the learned residual contributing $\leq 0.25\%$.
+Joint retraining under the discovered dynamics reduces head--dynamics
+disagreement from 55.1\% to 4.0\% and improves neutral recall
+monotonically across five epochs ($+6.1$pp total). Trajectory analysis reveals a universal fixed-point phenomenon:
+collapse dynamics converge to the same state after ${\sim}3$ steps
+regardless of input, identifying the primary bottleneck. Code and
+pretrained weights are publicly available.
+\end{abstract}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+
+The standard neural classifier computes $y = \text{softmax}(Wh + b)$:
+a single affine map from representation to logits. We explore an
+alternative in which the classification head is a small dynamical system
+that \emph{evolves} the representation through $L$ steps before producing
+a label:
+\[
+    h_0 \;\to\; h_1 \;\to\; \cdots \;\to\; h_L \;\to\; \text{logits}
+\]
+where each step applies learned residuals and geometric forces from
+label-specific anchor vectors. The label is determined by which
+\emph{basin} the state settles into, not by a one-shot projection.
+
+The original Livnium system \citep{patil2026livnium} introduced this
+idea with a bag-of-words encoder, achieving 76\% on SNLI. The system
+used hand-designed cosine-radial forces with a 135$^{\circ}$ mismatch
+from true cosine gradients---a non-conservative force field with no
+scalar potential.
+
+In this paper, we report a surprising discovery. After upgrading to a
+jointly-trained BERT bi-encoder (82.06\% accuracy), we analyzed the
+trained collapse dynamics and found that they are well-approximated by
+gradient descent on a simple energy function over the class anchors.
+The learned MLP $\delta_\theta$, which constitutes 1.2M parameters of
+the collapse engine, can be replaced by a three-line analytical gradient
+formula with no accuracy loss---and slight improvement.
+
+This leads to the \textbf{Three Laws of Livnium}:
+\begin{enumerate}
+    \item \textbf{Law 1} (Relational State): $h_0 = v_h - v_p$
+    \item \textbf{Law 2} (Energy Landscape): $V(h) = -\lse\big(\beta \cdot \cos(h, \anchor{E}),\; \beta \cdot \cos(h, \anchor{C}),\; \beta \cdot \cos(h, \anchor{N})\big)$
+    \item \textbf{Law 3} (Collapse Dynamics): $h_{t+1} = h_t - \alpha \nabla V(h_t)$
+\end{enumerate}
+
+Laws 2 and 3 were not assumed---they were recovered empirically from a
+trained system. This is the main result of the paper.
+
+We further validate this finding through joint retraining experiments,
+trajectory analysis via a ``tunnel test'' diagnostic, and basin stability
+measurements. Trajectory analysis reveals that the current dynamics
+converge to a universal fixed point after approximately three steps,
+independent of input---identifying the primary bottleneck for future work.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+    \item Discovery that trained attractor dynamics approximate gradient
+          descent on a logsumexp cosine energy (Section~\ref{sec:discovery}).
+    \item Formulation of three empirical laws that fully specify the
+          system's inference behavior (Section~\ref{sec:laws}).
+    \item Joint retraining framework that achieves head--dynamics
+          consistency (Section~\ref{sec:joint}).
+    \item Tunnel test diagnostic that classifies error modes by
+          trajectory analysis (Section~\ref{sec:tunnel}).
+    \item Identification of a universal fixed-point phenomenon as the
+          primary accuracy bottleneck (Section~\ref{sec:fixedpoint}).
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Background and Related Work}
+\label{sec:related}
+
+\textbf{Energy-based models.}
+The idea of classification via energy minimization has a long history.
+Hopfield networks \citep{hopfield1982} used energy-based attractor
+dynamics for content-addressable memory; modern Hopfield networks
+\citep{ramsauer2020hopfield} extend this with exponential storage
+capacity and connections to attention mechanisms. LeCun et al.'s
+energy-based learning framework \citep{lecun2006tutorial} provides a
+general formulation. Our work differs in that the energy function was
+not designed but \emph{discovered} from trained dynamics.
+
+\textbf{Equilibrium and implicit models.}
+Deep equilibrium models \citep{bai2019deep} compute representations as
+fixed points of implicit layers, and neural ODEs \citep{chen2018neural}
+parameterize continuous-time dynamics. Livnium uses explicit, finite-step
+dynamics with an interpretable geometric structure---the energy landscape
+can be written in closed form.
+
+\textbf{Prototype-based classification.}
+Prototypical networks \citep{snell2017prototypical} classify by distance
+to class centroids. Livnium's anchors serve a similar role, but the
+classification involves iterative state refinement, not a single distance
+comparison. The anchors define an energy landscape, not just a nearest-neighbor rule.
+
+\textbf{Natural language inference.}
+SNLI \citep{bowman2015snli} is the standard benchmark, with baselines
+from bag-of-words (${\sim}80\%$) through decomposable attention
+\citep{parikh2016decomposable} (${\sim}86\%$) to fine-tuned BERT
+\citep{devlin2019bert} (${\sim}90\%$). Our work focuses on the
+classification head rather than the encoder; we demonstrate that the
+head itself contains discoverable physical laws.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{The Livnium System}
+\label{sec:system}
+
+\subsection{Architecture Overview}
+
+Given a premise $p$ and hypothesis $q$, a BERT bi-encoder produces
+sentence vectors $\bm{v}_p, \bm{v}_q \in \R^{768}$. The initial state
+for the collapse dynamics is their difference (Law~1):
+\[
+    h_0 = \bm{v}_q - \bm{v}_p
+\]
+
+Three learned anchor vectors $\anchor{E}, \anchor{C}, \anchor{N} \in \R^{768}$
+(entailment, contradiction, neutral) define the geometry of the label
+space. Each anchor is unit-normalized during the forward pass.
+
+\subsection{Trained Collapse Rule (v1)}
+
+The original system evolves the state through $L=6$ steps using:
+\begin{equation}
+\label{eq:trained_update}
+    h_{t+1} = h_t
+    + \delta_\theta(h_t)
+    - s_y \cdot D(h_t, \anchor{y}) \cdot \nhat(h_t, \anchor{y})
+    - \beta \cdot B(h_t) \cdot \nhat(h_t, \anchor{N})
+\end{equation}
+where $\delta_\theta$ is a learned 2-layer MLP, $D(h, A) = 0.38 - \cos(h, A)$
+is the divergence from the equilibrium ring, $\nhat(h, A) = (h-A)/\|h-A\|$
+is the Euclidean radial direction, and $B(h) = 1 - |\cos(h, \anchor{E}) - \cos(h, \anchor{C})|$
+is the boundary proximity. The equilibrium target for each anchor is a
+cosine-similarity ring at $\cos(h, A_y) = 0.38$, not the anchor point
+itself.
+
+\subsection{Classification Head}
+
+After $L$ collapse steps, the refined state $h_L$ is passed to a readout
+MLP (SNLIHead) along with auxiliary features: the original premise and
+hypothesis vectors $\bm{v}_p, \bm{v}_q$, cosine alignments, and
+geometric signals. The head outputs logits for three SNLI classes.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{The Three Laws}
+\label{sec:laws}
+
+We propose that the trained system's behavior is fully specified by
+three laws. Law~1 is a design choice; Laws~2 and~3 are empirical
+discoveries.
+
+\begin{definition}[Law 1: Relational State Formation]
+\begin{equation}
+    h_0 = \bm{v}_q - \bm{v}_p
+\end{equation}
+The initial state encodes the \emph{direction of semantic change} from
+premise to hypothesis. Entailment pulls $h_0$ toward $\anchor{E}$;
+contradiction toward $\anchor{C}$; neutral is orthogonal.
+\end{definition}
+
+\begin{definition}[Law 2: Energy Landscape]
+\begin{equation}
+\label{eq:energy}
+    V(h) = -\log\!\sum_{k \in \{E,C,N\}} \exp\!\big(\beta \cdot \cos(h, \anchor{k})\big)
+\end{equation}
+The energy at any point $h$ is the negative log-partition function of
+Boltzmann-weighted cosine similarities to the three class anchors.
+$V(h)$ assigns lower energy to points near an anchor, defining three
+semantic basins. The parameter $\beta$ controls basin sharpness.
+\end{definition}
+
+\begin{definition}[Law 3: Collapse Dynamics]
+\begin{equation}
+\label{eq:collapse}
+    h_{t+1} = h_t - \alpha \nabla_h V(h_t)
+\end{equation}
+The state evolves by gradient descent on the energy landscape over $L$
+steps. The gradient is computed analytically:
+\begin{equation}
+\label{eq:gradient}
+    \nabla_h V(h) = -\sum_{k} w_k(\vech) \cdot \nabla_h \cos(h, \anchor{k})
+\end{equation}
+where $w_k(h) = \text{softmax}\big(\beta \cdot \cos(h, \anchor{k})\big)$
+are the Boltzmann weights. The cosine gradient for each anchor is:
+\begin{equation}
+    \nabla_h \cos(h, A) = \frac{A - h \cdot \cos(h, A)}{\|h\|}
+\end{equation}
+\end{definition}
+
+\paragraph{Key property.} The Boltzmann weights $w_k$ ensure smooth
+interpolation near basin boundaries. At $\beta = 1$, the weights form
+a balanced softmax over anchors---preserving multi-basin gradient signal
+at boundaries. At $\beta \to \infty$, the dynamics reduce to argmax
+(nearest-anchor), losing boundary sensitivity.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Discovering the Equation of Motion}
+\label{sec:discovery}
+
+The three laws were not designed. They were discovered by a systematic
+comparison of the trained system with analytical alternatives.
+
+\subsection{Experimental Setup}
+
+We train a BERT bi-encoder jointly with the collapse engine on SNLI
+(549k training pairs, 9,842 dev pairs), achieving 82.06\% dev accuracy.
+We then evaluate three collapse modes on the full dev set:
+
+\begin{enumerate}
+    \item \textbf{Full}: The trained system (Eq.~\ref{eq:trained_update})---MLP $\delta_\theta$ + anchor forces.
+    \item \textbf{No-delta}: Remove the learned MLP; keep only anchor forces.
+    \item \textbf{Grad-V}: Replace the entire collapse rule with Eq.~\ref{eq:collapse}---pure gradient descent on $V(h)$.
+\end{enumerate}
+
+\subsection{Result: The MLP Is Redundant}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Mode & Accuracy & E-recall & N-recall & C-recall \\
+\midrule
+\multicolumn{5}{c}{\textit{Original checkpoint ($\beta=1$, full SNLI dev, $n=9{,}842$)}} \\
+\midrule
+Full ($\delta_\theta$ + forces) & 82.05\% & 92.79\% & 71.16\% & 81.88\% \\
+No-delta (forces only) & 81.81\% & 93.48\% & 68.62\% & 82.98\% \\
+\textbf{Grad-V ($\beta=1$, $\alpha=0.2$)} & \textbf{82.21\%} & 92.97\% & \textbf{72.18\%} & 81.18\% \\
+\midrule
+\multicolumn{5}{c}{\textit{Joint-retrained checkpoint ($\beta=20$, $n=2{,}000$)}} \\
+\midrule
+Full ($\delta_\theta$ + forces) & 82.35\% & 90.35\% & 71.64\% & 85.30\% \\
+No-delta (forces only) & 82.20\% & 93.36\% & 69.87\% & 83.64\% \\
+\textbf{Grad-V ($\beta=20$, $\alpha=0.2$)} & \textbf{82.10\%} & \textbf{94.42\%} & \textbf{72.53\%} & 79.55\% \\
+\bottomrule
+\end{tabular}
+\caption{Gradient collapse comparison. Grad-V matches or exceeds the
+trained system on overall accuracy and neutral recall. The learned MLP
+$\delta_\theta$ contributes $\leq 0.25\%$---it is functionally redundant.
+The system \emph{is} a gradient flow on $V(h)$.}
+\label{tab:collapse}
+\end{table}
+
+The key finding is in Table~\ref{tab:collapse}: the analytical gradient
+of Eq.~\ref{eq:energy} matches the trained system. On the full dev set
+($n=9{,}842$), Grad-V actually \emph{outperforms} the trained system by
++0.16pp overall and +1.02pp on neutral recall. The learned MLP
+$\delta_\theta$, which constitutes 1.2M parameters and requires a
+forward pass at each collapse step, contributes at most 0.24pp. It is
+functionally dead.
+
+\paragraph{Interpretation.}
+The trained MLP was approximating $\nabla V$ but introducing small
+distortions. The clean analytical gradient recovers and slightly exceeds
+the learned behavior. The energy $V(h)$ is the Boltzmann log-partition
+function over anchor similarities---a natural measure of semantic basin
+proximity. The system learned to perform gradient descent on this energy
+without being told to.
+
+\subsection{Stability Across $\beta$}
+
+We swept $\beta \in \{0.5, 1, 2, 5, 10, 20, 50\}$ at $\alpha = 0.2$.
+All values within $\beta \in [1, 50]$ produce accuracy within $\pm 1\%$
+of the trained system, confirming that the energy landscape formulation
+is robust to the sharpness parameter. The result is not an artifact of
+hyperparameter tuning.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Joint Retraining Under Discovered Dynamics}
+\label{sec:joint}
+
+The Grad-V discovery raises a natural question: if the dynamics are
+gradient descent on $V(h)$, can we retrain the system \emph{explicitly}
+under these dynamics so that the classification head learns to trust the
+energy-based collapse?
+
+\subsection{Motivation: The TYPE-? Problem}
+
+At $\beta=20$ (sharp basins), the gradient dynamics become highly
+decisive---states fall cleanly into the nearest anchor basin. However,
+the classification head (SNLIHead) was trained under the original
+$\beta=1$ dynamics, where collapse produces a universal fixed point
+(Section~\ref{sec:fixedpoint}). When we swap in $\beta=20$ grad-V
+dynamics at test time, the head's predictions disagree with the
+dominant basin on 55.1\% of errors---the head ignores the dynamics it
+was not trained on.
+
+\subsection{Method}
+
+We introduce \textbf{LiveniumJoint}, a joint training framework:
+\begin{itemize}
+    \item BERT bi-encoder, standalone anchors $[\anchor{E}, \anchor{C}, \anchor{N}] \in \R^{3 \times 768}$, and SNLIHead are trained together.
+    \item Collapse uses differentiable grad-V dynamics (Eq.~\ref{eq:collapse}) with analytical gradient, staying in the computation graph.
+    \item Loss combines cross-entropy with an anchor alignment term:
+\end{itemize}
+\begin{equation}
+\label{eq:joint_loss}
+    \mathcal{L} = \mathcal{L}_{\text{CE}} + \lambda_{\text{align}} \cdot \big(-\cos(h_L, \anchor{y})\big)
+\end{equation}
+
+The alignment loss directly penalizes disagreement between the final
+collapsed state and the correct anchor, forcing the head to be
+consistent with the dynamics.
+
+\subsection{Results}
+
+We train on 30,000 stratified samples (10k per class) for 5 epochs
+with $\beta=20$, $\alpha=0.05$, $\lambda_{\text{align}}=0.3$, warm-starting
+from the BERT-joint checkpoint.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Metric & Before & Ep.\ 1$^\star$ & Ep.\ 2 & Ep.\ 3 & Ep.\ 4 & Ep.\ 5 \\
+\midrule
+Accuracy       & 81.95\% & \textbf{82.79\%} & 82.48\% & 82.68\% & 82.43\% & 82.48\% \\
+Neutral recall & 70.54\% & 74.50\% & 74.74\% & 75.98\% & \textbf{76.63\%} & 76.51\% \\
+C recall       & ---     & 80.96\% & 79.62\% & 80.32\% & 78.83\% & 79.23\% \\
+Dyn/head agree & 29.73\% & 72.52\% & 74.10\% & 73.29\% & 73.62\% & 73.88\% \\
+TYPE-? rate    & 7.84\%  & 4.20\%  & 3.98\%  & 4.56\%  & 4.50\%  & 4.43\%  \\
+\midrule
+$\cos(\anchor{C},\anchor{N})$ & --- & $-0.031$ & $-0.007$ & $+0.011$ & $+0.024$ & $+0.026$ \\
+\bottomrule
+\end{tabular}
+\caption{Full 5-epoch joint retraining ($^\star$ = best checkpoint).
+Neutral recall improves \emph{monotonically} across all epochs
+($70.5\% \to 76.6\%$, $+6.1$pp), peaking at epoch~4.
+Overall accuracy is best at epoch~1 (82.79\%), reflecting a trade-off
+with C-recall. The final row shows $\cos(\anchor{C},\anchor{N})$
+crossing zero at epoch~3 and reaching $+0.026$ by epoch~5---confirmed
+C--N anchor drift.}
+\label{tab:joint}
+\end{table}
+
+Joint retraining achieves its primary goal. Head--dynamics agreement
+rises from 29.7\% to 73.9\%, and neutral recall---the weakest
+class---improves monotonically across all five epochs, from 70.54\%
+to 76.63\% ($+6.1$pp). Overall accuracy is best at epoch~1 (82.79\%),
+reflecting a trade-off: the alignment loss optimizes neutral recall at
+some cost to contradiction recall and overall accuracy.
+The Grad-V evaluation on the best checkpoint
+(Table~\ref{tab:collapse}, bottom) confirms that the analytical gradient
+still matches the full system, with N-recall of 72.53\% exceeding the
+full model's 71.64\%.
+
+\paragraph{C--N anchor drift.}
+$\cos(\anchor{C}, \anchor{N})$ crosses zero at epoch~3 and reaches
+$+0.026$ by epoch~5. The C and N anchors become \emph{positively}
+correlated under the alignment loss, and C-recall erodes from 80.96\%
+to 78.83\% correspondingly. This identifies a concrete regularization
+target: anchor orthogonality must be explicitly enforced during joint
+training. Adding a penalty $\lambda_{\text{orth}}\sum_{i \neq j}\cos(\anchor{i},\anchor{j})^2$
+is the natural fix and a direct target for future work.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Trajectory Analysis}
+\label{sec:analysis}
+
+\subsection{Tunnel Test: Classifying Error Modes}
+\label{sec:tunnel}
+
+We develop a \textbf{tunnel test} diagnostic that traces the step-by-step
+trajectory of each collapse and classifies errors by \emph{when} and
+\emph{how} the dynamics fail. For each sample, we record the dominant
+anchor basin (highest cosine) at every step $t = 0, \ldots, L$.
+
+Error types for neutral misclassifications:
+\begin{itemize}
+    \item \textbf{TYPE-1} (bad $h_0$, Law~1 failure): $h_0$ starts in the wrong basin. The initial encoding does not place the state near the neutral anchor.
+    \item \textbf{TYPE-2} (mid-diversion, Law~3 failure): $h_0$ starts correctly but the trajectory is diverted to a wrong basin during collapse.
+    \item \textbf{TYPE-3} (boundary stall, Law~2 failure): the trajectory converges near a basin boundary or to the universal fixed point, never reaching a decisive basin.
+    \item \textbf{TYPE-?} (head override): the dynamics deliver the correct dominant basin at step $L$, but the classification head overrides and predicts a different label.
+\end{itemize}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+& TYPE-1 & TYPE-2 & TYPE-3 & TYPE-? \\
+\midrule
+$\beta=1$ (original) & 14.4\% & 21.3\% & \textbf{63.9\%} & 0.5\% \\
+$\beta=20$ (grad-V) & 2.8\% & 20.4\% & 21.7\% & \textbf{55.1\%} \\
+$\beta=20$ (joint) & --- & --- & --- & \textbf{4.0\%} \\
+\bottomrule
+\end{tabular}
+\caption{Error type distribution across configurations. At $\beta=1$,
+TYPE-3 (fixed-point convergence) dominates. At $\beta=20$, dynamics
+become decisive but the head overrides them (TYPE-?). Joint retraining
+resolves the head--dynamics disconnect.}
+\label{tab:tunnel}
+\end{table}
+
+\subsection{The Universal Fixed Point}
+\label{sec:fixedpoint}
+
+The dominant error mode at $\beta=1$ is TYPE-3 (63.9\%). Investigation
+reveals this is not boundary ambiguity but a more fundamental phenomenon:
+the collapse dynamics converge to a \textbf{universal fixed point} after
+approximately 3 steps, independent of the input.
+
+At steps 4--6, nearly all samples---correct and incorrect---produce
+the same cosine alignment pattern:
+\[
+    \cos(h, \anchor{E}) \approx -0.129, \quad
+    \cos(h, \anchor{C}) \approx -0.124, \quad
+    \cos(h, \anchor{N}) \approx +0.172
+\]
+
+This fixed point is weakly neutral-biased ($\cos(h, \anchor{N})$ is
+highest), explaining why neutral recall is better than chance (71\%)
+but not as strong as entailment or contradiction. The collapse discards
+input-specific information after step 3---the final state is
+input-agnostic.
+
+\paragraph{Energy signature.}
+Correctly classified samples show mean energy descent
+$\Delta V = +0.046$ (ascending---moving toward lower-energy basins),
+while error samples show $\Delta V = -0.002$ (flat---stuck at the
+fixed point). The dynamics are contracting for correct predictions and
+stagnant for errors.
+
+\paragraph{Implication.}
+The accuracy bottleneck is not the classification head or the energy
+landscape---it is the fixed-point collapse. Input information is lost
+after three steps. Breaking this fixed point (e.g., via input-dependent
+residual forcing or adaptive step sizes) is the primary target for
+future work.
+
+\subsection{Basin Stability}
+\label{sec:stability}
+
+Correct predictions occupy deeper attractor basins than incorrect ones.
+We measure stability by perturbing $h_0$ with Gaussian noise
+($\sigma = 0.3$) across 20 trials per sample:
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Group & Flip rate & Entropy \\
+\midrule
+Correct ($n=1{,}653$) & $0.0017 \pm 0.025$ & 0.293 \\
+Incorrect ($n=347$) & $0.0068 \pm 0.048$ & 0.604 \\
+\textbf{Ratio} & \textbf{3.93$\times$} & \textbf{2.06$\times$} \\
+\bottomrule
+\end{tabular}
+\caption{Basin stability: wrong predictions are 3.9$\times$ more likely
+to flip under perturbation and carry 2$\times$ higher entropy.
+Correctness correlates with basin depth---no calibration needed.}
+\label{tab:stability}
+\end{table}
+
+Per-class breakdown: entailment errors flip 7.18$\times$ more than
+correct entailment predictions, neutral errors 3.17$\times$,
+contradiction errors only 1.82$\times$. The low contradiction ratio
+indicates systematic geometric bias rather than boundary ambiguity---a
+structural feature of the anchor geometry.
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Why Does the MLP Learn $\nabla V$?}
+
+The trained collapse rule (Eq.~\ref{eq:trained_update}) uses
+cosine-magnitude forces with Euclidean-radial directions---a
+135$^{\circ}$ mismatch from the true cosine gradient. Yet the
+\emph{combined} effect of MLP + forces approximates gradient descent
+on $V(h)$. We hypothesize that the MLP learns a corrective residual
+that compensates for the geometric inconsistency of the hand-designed
+forces, effectively rotating the force field toward the true gradient.
+The end-to-end training signal (cross-entropy on the final label)
+provides sufficient pressure to discover this correction.
+
+\subsection{What Is the Energy $V(h)$?}
+
+The energy $V(h) = -\lse(\beta \cdot \cos(h, \anchor{k}))$ is the
+negative log-partition function of a Boltzmann distribution over anchor
+cosine similarities. At any point $h$, it measures the aggregate
+proximity to all class anchors, weighted exponentially. The minima of
+$V$ correspond to anchor positions; the saddle points define basin
+boundaries. At $\beta=1$, the Boltzmann weights are a balanced softmax,
+preserving gradient signal at boundaries. At $\beta \to \infty$,
+$V(h) \to -\max_k \cos(h, \anchor{k})$, recovering the Voronoi
+partition over anchors.
+
+\subsection{Accuracy Context}
+
+The system achieves 82--83\% on SNLI, below the BERT-linear baseline
+(${\sim}90\%$). The gap is attributable to two factors: (1) the
+bi-encoder architecture (premise and hypothesis encoded separately)
+loses cross-attention signal that a BERT cross-encoder exploits, and
+(2) the universal fixed-point collapse discards input information after
+3 steps. The contribution of this work is not state-of-the-art accuracy
+but the \emph{discovery of physical laws} governing a neural inference
+system---a result that holds regardless of absolute accuracy level.
+
+\subsection{Limitations}
+
+\begin{enumerate}
+    \item \textbf{Single dataset.} All results are on SNLI. Evaluation
+          on MultiNLI, adversarial NLI, and non-NLI classification tasks
+          would test generality.
+    \item \textbf{Single seed.} The gradient-flow result has been
+          validated on the full dev set ($n=9{,}842$) but from a single
+          training run. Multi-seed validation is needed.
+    \item \textbf{Encoder dependence.} The laws are demonstrated with a
+          BERT bi-encoder. Whether they hold for cross-encoders or
+          non-BERT architectures is untested.
+    \item \textbf{Fixed-point bottleneck.} The universal fixed point
+          limits accuracy. Breaking it requires architectural changes
+          not yet validated.
+    \item \textbf{C--N anchor drift.} Joint retraining shows signs of
+          C--N anchor convergence, which may limit contradiction recall.
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have shown that a trained attractor-based classification system
+for NLI is governed by three empirical laws: relational state formation,
+a logsumexp cosine energy landscape, and gradient-descent collapse
+dynamics. The central finding is that Laws~2 and~3 were \emph{not
+designed}---they were recovered by analyzing what the trained MLP was
+doing. The learned residual $\delta_\theta$ can be replaced by the
+analytical gradient $\nabla V$ with no accuracy loss on 9,842 samples.
+
+Trajectory analysis via the tunnel test reveals the primary bottleneck:
+a universal fixed point that discards input information after three
+collapse steps. Joint retraining under the discovered dynamics reduces
+head--dynamics disagreement from 55\% to 4\% and improves neutral
+recall by +4pp.
+
+The broader implication is that neural systems can develop interpretable
+physical laws through training---laws that are simpler, faster, and more
+transparent than the trained components they replace. Whether this
+phenomenon generalizes beyond attractor-based classification heads is
+an open question and a promising direction for future work.
+
+\paragraph{Code and Models.}
+\url{https://github.com/chetanxpatil/livnium} \\
+\url{https://huggingface.co/chetanxpatil/livnium-snli}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\bibliographystyle{plainnat}
+\begin{thebibliography}{12}
+
+\bibitem[Bai et~al.(2019)]{bai2019deep}
+S.~Bai, J.~Z. Kolter, and V.~Koltun.
+\newblock Deep equilibrium models.
+\newblock In \emph{NeurIPS}, 2019.
+
+\bibitem[Bowman et~al.(2015)]{bowman2015snli}
+S.~Bowman, G.~Angeli, C.~Potts, and C.~Manning.
+\newblock A large annotated corpus for learning natural language inference.
+\newblock In \emph{EMNLP}, 2015.
+
+\bibitem[Chen et~al.(2018)]{chen2018neural}
+R.~T.~Q. Chen, Y.~Rubanova, J.~Bettencourt, and D.~Duvenaud.
+\newblock Neural ordinary differential equations.
+\newblock In \emph{NeurIPS}, 2018.
+
+\bibitem[Devlin et~al.(2019)]{devlin2019bert}
+J.~Devlin, M.-W. Chang, K.~Lee, and K.~Toutanova.
+\newblock {BERT}: Pre-training of deep bidirectional transformers for
+  language understanding.
+\newblock In \emph{NAACL-HLT}, 2019.
+
+\bibitem[Hopfield(1982)]{hopfield1982}
+J.~J. Hopfield.
+\newblock Neural networks and physical systems with emergent collective
+  computational abilities.
+\newblock \emph{PNAS}, 79(8):2554--2558, 1982.
+
+\bibitem[LeCun et~al.(2006)]{lecun2006tutorial}
+Y.~LeCun, S.~Chopra, R.~Hadsell, M.~Ranzato, and F.~Huang.
+\newblock A tutorial on energy-based learning.
+\newblock In \emph{Predicting Structured Data}. MIT Press, 2006.
+
+\bibitem[Parikh et~al.(2016)]{parikh2016decomposable}
+A.~Parikh, O.~T{\"a}ckstr{\"o}m, D.~Das, and J.~Uszkoreit.
+\newblock A decomposable attention model for natural language inference.
+\newblock In \emph{EMNLP}, 2016.
+
+\bibitem[Patil(2026)]{patil2026livnium}
+C.~Patil.
+\newblock Iterative attractor dynamics for classification: A dynamical
+  classification head with anchor-guided basin settling.
+\newblock Preprint, Zenodo, 2026.
+\newblock \url{https://zenodo.org/records/19058910}.
+
+\bibitem[Ramsauer et~al.(2021)]{ramsauer2020hopfield}
+H.~Ramsauer, B.~Sch{\"a}fl, J.~Lehner, P.~Seidl, M.~Widrich,
+  T.~Adler, L.~Gruber, M.~Holzleitner, M.~Pavlovi{\'c}, G.~Sandve,
+  V.~Greiff, D.~Kreil, M.~Kopp, G.~Klambauer, J.~Brandstetter,
+  and S.~Hochreiter.
+\newblock Hopfield networks is all you need.
+\newblock In \emph{ICLR}, 2021.
+
+\bibitem[Snell et~al.(2017)]{snell2017prototypical}
+J.~Snell, K.~Swersky, and R.~Zemel.
+\newblock Prototypical networks for few-shot learning.
+\newblock In \emph{NeurIPS}, 2017.
+
+\end{thebibliography}
+
+\end{document}

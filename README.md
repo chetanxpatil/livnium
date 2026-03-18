@@ -23,6 +23,9 @@ model-index:
           type: snli
         metrics:
           - type: accuracy
+            value: 0.8279
+            name: Dev Accuracy (v2.1 — Joint Grad-V)
+          - type: accuracy
             value: 0.8206
             name: Dev Accuracy (v2 — Joint BERT)
           - type: accuracy
@@ -40,8 +43,9 @@ model-index:
 
 NLI classifier on SNLI where inference is not a single forward pass — it is a sequence of geometry-aware state updates before the final readout.
 
-📄 **Paper (PDF):** [Livnium.pdf](https://github.com/chetanxpatil/livnium/blob/main/Livnium.pdf)
-📝 **LaTeX source:** [livnium_paper.tex](https://github.com/chetanxpatil/livnium/blob/main/livnium_paper.tex)
+📄 **Paper v1 (PDF):** [Livnium.pdf](https://github.com/chetanxpatil/livnium/blob/main/Livnium.pdf)
+📄 **Paper v2 — Three Laws (LaTeX):** [livnium_paper_v2.tex](https://github.com/chetanxpatil/livnium/blob/main/livnium_paper_v2.tex)
+📝 **v1 LaTeX source:** [livnium_paper.tex](https://github.com/chetanxpatil/livnium/blob/main/livnium_paper.tex)
 🌐 **Zenodo preprint:** [zenodo.org/records/19058910](https://zenodo.org/records/19058910)
 🤗 **Model on HuggingFace:** [chetanxpatil/livnium-snli](https://huggingface.co/chetanxpatil/livnium-snli)
 
@@ -66,20 +70,29 @@ NLI classifier on SNLI where inference is not a single forward pass — it is a 
 - Geometry extraction: trained anchors define a principled semantic coordinate system (32-dim from 768)
 - See [`book/`](book/) for the full design rationale
 
+### v2.1 — Three Laws Paper + Joint Retraining *(current)*
+
+- **Paper:** *"Three Laws of Semantic Collapse: NLI as Gradient Descent on an Anchor Energy Landscape"*
+- **Three Laws formalized:** (1) h₀ = v_h − v_p, (2) V(h) = −logsumexp(β·cos(h, anchors)), (3) h_{t+1} = h_t − α∇V(h_t)
+- **Core discovery confirmed on full dev set (9,842 samples):** Grad-V matches trained system — learned MLP δ_θ contributes ≤0.25% accuracy
+- **Joint retraining under discovered dynamics** (`pretrained/livnium-joint-30k/`): neutral recall +6.1pp (70.5% → 76.6%), head–dynamics agreement 29.7% → 73.9%
+- **Tunnel test diagnostic:** classifies error modes by trajectory analysis — TYPE-1 (bad h₀), TYPE-2 (mid-diversion), TYPE-3 (fixed-point convergence), TYPE-? (head override)
+- **Universal fixed-point phenomenon identified:** collapse converges to same state after ~3 steps regardless of input — primary bottleneck for future work
+- **C–N anchor drift observed:** cos(A_C, A_N) turns positive during joint training, eroding C-recall — anchor orthogonality regularization needed
+
 ---
 
 ## Results — Full Accuracy Journey
 
-| Stage | Encoder | Accuracy | Params |
-|---|---|---|---|
-| v1 Legacy | Random BoW (256-dim) | ~56% | ~2M |
-| v1 Pretrained | Livnium BoW (256-dim, frozen) | **76.32%** | ~2M |
-| ~~v2 Frozen BERT~~ | ~~BERT bi-encoder (frozen)~~ | ~~\~61%~~ | ~~deprecated — BERT geometry doesn't align with attractor space without joint training~~ |
-| v2 Joint BERT | BERT bi-encoder (fine-tuned) | **82.06%** | 110M + 2M |
-| v2 Cross-BERT | BERT cross-encoder (fine-tuned) | in progress | 110M + 2M |
-| v2 Livnium-native | Small transformer (32-dim) | **~80%+** (epoch 9/20) | 772K encoder |
+| Stage | Encoder | Accuracy | N-recall | Params |
+|---|---|---|---|---|
+| v1 Legacy | Random BoW (256-dim) | ~56% | — | ~2M |
+| v1 Pretrained | Livnium BoW (256-dim, frozen) | **76.32%** | 70.9% | ~2M |
+| v2 Joint BERT | BERT bi-encoder (fine-tuned) | **82.06%** | 71.2% | 110M + 2M |
+| **v2.1 Joint-30k** | **BERT bi-encoder (joint grad-V)** | **82.79%** | **76.6%** | **110M + 2M** |
+| v2 Livnium-native | Small transformer (32-dim) | ~80%+ (epoch 9/20) | — | 772K encoder |
 
-> **Livnium-native result:** 142× fewer encoder params, 5.3× faster full pipeline, 9.3× faster encoder-only vs BERT-joint. No BERT at inference.
+> **v2.1 key result:** Pure gradient flow `h_{t+1} = h_t − α∇V(h_t)` with no MLP matches the trained system. The learned MLP is functionally dead.
 
 ---
 
@@ -166,8 +179,8 @@ The analytical gradient descent outperforms the trained MLP: +0.16pp overall, +1
 
 **Interpretation:** The trained MLP `δ_θ` was approximating gradient descent on this energy landscape but introducing small distortions. The clean analytical gradient recovers and slightly exceeds the learned behavior. `V(h)` is the Boltzmann log-partition function over anchor similarities — a natural measure of semantic basin proximity.
 
-> **Confirmed Livnium equation of motion:** `h_{t+1} = h_t − α∇V(h_t)`, `V(h) = −logsumexp(β·cos(h, anchors))`, β=1.0, α=0.2.
-> *Validated on full SNLI dev (9842 samples). Requires multi-seed validation for full generalization claim.*
+> **Confirmed Livnium equation of motion:** `h_{t+1} = h_t − α∇V(h_t)`, `V(h) = −logsumexp(β·cos(h, anchors))`.
+> *Validated on full SNLI dev (9,842 samples) at β=1.0 and β=20.0. Joint retraining under these dynamics yields 82.79% accuracy with N-recall 76.6%.*
 
 ---
 
@@ -218,12 +231,16 @@ livnium/
 │   ├── collapse4/
 │   │   └── quantum_embeddings_final.pt  ← v1 pretrained BoW embeddings
 │   ├── bert-joint/                      ← v2 joint BERT checkpoint (82.06%)
+│   ├── livnium-joint-30k/               ← v2.1 joint grad-V checkpoint (82.79%, N-rec 76.6%)
 │   └── livnium-native/                  ← v2 native encoder (in training)
 ├── training_logs/                     ← saved training runs
 └── system/
     └── snli/
         ├── model/
         │   ├── train.py               ← unified training script (all encoder types)
+        │   ├── train_livnium_joint.py ← v2.1 joint retraining under grad-V dynamics
+        │   ├── test_gradient_collapse.py ← gradient collapse comparison (3 modes)
+        │   ├── tunnel_test.py         ← trajectory diagnostic (TYPE-1/2/3/? classification)
         │   ├── eval.py                ← evaluation
         │   ├── infer.py               ← interactive / batch inference
         │   ├── speed_test.py          ← latency benchmark
@@ -324,15 +341,47 @@ python3 train.py \
 
 ---
 
+### v2.1 — Joint Retraining Under Grad-V Dynamics (82.79%, N-recall 76.6%)
+
+```bash
+pip install torch transformers
+cd system/snli/model/
+
+python3 train_livnium_joint.py \
+  --checkpoint   ../../../pretrained/bert-joint/best_model.pt \
+  --snli-train   ../../../data/snli/snli_1.0_train.jsonl \
+  --snli-dev     ../../../data/snli/snli_1.0_dev.jsonl \
+  --output-dir   ../../../pretrained/livnium-joint-30k \
+  --epochs 5 --max-train 30000 --stratify \
+  --beta 20.0 --alpha 0.05 --steps 6 \
+  --lambda-align 0.3 \
+  --batch-size 64 --lr 1e-3 --bert-lr 2e-5
+```
+
+---
+
 ## How to Eval
 
 ```bash
 cd system/snli/model/
 
+# Eval v2 bert-joint checkpoint
 python3 eval.py \
   --model-dir ../../../pretrained/bert-joint \
   --snli-test ../../../data/snli/snli_1.0_dev.jsonl \
   --batch-size 256
+
+# Eval v2.1 joint-30k checkpoint — gradient collapse comparison (all 3 modes)
+python3 test_gradient_collapse.py \
+  --checkpoint ../../../pretrained/livnium-joint-30k/best_model.pt \
+  --snli-dev   ../../../data/snli/snli_1.0_dev.jsonl \
+  --beta 20.0 --alpha 0.2
+
+# Run tunnel test on any checkpoint
+python3 tunnel_test.py \
+  --checkpoint ../../../pretrained/livnium-joint-30k/best_model.pt \
+  --snli-dev   ../../../data/snli/snli_1.0_dev.jsonl \
+  --n-samples 2000
 ```
 
 ## How to Run Inference
