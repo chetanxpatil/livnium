@@ -1,0 +1,139 @@
+================================================================================
+Livnium Inference Analysis — Post Run 1 (82.06% checkpoint)
+================================================================================
+Date      : 2026-03-18
+Checkpoint: ../../../pretrained/bert-joint/best_model.pt
+Dev Acc   : 82.06%
+
+================================================================================
+SPEED TEST RESULTS (confirmed)
+================================================================================
+Device: CPU
+  Batch  1  →   41.0ms  /  24.4 ex/s
+  Batch  8  →   56.5ms  / 141.7 ex/s
+  Batch 32  →  132.6ms  / 241.4 ex/s
+  Batch 64  →  251.8ms  / 254.1 ex/s
+
+Device: MPS
+  Batch  1  →   12.2ms  /  81.8 ex/s
+  Batch  8  →   16.9ms  / 472.7 ex/s
+  Batch 32  →   45.9ms  / 697.4 ex/s
+  Batch 64  →   81.6ms  / 784.1 ex/s
+
+Pipeline breakdown (batch=32):
+  BERT encoder  : 98% CPU  /  95% MPS
+  Collapse+Head :  2% CPU  /   5% MPS  ← physics engine is essentially free
+
+================================================================================
+WHAT WORKS
+================================================================================
+- 82.06% dev accuracy on SNLI (up from 61% frozen, +21pts from joint training)
+- Collapse head adds only ~2.4ms on MPS at batch=32
+- Attractor dynamics are computationally cheap at inference
+- Strong on semantic similarity pairs (paraphrases, hypernyms)
+- High confidence on clear-cut entailment cases
+
+================================================================================
+FAILURE MODES IDENTIFIED
+================================================================================
+
+1. ROLE REVERSAL FAILURE (critical)
+   "A man bites a dog"  →  "A dog bites a man"  →  predicted ENTAILMENT
+   "The cat chased the mouse"  →  "The mouse chased the cat"  →  predicted ENTAILMENT
+   Root cause: h0 = v_h - v_p loses structural/relational information.
+   Two sentences with same words in different order produce similar BERT CLS vectors.
+   The collapse falls into "semantic similarity" basin regardless of role structure.
+
+2. QUESTION/STATEMENT MISMATCH
+   "Who are you?"  →  "Are you a human?"  →  predicted ENTAILMENT
+   "Are you alive?"  →  "No you are not alive"  →  weak ENTAILMENT at 36.5%
+   Root cause: model trained on declarative sentences, struggles with interrogatives.
+   SNLI training data is almost entirely declarative premise/hypothesis pairs.
+
+3. DEVICE CONSISTENCY ISSUE
+   "The dog is sleeping on the couch"  →  "The dog is resting"
+     CPU  → ENTAILMENT  (73.1%)  ✓ correct
+     MPS  → CONTRADICTION  (50.5%)  ✗ wrong
+   Root cause: floating-point drift between CPU/MPS near basin decision boundaries.
+   Small numerical differences in collapse dynamics get amplified near basin edges.
+   Indicates some decision surfaces are too sharp / not robust enough.
+
+4. OPEN-DOMAIN REASONING (not expected to work)
+   Model is honest to SNLI training distribution.
+   Does not support general truth/reasoning beyond textual entailment patterns.
+
+================================================================================
+ROOT CAUSE ANALYSIS
+================================================================================
+
+Current pipeline:
+  v_p = BERT(premise)[CLS]       ← independent encoding
+  v_h = BERT(hypothesis)[CLS]    ← independent encoding
+  h0  = v_h - v_p                ← difference vector
+
+Problem: This is a BI-ENCODER architecture.
+  - BERT encodes each sentence independently
+  - CLS captures sentence meaning but not cross-sentence role relationships
+  - h0 = v_h - v_p is a concept-level difference, not a structure-level difference
+
+The model KNOWS concepts but not WHO DID WHAT TO WHOM.
+
+For "man bites dog" vs "dog bites man":
+  - same vocabulary → similar BERT CLS vectors → similar h0 → same basin
+  - role structure is lost before collapse even starts
+
+Fix: CROSS-ENCODER architecture
+  joint = BERT([premise; SEP; hypothesis])  ← joint encoding
+  h0    = joint[CLS]                        ← captures cross-attention between sentences
+  BERT attention heads can now attend between "man" in premise and "dog" in hypothesis
+  Role structure is preserved in the joint representation.
+
+This is how SOTA NLI models (>90%) work.
+
+================================================================================
+ARCHITECTURAL VERDICT
+================================================================================
+
+Strengths:
+  ✅ Collapse head is fast (~2ms overhead)
+  ✅ 82% on SNLI with clean joint training
+  ✅ Dynamic basins concept is sound
+  ✅ Physics engine adds no meaningful inference cost
+
+Weaknesses:
+  ❌ Bi-encoder h0 loses relational structure
+  ❌ Role reversal failures
+  ❌ Decision boundaries too sharp near neutral zone (device instability)
+  ❌ Neutral recall still weakest class (71.2%)
+
+Honest claim supported by evidence:
+  "Livnium can be jointly trained with BERT to reach 82.06% dev accuracy on SNLI,
+   and its iterative attractor head adds only ~2ms latency overhead on top of BERT."
+
+Not yet supported:
+  - General semantic reasoning
+  - Relational/structural NLI
+  - Out-of-distribution robustness
+
+================================================================================
+NEXT STEPS (priority order)
+================================================================================
+1. Switch to CROSS-ENCODER:
+   Feed [premise; SEP; hypothesis] jointly to BERT.
+   Use joint CLS as h0 input to collapse engine.
+   Expected gain: +4-6% accuracy, fixes role reversal.
+
+2. Build adversarial sanity suite:
+   - Role reversals (A bites B / B bites A)
+   - Negation flips (X → not X)
+   - Hypernym/paraphrase pairs
+   - Single-token contradiction swaps
+   - Question vs statement mismatches
+
+3. Fix neutral zone sharpness (portal mechanism):
+   Implement learned teleport for vectors confused at E/C boundary.
+   Reduces device instability by smoothing decision surface.
+
+4. Re-enable dynamic basins on MPS:
+   Fix CPU<->MPS transfer issue for basin field tensors.
+================================================================================
