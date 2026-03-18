@@ -352,6 +352,16 @@ def evaluate(
 # ──────────────────────────────────────────────────────────────────────────────
 
 def train(args):
+    # ── Seed ───────────────────────────────────────────────────────────────────
+    if args.seed is not None:
+        import random, numpy as np
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+        np.random.seed(args.seed)
+        random.seed(args.seed)
+        torch.backends.cudnn.deterministic = True
+        log.info(f"Seed: {args.seed}")
+
     if args.device:
         device = torch.device(args.device)
     else:
@@ -636,6 +646,8 @@ def main():
                         help='Learning rate for head + anchors')
     parser.add_argument('--bert-lr',    type=float, default=2e-5,
                         help='Learning rate for BERT encoder')
+    parser.add_argument('--seed',       type=int,   default=None,
+                        help='Random seed for reproducibility (sets torch, numpy, random)')
 
     args = parser.parse_args()
     train(args)
