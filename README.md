@@ -73,7 +73,7 @@ NLI classifier on SNLI where inference is not a single forward pass — it is a 
 |---|---|---|---|
 | v1 Legacy | Random BoW (256-dim) | ~56% | ~2M |
 | v1 Pretrained | Livnium BoW (256-dim, frozen) | **76.32%** | ~2M |
-| v2 Frozen BERT | BERT bi-encoder (frozen) | ~61% | 110M + 2M |
+| ~~v2 Frozen BERT~~ | ~~BERT bi-encoder (frozen)~~ | ~~\~61%~~ | ~~deprecated — BERT geometry doesn't align with attractor space without joint training~~ |
 | v2 Joint BERT | BERT bi-encoder (fine-tuned) | **82.06%** | 110M + 2M |
 | v2 Cross-BERT | BERT cross-encoder (fine-tuned) | in progress | 110M + 2M |
 | v2 Livnium-native | Small transformer (32-dim) | in progress | ~3M total |

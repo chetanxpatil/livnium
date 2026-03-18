@@ -21,7 +21,7 @@ v2 plugs in BERT as a bootstrap encoder and trains it jointly with the collapse 
 | Encoder | Accuracy |
 |---|---|
 | Pretrained BoW (v1) | 76.32% |
-| Frozen BERT | ~61% (wrong — BERT geometry doesn't align with attractor space without joint training) |
+| ~~Frozen BERT~~ | ~~\~61% — deprecated: BERT geometry doesn't align with attractor space without joint training~~ |
 | Joint BERT bi-encoder | **82.06%** ✓ |
 | Joint BERT cross-encoder | in progress |
 
@@ -70,6 +70,54 @@ Stage 3 (active):  words → LivniumNativeEncoder → collapse → label
 `LivniumNativeEncoder` is a small transformer (~3M params total) trained end-to-end against the attractor objective. No BERT at inference. The loss is the same — cross-entropy + contrastive repulsion + false-neutral penalty. The geometry is seeded from the extracted basis so training starts with meaningful anchor positions.
 
 **Target:** match cross-encoder accuracy at 33× fewer parameters.
+
+---
+
+## Goal 3b — Knowledge Distillation (no joint training during transfer)
+
+**Status: not started — idea**
+
+The current Livnium-native training trains the small encoder end-to-end from scratch, using only the seeded anchor positions from the extracted basis. The encoder has to re-learn language from nothing, guided only by the SNLI classification signal.
+
+A better path: **knowledge distillation from the trained BERT+Livnium teacher.**
+
+The insight is important: the deprecated "Frozen BERT" approach failed because BERT's geometry didn't align with the attractor space. But here the situation is different — BERT is not being used at inference. It is only a **teacher** during training.
+
+```
+Teacher (frozen):  BERT+Livnium (82.06%) → produces h0_teacher, h_final_teacher
+Student (training): LivniumNativeEncoder → produces h0_student, h_final_student
+
+Distillation loss: student output should match teacher output
+```
+
+**Why this works where frozen BERT failed:**
+- Frozen BERT failed because the collapse engine was trying to classify using BERT's geometry — it had no way to reshape the space
+- Distillation doesn't require the student to share BERT's geometry — it just requires the student's output to *functionally match* the teacher's output in Livnium space
+- The student learns Livnium geometry from scratch, guided by the teacher's trajectory signals
+
+**Loss design:**
+```python
+# h0 alignment — student's initial state should resemble teacher's
+L_h0 = F.mse_loss(h0_student, h0_teacher.detach())
+
+# Final state alignment — student should collapse to the same basin
+L_final = F.mse_loss(h_final_student, h_final_teacher.detach())
+
+# Standard SNLI loss (keeps the student grounded to labels)
+L_cls = cross_entropy(logits_student, labels)
+
+# Total
+L = L_cls + lambda_h0 * L_h0 + lambda_final * L_final
+```
+
+**Why this is faster and more stable than training from scratch:**
+- The teacher provides a dense, correct signal at every step — not just the 3-class label
+- The student doesn't have to rediscover the attractor geometry from scratch
+- Teacher supervision fills in the gaps between label boundaries where SNLI signal is sparse
+
+**Key distinction from deprecated frozen BERT:**
+- Frozen BERT (❌ deprecated): `BERT → h0 → collapse → label` — BERT is in the live inference path, geometry mismatch kills performance
+- Distillation (✅ this idea): `BERT is teacher-only, offline` — student runs independently at inference, no BERT in the loop
 
 ---
 

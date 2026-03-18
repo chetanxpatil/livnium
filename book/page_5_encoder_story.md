@@ -156,7 +156,7 @@ The experiment is clean: **everything identical, only the quality of h0 changes.
 |---|---|---|---|---|
 | 1 | Legacy (random BoW) | Embeddings + engine + head | ~56% | No semantic knowledge, order-blind |
 | 2 | Pretrained Livnium BoW | Embeddings + engine + head | 76.32% | Semantically shaped vectors, but still mean-pool |
-| 3 | Frozen BERT (HuggingFace) | Engine + head only | ~61% | BERT frozen — collapse engine can't reshape BERT's geometry |
+| ~~3~~ | ~~Frozen BERT (HuggingFace)~~ | ~~Engine + head only~~ | ~~\~61%~~ | ~~**DEPRECATED** — BERT geometry doesn't align with attractor space without joint training~~ |
 | 4 | Joint BERT (bi-encoder) | BERT + engine + head | **82.06%** | BERT fine-tunes alongside collapse dynamics (5 epochs) |
 | 5 | Joint BERT (cross-encoder) | BERT + engine + head | in progress | [CLS] premise [SEP] hypothesis — fixes role-reversal failures |
 | 6? | Livnium-native encoder | Small encoder + engine + head | target: 84%+ | Ditch BERT entirely — see Page 6 |
