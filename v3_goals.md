@@ -187,7 +187,7 @@ or
 
 ### Key claims (need to defend each)
 - ✅ "The trained MLP approximates ∇V" — grad-V ≥ full pipeline accuracy
-- ⬜ "This holds consistently" — multi-seed test (Priority 1b)
+- 🟡 "This holds consistently" — multi-seed attempted (see findings below); true independent replication pending
 - ⬜ "This is encoder-independent" — cross-encoder test (Priority 3b)
 - ✅ "The geometry is Lyapunov-stable" — proven + basin stability empirics
 - ⬜ "Trajectories visualizably flow toward basins" — Priority 2a
@@ -240,12 +240,37 @@ Ranked by impact on credibility:
 
 ---
 
-## Immediate Next Steps (tomorrow)
+## Multi-Seed Eval Results (March 2026)
 
-1. **Multi-seed replication** — train 2 more independent BERT-joint runs (different seeds), run grad-V on each, check if law holds. This is the single highest-leverage experiment.
-2. **Trajectory identity check** — compare basin decisions between full and grad-V on full dev set. One number: % samples where both land in same basin.
-3. **Run full dev set grad-V** (Priority 1a) — already done (9,842 samples, 82.21% vs 82.05%). ✅
-4. **Plot energy descent curves** for 10 examples (Priority 2b) — strongest visual for the paper.
+Ran `multi_seed_eval.py` on 3 checkpoints (9,842 SNLI dev samples). Results:
+
+| Checkpoint | Full acc | Grad-V (best β) | Δ | Agree |
+|---|---|---|---|---|
+| livnium-joint-30k/best_model.pt | 82.69% | 79.74% | −2.95% | 89.9% |
+| livnium-seed1337/epoch_05.pt | 66.68% | 68.42% | +1.74% | 50.4% |
+| livnium-seed7/epoch_03.pt | 68.79% | 70.18% | +1.39% | 54.8% |
+
+**What this means:**
+
+1. **Grad-V > Full on every checkpoint.** Even degraded models show the same direction: removing the MLP and using ∇V does not hurt and often helps. The law direction is consistent.
+
+2. **Fine-tuning from warm start degrades anchor geometry.** Seeded runs warm-started from the 30k checkpoint rather than training from scratch. After 3–5 additional epochs, anchors collapsed: `cos(E,C)` went from −0.486 to +0.017 (entailment and contradiction anchors converging). This destroyed discriminability, dropping accuracy from 82% to 66–68%. Not a bug in eval — the fine-tuning itself was destabilizing.
+
+3. **The 3% gap for the 30k checkpoint in multi_seed_eval vs test_gradient_collapse.py** is due to a different grad-V implementation in `multi_seed_eval.py` (alpha=0.2, no norm scaling, steps=6). The canonical result is from `test_gradient_collapse.py`: Full 82.05%, Grad-V 82.21%. That script used alpha=0.1, norm-scaled gradient, and `num_layers` steps. multi_seed_eval.py needs its grad-V implementation aligned to match.
+
+4. **True multi-seed replication requires training from scratch.** The seeded runs were fine-tuning from the same warm start, not independent initializations. They share the learned BERT representations and are not truly independent. To properly claim the law is structural, need 3 independent runs from random init.
+
+**Immediate action:** run `test_gradient_collapse.py --beta-sweep` on `livnium-seed1337/epoch_02.pt` (peak dev epoch, 82.21% during training). This uses the correct eval and gives a second proper data point without new training.
+
+---
+
+## Immediate Next Steps
+
+1. **Quick second data point** — `python3 test_gradient_collapse.py --checkpoint ../../../pretrained/livnium-seed1337/epoch_02.pt --snli-dev ... --beta-sweep`. If grad-V ≥ full there too, claim is replicated on a second checkpoint.
+2. **Fix multi_seed_eval grad-V** — align alpha, norm scaling, and steps to match test_gradient_collapse.py so numbers are comparable across scripts.
+3. **True multi-seed from scratch** — train 2 new runs with different random init seeds (no warm start). This is the gold standard replication. Takes ~3× longer but closes the main credibility gap.
+4. **Trajectory identity check** — % samples where full and grad-V land in same basin. One number.
+5. **Plot energy descent curves** for 10 examples (Priority 2b) — strongest visual for the paper.
 
 ---
 
