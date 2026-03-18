@@ -13,101 +13,140 @@ Usage:
     --checkpoints ckpt_seed42.pt ckpt_seed1337.pt ckpt_seed7.pt \
     --snli-dev ../../../data/snli/snli_1.0_dev.jsonl \
     --n-samples 9842
-
-To train additional seeds first:
-  python3 train_livnium_joint.py --seed 1337 --output-dir ../../../pretrained/livnium-seed1337
-  python3 train_livnium_joint.py --seed 7    --output-dir ../../../pretrained/livnium-seed7
 """
 
 import argparse
 import json
-import time
-import torch
-import torch.nn.functional as F
-import numpy as np
+import math
+import sys
 from pathlib import Path
 from collections import defaultdict
 
-# ─── Reuse collapse logic from test_gradient_collapse ────────────────────────
+import torch
+import torch.nn.functional as F
+import numpy as np
+from tqdm import tqdm
+
+_here = Path(__file__).resolve().parent
+_repo = _here.parent
+sys.path.insert(0, str(_here))
+sys.path.insert(0, str(_repo))
+
+from core import VectorCollapseEngine
+from tasks.snli import BERTSNLIEncoder, SNLIHead
+from train import load_snli_data
+
+
+# ─── Model loading ───────────────────────────────────────────────────────────
 
 def load_checkpoint(ckpt_path, device):
-    """Load encoder, collapse engine, head, and anchors from checkpoint."""
-    # Import from the same directory
-    import sys, os
-    sys.path.insert(0, os.path.dirname(__file__))
-    from test_gradient_collapse import load_model_components
-    return load_model_components(ckpt_path, device)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    model_args = ckpt['args']
+
+    encoder = BERTSNLIEncoder(freeze=True).to(device)
+    encoder.load_state_dict(ckpt['encoder'])
+    encoder.eval()
+
+    engine = VectorCollapseEngine(
+        dim=model_args.dim,
+        num_layers=model_args.num_layers,
+        strength_entail=getattr(model_args, 'strength_entail', 0.1),
+        strength_contra=getattr(model_args, 'strength_contra', 0.1),
+        strength_neutral=getattr(model_args, 'strength_neutral', 0.05),
+        strength_neutral_boost=getattr(model_args, 'strength_neutral_boost', 0.05),
+    ).to(device)
+    engine.load_state_dict(ckpt['collapse_engine'])
+    engine.eval()
+
+    head = SNLIHead(dim=model_args.dim).to(device)
+    head.load_state_dict(ckpt['head'])
+    head.eval()
+
+    # Extract anchors from collapse engine
+    anchors = torch.stack([
+        engine.anchor_entail,
+        engine.anchor_contra,
+        engine.anchor_neutral,
+    ]).detach()  # (3, 768)
+
+    return encoder, engine, head, anchors
 
 
-def encode_samples(encoder, samples, device, batch_size=64):
-    """Encode premise/hypothesis pairs → h0, v_p, v_h tensors."""
-    h0_list, vp_list, vh_list, label_list = [], [], [], []
-    label_map = {"entailment": 0, "contradiction": 1, "neutral": 2}
+# ─── Encoding ────────────────────────────────────────────────────────────────
 
-    for i in range(0, len(samples), batch_size):
-        batch = samples[i:i+batch_size]
-        premises = [s["sentence1"] for s in batch]
-        hypotheses = [s["sentence2"] for s in batch]
-        labels = [label_map[s["gold_label"]] for s in batch]
+def encode_samples(encoder, raw, device, batch_size=64):
+    label_map = {'entailment': 0, 'contradiction': 1, 'neutral': 2}
+    all_h0, all_vp, all_vh, all_labels = [], [], [], []
 
-        with torch.no_grad():
-            vp, vh = encoder.encode_batch(premises, hypotheses, device)
-            h0 = vh - vp
+    with torch.no_grad():
+        for b in tqdm(range(math.ceil(len(raw) / batch_size)), desc='Encoding'):
+            batch = raw[b*batch_size:(b+1)*batch_size]
+            premises   = [s['premise']    for s in batch]
+            hypotheses = [s['hypothesis'] for s in batch]
+            labels_b   = [label_map.get(s['gold_label'], 2) for s in batch]
 
-        h0_list.append(h0.cpu())
-        vp_list.append(vp.cpu())
-        vh_list.append(vh.cpu())
-        label_list.extend(labels)
+            h0, vp, vh = encoder.build_initial_state(
+                premises, hypotheses, add_noise=False, device=device
+            )
+            all_h0.append(h0.cpu())
+            all_vp.append(vp.cpu())
+            all_vh.append(vh.cpu())
+            all_labels.extend(labels_b)
 
     return (
-        torch.cat(h0_list),
-        torch.cat(vp_list),
-        torch.cat(vh_list),
-        torch.tensor(label_list),
+        torch.cat(all_h0),
+        torch.cat(all_vp),
+        torch.cat(all_vh),
+        torch.tensor(all_labels),
     )
 
 
-def collapse_grad_v(h0, anchors, beta, alpha, steps=6):
-    """Pure analytical grad-V collapse — no MLP, no learned params."""
+# ─── Collapse modes ──────────────────────────────────────────────────────────
+
+@torch.no_grad()
+def run_full(engine, h0):
     h = h0.clone()
-    A = anchors  # (3, 768)
+    for _ in range(engine.num_layers):
+        h = engine.step(h)
+    return h
+
+
+@torch.no_grad()
+def run_grad_v(h0, anchors, beta, alpha, steps=6):
+    h = h0.clone()
+    A = F.normalize(anchors, dim=-1)
 
     for _ in range(steps):
         h_norm = F.normalize(h, dim=-1)
-        A_norm = F.normalize(A, dim=-1)
+        cos_scores = h_norm @ A.T                          # (N, 3)
+        weights = F.softmax(beta * cos_scores, dim=-1)     # Boltzmann
 
-        # cos(h, A_k) for each anchor
-        cos_scores = (h_norm @ A_norm.T)           # (N, 3)
-        weights = F.softmax(beta * cos_scores, dim=-1)  # Boltzmann weights
-
-        # gradient of V(h) w.r.t. h
         h_len = h.norm(dim=-1, keepdim=True).clamp(min=1e-8)
         grad = torch.zeros_like(h)
         for k in range(3):
-            # ∇_h cos(h, A_k) = (A_k - h·cos(h,A_k)) / ||h||
             cos_k = cos_scores[:, k:k+1]
-            grad_cos_k = (A_norm[k].unsqueeze(0) - h_norm * cos_k) / h_len
-            grad -= weights[:, k:k+1] * grad_cos_k  # ∇V = -Σ w_k ∇cos
+            grad_cos_k = (A[k].unsqueeze(0) - h_norm * cos_k) / h_len
+            grad -= weights[:, k:k+1] * grad_cos_k
 
         h = h - alpha * grad
 
     return h
 
 
-def collapse_full(h0, engine, steps=6):
-    """Full trained collapse (MLP + forces)."""
-    with torch.no_grad():
-        h = h0.clone()
-        for _ in range(steps):
-            h = engine.step(h)
-    return h
+# ─── Metrics ─────────────────────────────────────────────────────────────────
 
-
-def get_predictions(h_final, head, v_p, v_h):
-    """Run classification head → predicted labels."""
+def get_predictions(h_final, head, v_p, v_h, device, batch_size=256):
+    preds = []
+    n = h_final.shape[0]
     with torch.no_grad():
-        logits = head(h_final, v_p, v_h)
-        return logits.argmax(dim=-1)
+        for i in range(0, n, batch_size):
+            logits = head(
+                h_final[i:i+batch_size].to(device),
+                v_p[i:i+batch_size].to(device),
+                v_h[i:i+batch_size].to(device),
+            )
+            preds.append(logits.argmax(dim=-1).cpu())
+    return torch.cat(preds)
 
 
 def accuracy_and_recall(preds, labels):
@@ -123,8 +162,7 @@ def accuracy_and_recall(preds, labels):
 
 
 def get_anchor_geometry(anchors):
-    """Compute pairwise cosine similarities between anchors."""
-    A = F.normalize(anchors, dim=-1).cpu()
+    A = F.normalize(anchors.cpu(), dim=-1)
     return {
         "cos(E,C)": (A[0] @ A[1]).item(),
         "cos(E,N)": (A[0] @ A[2]).item(),
@@ -132,48 +170,40 @@ def get_anchor_geometry(anchors):
     }
 
 
-def basin_agreement(preds_full, preds_gradv):
-    """% samples where full and grad-V land in same predicted class."""
-    return (preds_full == preds_gradv).float().mean().item()
+def basin_agreement(preds_a, preds_b):
+    return (preds_a == preds_b).float().mean().item()
 
 
-# ─── Main ────────────────────────────────────────────────────────────────────
+# ─── Per-checkpoint eval ─────────────────────────────────────────────────────
 
-def run_checkpoint(ckpt_path, samples, args, device):
+def run_checkpoint(ckpt_path, raw, args, device):
     print(f"\n{'='*60}")
     print(f"Checkpoint: {ckpt_path}")
     print(f"{'='*60}")
 
     encoder, engine, head, anchors = load_checkpoint(ckpt_path, device)
-    encoder.eval(); head.eval()
-
-    print("Encoding samples...")
-    h0, v_p, v_h, labels = encode_samples(encoder, samples, device)
-    h0 = h0.to(device)
-    v_p = v_p.to(device)
-    v_h = v_h.to(device)
-    labels = labels.to(device)
     A = anchors.to(device)
+
+    h0, v_p, v_h, labels = encode_samples(encoder, raw, device)
 
     results = {}
 
     # 1. Full (MLP + forces)
     print("Running Full (MLP + forces)...")
-    h_full = collapse_full(h0, engine)
-    preds_full = get_predictions(h_full.to(device), head, v_p, v_h)
+    h_full = run_full(engine, h0.to(device)).cpu()
+    preds_full = get_predictions(h_full, head, v_p, v_h, device)
     acc_full, recall_full = accuracy_and_recall(preds_full, labels)
     results["full"] = {"acc": acc_full, "recall": recall_full}
     print(f"  Full:   acc={acc_full:.4f}  E={recall_full['E']:.3f}  N={recall_full['N']:.3f}  C={recall_full['C']:.3f}")
 
-    # 2. Grad-V at each beta
-    best_beta = None
-    best_gradv_acc = -1
+    # 2. Grad-V sweep
+    best_beta, best_acc_gv = None, -1
     results["grad_v"] = {}
 
     for beta in args.betas:
         print(f"Running Grad-V (beta={beta})...")
-        h_gv = collapse_grad_v(h0, A, beta=beta, alpha=args.alpha, steps=args.steps)
-        preds_gv = get_predictions(h_gv.to(device), head, v_p, v_h)
+        h_gv = run_grad_v(h0.to(device), A, beta=beta, alpha=args.alpha, steps=args.steps).cpu()
+        preds_gv = get_predictions(h_gv, head, v_p, v_h, device)
         acc_gv, recall_gv = accuracy_and_recall(preds_gv, labels)
         agree = basin_agreement(preds_full, preds_gv)
 
@@ -184,13 +214,13 @@ def run_checkpoint(ckpt_path, samples, args, device):
         }
         print(f"  Grad-V β={beta}: acc={acc_gv:.4f}  N={recall_gv['N']:.3f}  agree={agree:.3f}")
 
-        if acc_gv > best_gradv_acc:
-            best_gradv_acc = acc_gv
+        if acc_gv > best_acc_gv:
+            best_acc_gv = acc_gv
             best_beta = beta
 
     results["best_beta"] = best_beta
-    results["best_gradv_acc"] = best_gradv_acc
-    results["delta_vs_full"] = best_gradv_acc - acc_full
+    results["best_gradv_acc"] = best_acc_gv
+    results["delta_vs_full"] = best_acc_gv - acc_full
 
     # 3. Anchor geometry
     geom = get_anchor_geometry(A)
@@ -200,17 +230,17 @@ def run_checkpoint(ckpt_path, samples, args, device):
     return results
 
 
+# ─── Summary ─────────────────────────────────────────────────────────────────
+
 def print_summary(all_results):
     print(f"\n{'='*60}")
     print("MULTI-SEED SUMMARY")
     print(f"{'='*60}")
 
-    print(f"\n{'Checkpoint':<35} {'Full':>6} {'Best β':>6} {'Grad-V':>7} {'Δ':>6} {'Agree':>7}")
-    print("-" * 70)
+    print(f"\n{'Checkpoint':<35} {'Full':>6} {'Best β':>6} {'Grad-V':>7} {'Δ':>7} {'Agree':>7}")
+    print("-" * 72)
 
-    best_betas = []
-    agreements = []
-    deltas = []
+    best_betas, agreements, deltas = [], [], []
     geoms = defaultdict(list)
 
     for ckpt, res in all_results.items():
@@ -227,83 +257,66 @@ def print_summary(all_results):
         for k, v in res["geometry"].items():
             geoms[k].append(v)
 
-        print(f"{name:<35} {full_acc:>6.4f} {best_beta:>6} {best_acc:>7.4f} {delta:>+6.4f} {agree:>7.3f}")
+        print(f"{name:<35} {full_acc:>6.4f} {best_beta:>6} {best_acc:>7.4f} {delta:>+7.4f} {agree:>7.3f}")
 
     print(f"\n--- Reproducibility ---")
-    print(f"Best β across seeds: {best_betas}  {'✅ CONSISTENT' if len(set(best_betas))==1 else '⚠️  VARIES'}")
-    print(f"Basin agreement:     mean={np.mean(agreements):.3f}  std={np.std(agreements):.4f}")
-    print(f"Accuracy delta:      mean={np.mean(deltas):+.4f}  std={np.std(deltas):.4f}")
+    print(f"Best β across seeds:  {best_betas}  {'✅ CONSISTENT' if len(set(best_betas))==1 else '⚠️  VARIES'}")
+    print(f"Basin agreement:      mean={np.mean(agreements):.3f}  std={np.std(agreements):.4f}")
+    print(f"Accuracy delta:       mean={np.mean(deltas):+.4f}  std={np.std(deltas):.4f}")
 
     print(f"\n--- Anchor Geometry ---")
     for k, vals in geoms.items():
         print(f"  {k}: {[f'{v:+.4f}' for v in vals]}  mean={np.mean(vals):+.4f}  std={np.std(vals):.4f}")
 
-    # Verdict
     print(f"\n--- Verdict ---")
     beta_consistent = len(set(best_betas)) == 1
     agree_high = np.mean(agreements) > 0.90
     delta_small = abs(np.mean(deltas)) < 0.005
 
     if beta_consistent and agree_high and delta_small:
-        print("✅ LAW IS STRUCTURAL: same β optimal, >90% basin agreement, <0.5% accuracy delta across seeds.")
+        print("✅ LAW IS STRUCTURAL: same β optimal, >90% basin agreement, <0.5% delta across seeds.")
     elif agree_high and delta_small:
-        print("🟡 LAW HOLDS but β varies — energy function is robust, sharpness parameter isn't pinned.")
+        print("🟡 LAW HOLDS but β varies — energy function robust, sharpness not pinned.")
+    elif delta_small:
+        print("🟡 ACCURACY HOLDS but basin agreement low — check if grad-V takes different paths to same answer.")
     else:
-        print("⚠️  INCONSISTENT — law may be seed-specific. Check basin agreement and delta per seed.")
+        print("⚠️  INCONSISTENT — law may be seed-specific. Inspect per-seed results.")
 
 
-def load_snli(path, n_samples):
-    samples = []
-    label_set = {"entailment", "contradiction", "neutral"}
-    with open(path) as f:
-        for line in f:
-            obj = json.loads(line)
-            if obj.get("gold_label") in label_set:
-                samples.append(obj)
-                if len(samples) >= n_samples:
-                    break
-    return samples
-
+# ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-seed grad-V reproducibility test")
-    parser.add_argument("--checkpoints", nargs="+", required=True,
-                        help="Paths to checkpoint files (one per seed)")
-    parser.add_argument("--snli-dev", required=True,
-                        help="Path to SNLI dev jsonl")
-    parser.add_argument("--n-samples", type=int, default=9842,
-                        help="Number of dev samples to evaluate")
-    parser.add_argument("--betas", nargs="+", type=float, default=[1.0, 5.0, 20.0],
-                        help="Beta values to sweep for grad-V")
-    parser.add_argument("--alpha", type=float, default=0.2,
-                        help="Step size for grad-V")
-    parser.add_argument("--steps", type=int, default=6,
-                        help="Number of collapse steps")
-    parser.add_argument("--output", type=str, default=None,
-                        help="Optional path to save results as JSON")
+    parser.add_argument("--checkpoints", nargs="+", required=True)
+    parser.add_argument("--snli-dev", required=True)
+    parser.add_argument("--n-samples", type=int, default=9842)
+    parser.add_argument("--betas", nargs="+", type=float, default=[1.0, 5.0, 20.0])
+    parser.add_argument("--alpha", type=float, default=0.2)
+    parser.add_argument("--steps", type=int, default=6)
+    parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("mps" if torch.backends.mps.is_available() else
+                          "cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
     print(f"Loading {args.n_samples} SNLI dev samples...")
-    samples = load_snli(args.snli_dev, args.n_samples)
-    print(f"Loaded {len(samples)} samples.")
+    raw = load_snli_data(args.snli_dev, max_samples=args.n_samples)
+    print(f"Loaded {len(raw)} samples.")
 
     all_results = {}
     for ckpt in args.checkpoints:
-        all_results[ckpt] = run_checkpoint(ckpt, samples, args, device)
+        all_results[ckpt] = run_checkpoint(ckpt, raw, args, device)
 
     print_summary(all_results)
 
     if args.output:
-        # Convert tensors/non-serializable to plain Python
         def clean(obj):
             if isinstance(obj, dict):
-                return {k: clean(v) for k, v in obj.items()}
+                return {str(k): clean(v) for k, v in obj.items()}
             if isinstance(obj, (list, tuple)):
                 return [clean(v) for v in obj]
-            if isinstance(obj, (np.floating, np.integer)):
+            if isinstance(obj, (np.floating, np.integer, float)):
                 return float(obj)
             return obj
 
