@@ -110,22 +110,34 @@ def run_full(engine, h0):
 
 @torch.no_grad()
 def run_grad_v(h0, anchors, beta, alpha, steps=6):
+    """
+    Pure gradient flow matching test_gradient_collapse.py exactly:
+      h_{t+1} = h_t - alpha * ||h_t|| * grad_V(h_t)
+
+    where grad_V is the tangent-plane projected gradient of
+      V(h) = -1/beta * logsumexp(beta * cos(h, anchor_i))
+    """
     h = h0.clone()
-    A = F.normalize(anchors, dim=-1)
+    A = F.normalize(anchors, dim=-1)   # (3, dim)
 
     for _ in range(steps):
-        h_norm = F.normalize(h, dim=-1)
-        cos_scores = h_norm @ A.T                          # (N, 3)
-        weights = F.softmax(beta * cos_scores, dim=-1)     # Boltzmann
+        h_n = F.normalize(h, dim=-1)           # (N, dim)
+        alignments = h_n @ A.T                 # (N, 3)
+        weights = torch.softmax(beta * alignments, dim=-1)   # (N, 3)
 
-        h_len = h.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-        grad = torch.zeros_like(h)
-        for k in range(3):
-            cos_k = cos_scores[:, k:k+1]
-            grad_cos_k = (A[k].unsqueeze(0) - h_norm * cos_k) / h_len
-            grad -= weights[:, k:k+1] * grad_cos_k
+        # weighted target direction in normalised space
+        target = weights @ A                   # (N, dim)
 
-        h = h - alpha * grad
+        # tangent-plane gradient of V w.r.t. h
+        grad_v = -(target - h_n * (h_n * target).sum(dim=-1, keepdim=True))
+
+        # step scaled by current norm (matches test_gradient_collapse.py)
+        h_norm = h.norm(p=2, dim=-1, keepdim=True)
+        h = h - alpha * h_norm * grad_v
+
+        # norm control
+        h_norm2 = h.norm(p=2, dim=-1, keepdim=True)
+        h = torch.where(h_norm2 > 10.0, h * (10.0 / (h_norm2 + 1e-8)), h)
 
     return h
 
@@ -288,7 +300,7 @@ def main():
     parser.add_argument("--snli-dev", required=True)
     parser.add_argument("--n-samples", type=int, default=9842)
     parser.add_argument("--betas", nargs="+", type=float, default=[1.0, 5.0, 20.0])
-    parser.add_argument("--alpha", type=float, default=0.2)
+    parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--steps", type=int, default=6)
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()

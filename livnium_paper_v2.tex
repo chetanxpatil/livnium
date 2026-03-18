@@ -331,9 +331,48 @@ function over anchor similarities---a natural measure of semantic basin
 proximity. The system learned to perform gradient descent on this energy
 without being told to.
 
+\subsection{Geometric Robustness Under MLP Divergence}
+
+To test whether the grad-V result depends on the MLP being well-trained,
+we evaluated a second independent checkpoint where the MLP had begun to
+diverge from the anchor geometry. During fine-tuning from the primary
+checkpoint with a different random seed, the MLP weights drifted while
+the anchor structure remained intact ($\cos(A_E, A_C) = -0.188$,
+$\cos(A_C, A_N) = +0.118$). At this checkpoint the full system---MLP
+plus anchor forces---achieved only 70.66\% accuracy, 11.4pp below
+the baseline. The MLP was actively degrading classification.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Mode & Accuracy & E-recall & N-recall & C-recall \\
+\midrule
+\multicolumn{5}{c}{\textit{Diverged-MLP checkpoint ($n=9{,}842$)}} \\
+\midrule
+Full ($\delta_\theta$ + forces) & 70.66\% & 60.35\% & 58.36\% & 93.26\% \\
+No-delta (forces only) & 81.95\% & 86.30\% & 72.64\% & 86.73\% \\
+\textbf{Grad-V ($\beta=2$, $\alpha=0.05$)} & \textbf{82.25\%} & 88.16\% & \textbf{75.67\%} & 82.73\% \\
+\bottomrule
+\end{tabular}
+\caption{Grad-V evaluated on a checkpoint where the MLP has diverged.
+The full system (MLP + forces) collapses to 70.66\%, while the
+analytical gradient of $V(h)$---which ignores the MLP entirely---recovers
+82.25\%. The anchor geometry outlasts the neural weights.}
+\label{tab:robustness}
+\end{table}
+
+The analytical gradient recovered 82.25\%, a gap of $+11.59$pp over the
+full system (Table~\ref{tab:robustness}). The anchor geometry, learned
+during the original training run, persisted unchanged; only the MLP
+had drifted. Because $\nabla V$ derives solely from the geometry and
+ignores the neural weights entirely, it cannot be degraded by MLP
+divergence. The MLP is not just redundant---it is a liability. The
+geometry is the classifier.
+
 \subsection{Stability Across \texorpdfstring{$\beta$}{beta}}
 
-We swept $\beta \in \{0.5, 1, 2, 5, 10, 20, 50\}$ at $\alpha = 0.2$.
+We swept $\beta \in \{0.5, 1, 2, 5, 10, 20, 50\}$ at $\alpha = 0.1$.
 All values within $\beta \in [1, 50]$ produce accuracy within $\pm 1\%$
 of the trained system, confirming that the energy landscape formulation
 is robust to the sharpness parameter. The result is not an artifact of
