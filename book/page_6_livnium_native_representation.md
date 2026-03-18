@@ -143,15 +143,52 @@ This is what "not a black box" means in practice. Not just that a human wrote th
 **Immediate (this session):**
 Complete the cross-encoder BERT training. Verify role-reversal fixes. Get to 84%+.
 
-**Next:**
-1. Extract trained anchor geometry
-2. PCA the collapse trajectories to define the Livnium basis (expected: 16–32 meaningful dims)
-3. Visualize what the basis looks like — can we see E/N/C clusters in 3D?
+**Step 1 — Extract the geometry (done: `extract_livnium_basis.py`)**
 
-**After that:**
-1. Build the small Livnium-native encoder architecture
-2. Train it end-to-end against the Livnium attractor objective
-3. Compare to BERT at same accuracy — but with 35x fewer parameters and full interpretability
+```bash
+python extract_livnium_basis.py \
+    --checkpoint ../../../pretrained/bert-joint/best_model.pt \
+    --snli-train ../../../data/snli/snli_1.0_train.jsonl \
+    --encoder-type bert \
+    --basis-dim 32 \
+    --output ../../../pretrained/livnium_basis.pt
+```
+
+This script:
+1. Loads trained anchor vectors (anchor_entail, anchor_contra, anchor_neutral)
+2. Builds an orthonormal basis from anchor geometry (3 directions)
+3. Runs 5,000 training examples through the frozen BERT encoder, collects h0 vectors
+4. Runs PCA on the h0 vectors to find the 29 additional directions of maximum variance
+5. Saves a 768 × 32 projection matrix + projected anchors
+
+**Step 2 — Train the Livnium-native encoder (done: `LivniumNativeEncoder` in `encoding_snli.py`)**
+
+```bash
+python train.py \
+    --snli-train ../../../data/snli/snli_1.0_train.jsonl \
+    --snli-dev   ../../../data/snli/snli_1.0_dev.jsonl \
+    --encoder-type livnium \
+    --livnium-dim 64 \
+    --livnium-layers 2 \
+    --livnium-nhead 4 \
+    --livnium-cross-encoder \
+    --livnium-basis ../../../pretrained/livnium_basis.pt \
+    --output-dir ../../../pretrained/livnium-native \
+    --epochs 20 \
+    --batch-size 64 \
+    --lr 1e-3 \
+    --lambda-rep 0.1 \
+    --margin-rep 0.3 \
+    --lambda-fn 0.05 \
+    --disable-dynamic-basins
+```
+
+**Step 3 — Compare**
+
+After training, compare on the dev set:
+- BERT cross-encoder: target 84%+ — 110M encoder params
+- Livnium-native: TBD — ~3M total params (33x smaller)
+- Visualize: can we see E/N/C clusters in 3D by projecting to the first 3 basis directions?
 
 **The long horizon:**
 A Livnium-native tokenizer. Not character-level, not subword — but units that are meaningful in the Livnium basis. What is the smallest chunk of language that has a stable attractor address? That question has no answer yet. Finding it is the frontier.
