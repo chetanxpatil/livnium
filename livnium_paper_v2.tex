@@ -30,7 +30,7 @@
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\lse}{\mathrm{logsumexp}}
 
-\title{Three Laws of Semantic Collapse:\\NLI as Gradient Descent on an Anchor Energy Landscape}
+\title{A Trained Iterative Classifier Reduces to Energy Gradient Descent:\\Recovering Closed-Form Dynamics from a Learned NLI System}
 
 \author{
     Chetan Patil \\
@@ -45,84 +45,92 @@
 
 % ═══════════════════════════════════════════════════════════════════════════
 \begin{abstract}
-We present Livnium, a classification system for Natural Language Inference
-in which inference is not a single forward pass but a dynamical process:
-the hidden state evolves through multiple steps of geometry-aware updates
-before readout. We discover that the trained system's behavior is governed
-by three empirical laws: (1) the initial state encodes the relational
-difference between premise and hypothesis, (2) the semantic space is
-organized by an energy landscape $V(\vech) = -\lse(\beta \cdot \cos(\vech, \anchor{k}))$
-over three class anchors, and (3) the state evolves by gradient descent
-on this energy. Critically, Laws~2 and~3 were not designed---they were
-recovered from analyzing what a trained system was doing. We show that
-replacing the trained 1.2M-parameter MLP update with the three-line
-analytical gradient of $V$ matches accuracy on the full SNLI dev set
-(9,842 samples), with the learned residual contributing $\leq 0.25\%$.
-Joint retraining under the discovered dynamics reduces head--dynamics
-disagreement from 55.1\% to 4.0\% and improves neutral recall
-monotonically across five epochs ($+6.1$pp total). Trajectory analysis reveals a universal fixed-point phenomenon:
-collapse dynamics converge to the same state after ${\sim}3$ steps
-regardless of input, identifying the primary bottleneck. Code and
-pretrained weights are publicly available.
+We train an iterative classification head for natural language inference
+in which a hidden state evolves through multiple update steps before
+label readout. The update is implemented as a learned MLP (1.2M parameters),
+trained end-to-end on SNLI.
+
+We find that the learned update is unnecessary. Replacing the trained MLP
+with the analytical gradient of an energy function over anchor cosine
+similarities,
+$V(\vech) = -\lse(\beta \cdot \cos(\vech, \anchor{k}))$,
+produces identical performance on the full SNLI dev set
+(82.21\% vs 82.05\%; $n=9{,}842$) without retraining. The trained
+network had converged to performing gradient descent on a simple,
+interpretable energy landscape---a result verified by ablation, not
+assumed by design.
+
+We formalize this as three empirical patterns: (1) the initial state
+encodes the relational difference $h_0 = v_q - v_p$ (a design choice),
+(2) the representation space behaves as a logsumexp energy over anchor
+similarities (discovered), and (3) inference corresponds to gradient
+descent on that energy (discovered). Joint retraining under the
+recovered dynamics improves neutral recall by $+6.1$pp across five
+epochs and reduces head--dynamics disagreement from 55\% to 4\%.
+Trajectory analysis reveals a universal fixed-point collapse after
+${\sim}3$ steps, identifying the primary accuracy bottleneck.
+Code and pretrained weights are publicly available.
 \end{abstract}
 
 % ═══════════════════════════════════════════════════════════════════════════
 \section{Introduction}
 \label{sec:intro}
 
-The standard neural classifier computes $y = \text{softmax}(Wh + b)$:
-a single affine map from representation to logits. We explore an
-alternative in which the classification head is a small dynamical system
-that \emph{evolves} the representation through $L$ steps before producing
-a label:
+Standard neural classifiers map a representation $h$ to logits in a
+single step. In this work, we consider an alternative: evolving $h$
+through a sequence of learned updates before classification, guided by
+anchor vectors that define label-specific basins in representation space.
+
+The key finding is that the learned update is not required.
+
+We train such a system on SNLI with a 1.2M-parameter MLP as the update
+rule. After training, we replace the MLP with the analytical gradient of
+an energy function defined over cosine similarities to the label anchors:
 \[
-    h_0 \;\to\; h_1 \;\to\; \cdots \;\to\; h_L \;\to\; \text{logits}
+    V(h) = -\log\!\sum_{k} \exp\!\big(\beta \cdot \cos(h, \anchor{k})\big),
+    \qquad h_{t+1} = h_t - \alpha \nabla_h V(h_t)
 \]
-where each step applies learned residuals and geometric forces from
-label-specific anchor vectors. The label is determined by which
-\emph{basin} the state settles into, not by a one-shot projection.
+This parameter-free substitution produces the same accuracy on the full
+SNLI dev set (82.21\% vs 82.05\%, $n=9{,}842$) without any retraining.
+The trained system had converged to performing gradient descent on a
+simple, interpretable energy landscape.
 
-The original Livnium system \citep{patil2026livnium} introduced this
-idea with a bag-of-words encoder, achieving 76\% on SNLI. The system
-used hand-designed cosine-radial forces with a 135$^{\circ}$ mismatch
-from true cosine gradients---a non-conservative force field with no
-scalar potential.
+This was not designed. It was discovered by systematic ablation: removing
+the learned component and checking whether a closed-form alternative
+could reproduce the behavior. It could.
 
-In this paper, we report a surprising discovery. After upgrading to a
-jointly-trained BERT bi-encoder (82.06\% accuracy), we analyzed the
-trained collapse dynamics and found that they are well-approximated by
-gradient descent on a simple energy function over the class anchors.
-The learned MLP $\delta_\theta$, which constitutes 1.2M parameters of
-the collapse engine, can be replaced by a three-line analytical gradient
-formula with no accuracy loss---and slight improvement.
+\paragraph{Context.} The original Livnium system \citep{patil2026livnium}
+introduced attractor-based classification with a bag-of-words encoder
+(76\% on SNLI), using hand-designed cosine-radial forces with a
+135$^{\circ}$ mismatch from the true cosine gradient---a non-conservative
+force field with no scalar potential. Upgrading to a jointly-trained BERT
+bi-encoder (82\%) and analyzing the resulting dynamics revealed that the
+trained MLP had learned to correct this geometric inconsistency, producing
+behavior equivalent to gradient descent on $V(h)$.
 
-This leads to the \textbf{Three Laws of Livnium}:
+\paragraph{Three empirical patterns.} We formalize the discovered behavior as:
 \begin{enumerate}
-    \item \textbf{Law 1} (Relational State): $h_0 = v_h - v_p$
-    \item \textbf{Law 2} (Energy Landscape): $V(h) = -\lse\big(\beta \cdot \cos(h, \anchor{E}),\; \beta \cdot \cos(h, \anchor{C}),\; \beta \cdot \cos(h, \anchor{N})\big)$
-    \item \textbf{Law 3} (Collapse Dynamics): $h_{t+1} = h_t - \alpha \nabla V(h_t)$
+    \item \textbf{Relational initialization} (design choice): $h_0 = v_q - v_p$
+    \item \textbf{Energy landscape} (discovered): $V(h) = -\lse\big(\beta \cdot \cos(h, \anchor{E}),\; \beta \cdot \cos(h, \anchor{C}),\; \beta \cdot \cos(h, \anchor{N})\big)$
+    \item \textbf{Gradient dynamics} (discovered): $h_{t+1} = h_t - \alpha \nabla V(h_t)$
 \end{enumerate}
 
-Laws 2 and 3 were not assumed---they were recovered empirically from a
-trained system. This is the main result of the paper.
-
-We further validate this finding through joint retraining experiments,
-trajectory analysis via a ``tunnel test'' diagnostic, and basin stability
-measurements. Trajectory analysis reveals that the current dynamics
-converge to a universal fixed point after approximately three steps,
-independent of input---identifying the primary bottleneck for future work.
+Patterns 2 and 3 were recovered empirically from a trained system, not
+assumed by design. Pattern 1 is a design choice that works well but is
+not fundamental---any relational encoding of the inputs should suffice.
 
 \paragraph{Contributions.}
 \begin{enumerate}
-    \item Discovery that trained attractor dynamics approximate gradient
-          descent on a logsumexp cosine energy (Section~\ref{sec:discovery}).
-    \item Formulation of three empirical laws that fully specify the
-          system's inference behavior (Section~\ref{sec:laws}).
-    \item Joint retraining framework that achieves head--dynamics
-          consistency (Section~\ref{sec:joint}).
+    \item Demonstration that a trained iterative classifier can be reduced
+          to a parameter-free energy gradient with no accuracy loss
+          (Section~\ref{sec:discovery}).
+    \item Characterization of the recovered dynamics as three empirical
+          patterns (Section~\ref{sec:laws}).
+    \item Joint retraining framework that aligns the classification head
+          with the discovered dynamics (Section~\ref{sec:joint}).
     \item Tunnel test diagnostic that classifies error modes by
           trajectory analysis (Section~\ref{sec:tunnel}).
-    \item Identification of a universal fixed-point phenomenon as the
+    \item Identification of a universal fixed-point collapse as the
           primary accuracy bottleneck (Section~\ref{sec:fixedpoint}).
 \end{enumerate}
 
