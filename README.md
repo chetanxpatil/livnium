@@ -51,6 +51,28 @@ NLI classifier on SNLI where inference is not a single forward pass — it is a 
 🌐 **Zenodo preprint:** [zenodo.org/records/19058910](https://zenodo.org/records/19058910)
 🤗 **Model on HuggingFace:** [chetanxpatil/livnium-snli](https://huggingface.co/chetanxpatil/livnium-snli)
 
+---
+
+## Version History
+
+### v1.0 — Paper Release *(current stable)*
+> Matches the paper: *"Iterative Attractor Dynamics for Classification"*
+
+- Encoder: pretrained bag-of-words (256-dim, frozen)
+- Accuracy: **76.32%** dev (E: 87.5%, C: 81.2%, N: 70.9%)
+- System: attractor dynamics head + basin field + Lyapunov analysis
+- `--encoder-type pretrained`
+
+### v2.0 — Joint BERT + Livnium-Native *(in development, on `main`)*
+
+- Joint BERT training (bi-encoder): **82.06%** dev — BERT fine-tunes alongside attractor dynamics
+- Cross-encoder BERT: `[CLS] premise [SEP] hypothesis [SEP]` — fixes role-reversal failures
+- **Livnium-native encoder** (`--encoder-type livnium`): small transformer (~3M params) trained end-to-end in Livnium attractor space — no BERT at inference
+- Geometry extraction: `extract_livnium_basis.py` — projects trained anchors into compact Livnium basis (32-dim from 768)
+- See [`book/`](book/) for the full design rationale
+
+---
+
 ## Directory Structure
 
 ```
