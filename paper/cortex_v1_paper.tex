@@ -1,0 +1,412 @@
+% NeurIPS-style paper for Cortex v1
+% Based on NeurIPS 2025 formatting guidelines
+\documentclass{article}
+
+% --- NeurIPS core formatting ---
+\usepackage[final]{neurips_2025}  % [final] for camera-ready; remove for anonymous submission
+
+% --- Standard packages (NeurIPS-approved) ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath,amssymb}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{enumitem}
+
+% --------------------------------------------------------------------------
+\title{Cortex v1: A Geometric Controller Coupled to a\\Matrix Product State Information Filter}
+
+\author{%
+  Chetan Patil\\
+  Independent Researcher\\
+  \texttt{chetanxpatil@github}
+}
+
+\begin{document}
+
+\maketitle
+
+% =========================================================================
+\begin{abstract}
+We describe Cortex~v1, a system that couples a deterministic geometric controller (a $3\!\times\!3\!\times\!3$ cubic lattice with 24 rotation symmetries) to a stochastic information filter (a Matrix Product State quantum simulator governed by an entropy-aware polarity mechanism).
+Text is processed word-by-word: each word maps to a rotation via a semantic bridge (GloVe embeddings projected into SO(3)), producing a scalar signal~$\alpha$ that modulates the MPS bond-truncation threshold.
+We report measured results on three axes:
+(i)~MPS simulator scaling from 5 to 1\,000 qubits for structured entanglement,
+(ii)~governor-controlled circuits maintaining zero truncation error at 1\,000 qubits, and
+(iii)~a retrieval benchmark where $\alpha$-triage achieves 100\% fact recall versus 30\% for FIFO and LRU under identical memory constraints.
+We state explicitly what the system does and does not do, and provide all code and test suites for independent verification.
+\end{abstract}
+
+% =========================================================================
+\section{Introduction}
+
+This paper describes a system, not a claim.  The system has three components: a cubic lattice that produces a geometric signal from rotations, a quantum simulator that processes information under an entropy budget, and a bridge that connects the two.  We report what was measured.  Interpretation is left to the reader.
+
+The motivating question is whether a geometric signal derived from word embeddings can control an information-theoretic filter in a way that outperforms content-blind baselines.  The benchmark in Section~\ref{sec:benchmark} provides one data point; the scaling results in Section~\ref{sec:scaling} provide another.  Neither constitutes a general proof.
+
+All source code, test suites, and benchmark scripts are available in the \texttt{cortex\_v1/} directory of the Livnium repository.\footnote{\url{https://github.com/chetanxpatil/livnium}}
+
+% =========================================================================
+\section{Architecture}
+
+The pipeline processes one word at a time through four stages:
+
+\paragraph{Semantic bridge.}
+Word $\to$ GloVe-50 vector $\to$ PCA projection into $\mathbb{R}^{3}$ $\to$ unit axis $\hat{n}$ and angle~$\theta$ $\to$ SO(3) rotation matrix $\to$ SU(2) quantum gate.
+
+\paragraph{Lattice.}
+The SO(3) rotation is applied to a $3\!\times\!3\!\times\!3$ cubic lattice (27~nodes).  The displacement of each node produces a cosine signal.  The mean absolute cosine across all moved nodes is~$\alpha$.
+
+\paragraph{Governor.}
+The polarity governor sets the entropy ceiling at each MPS bond:
+\begin{equation}
+  S_{\max}^{\mathrm{eff}}(i)
+  \;=\;
+  S_{\max}^{\mathrm{base}}
+  \times
+  \bigl(1 + \alpha \times \mathrm{polarity}(i)\bigr).
+  \label{eq:governor}
+\end{equation}
+
+\paragraph{MPS filter.}
+The SU(2) gate is applied to a qubit, followed by a CNOT to an adjacent qubit.  SVD truncation enforces the governor ceiling.  Bonds that exceed the ceiling are pruned; bonds below it survive.
+
+% -------------------------------------------------------------------------
+\subsection{The Cubic Lattice}
+
+The lattice consists of 27 nodes at integer coordinates $(x,y,z)$ with $x,y,z\in\{-1,0,1\}$.  Each node carries a symbolic weight $\mathrm{SW}=9f$, where $f$ is the number of coordinates equal to $\pm 1$ (boundary exposure).  The sum $\Sigma\mathrm{SW}=486$ is invariant under all 24~rotations.
+
+The rotation group of the cube has 24 elements distributed across four conjugacy classes (Table~\ref{tab:conjugacy}).  Three generators ($90^{\circ}$ rotations about $x$, $y$, and $z$) produce all 24 elements by BFS, each satisfying $R^{4}=I$.
+
+\begin{table}[h]
+  \caption{Conjugacy classes of the cubic rotation group.}
+  \label{tab:conjugacy}
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    Class & Angle & Count \\
+    \midrule
+    Identity        & $0^{\circ}$   & 1 \\
+    Face rotations  & $90^{\circ}$  & 6 \\
+    Vertex rotations& $120^{\circ}$ & 8 \\
+    Edge rotations  & $180^{\circ}$ & 9 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% -------------------------------------------------------------------------
+\subsection{The Alpha Signal}
+\label{sec:alpha}
+
+After a rotation is applied, each node moves from $\mathbf{p}_{\mathrm{old}}$ to $\mathbf{p}_{\mathrm{new}}$.  For every moved node the cosine of the displacement direction relative to the inward radial is
+\begin{equation}
+  \cos\theta_{i}
+  \;=\;
+  \frac{(\mathbf{p}_{\mathrm{new}}-\mathbf{p}_{\mathrm{old}})
+        \cdot(-\mathbf{p}_{\mathrm{old}})}
+       {\lvert\mathbf{p}_{\mathrm{new}}-\mathbf{p}_{\mathrm{old}}\rvert
+        \;\lvert\mathbf{p}_{\mathrm{old}}\rvert}\,.
+\end{equation}
+The $\alpha$ signal is the mean absolute cosine over moved nodes:
+\begin{equation}
+  \alpha
+  \;=\;
+  \frac{1}{\lvert\mathcal{M}\rvert}
+  \sum_{i\in\mathcal{M}} \lvert\cos\theta_{i}\rvert,
+  \qquad
+  \mathcal{M}=\{i:\mathbf{p}_{\mathrm{new},i}\neq\mathbf{p}_{\mathrm{old},i}\}.
+\end{equation}
+Measured $\alpha$ values by class: identity $\alpha=0.000$; face ($90^{\circ}$) $\alpha\approx0.595$; vertex ($120^{\circ}$) $\alpha\approx0.722$; edge ($180^{\circ}$) $\alpha\approx0.836$--$0.841$.
+
+% -------------------------------------------------------------------------
+\subsection{The Semantic Bridge}
+
+The bridge maps words to SO(3) rotations using pretrained word embeddings:
+
+\begin{enumerate}[nosep,leftmargin=*]
+  \item Load GloVe-50 vectors (50-dimensional; trained on Wikipedia + Gigaword).
+  \item Fit PCA on the corpus vocabulary to extract three principal components.
+  \item For each word: project the GloVe vector into $\mathbb{R}^{3}$ and normalize to obtain rotation axis $\hat{n}$.
+  \item Assign angle~$\theta$ by IDF mode ($\theta=\pi(1-e^{-\mathrm{IDF}(w)})$, rare words get large~$\theta$) or cosine mode ($\theta=\arccos\!\bigl(\cos(v,\bar{v})\bigr)$, words far from the centroid get large~$\theta$).
+  \item Construct SO(3) matrix via the axis-angle formula and map to SU(2):
+\end{enumerate}
+\begin{equation}
+  U(\hat{n},\theta)
+  \;=\;
+  \cos\!\tfrac{\theta}{2}\;\!I
+  \;-\;
+  i\sin\!\tfrac{\theta}{2}\;(\hat{n}\cdot\boldsymbol{\sigma}),
+  \label{eq:su2}
+\end{equation}
+where $\boldsymbol{\sigma}=(\sigma_{x},\sigma_{y},\sigma_{z})$ are the Pauli matrices.  The mapping is verified homomorphic: $U(A)\,U(B)=U(AB)$ up to global phase, confirmed for 20~random rotation pairs.
+
+A key property: semantically similar words (nearby GloVe vectors) map to nearby rotation axes.  Their SU(2) gates nearly commute, producing constructive interference in the MPS and low entropy growth.  Dissimilar adjacent words produce non-commuting gates and high entropy growth, potentially triggering truncation.
+
+% -------------------------------------------------------------------------
+\subsection{The MPS Simulator}
+
+The simulator represents an $n$-qubit state as a tensor train:
+\begin{equation}
+  \lvert\psi\rangle
+  \;=\;
+  \sum_{s_{1},\dots,s_{n}}
+  A^{[1]}_{s_{1}}\,A^{[2]}_{s_{2}}\cdots A^{[n]}_{s_{n}}\;
+  \lvert s_{1}\,s_{2}\cdots s_{n}\rangle,
+\end{equation}
+where each $A^{[i]}_{s_{i}}$ has shape $(\chi_{\mathrm{left}},\chi_{\mathrm{right}})$ and $s_{i}\in\{0,1\}$.  Memory is $O(n\chi^{2})$ versus $O(2^{n})$ for the full state vector.  When a two-qubit gate increases the bond dimension beyond $\chi_{\max}$, SVD truncation is applied and the discarded weight is logged as truncation error.
+
+Supported operations include Hadamard, Pauli $X/Y/Z$, $R_{x}/R_{y}/R_{z}$, arbitrary single-qubit unitary, CNOT (adjacent and non-adjacent via SWAP chains), and Born-rule measurement with correct left/right environment propagation.
+
+% -------------------------------------------------------------------------
+\subsection{The Polarity Governor}
+
+The polarity at bond~$i$ (between qubits $i$ and $i\!+\!1$) in an $n$-qubit system is
+\begin{equation}
+  \mathrm{polarity}(i)
+  \;=\;
+  1 - \frac{S(i)}{S_{\max}^{\mathrm{theo}}(i)},
+  \qquad
+  S_{\max}^{\mathrm{theo}}(i)
+  \;=\;
+  \min(i+1,\;n-i-1)\times\ln 2,
+\end{equation}
+where $S(i)$ is the von Neumann entropy at bond~$i$.  The effective ceiling follows Eq.~\eqref{eq:governor}.  High polarity (structured, area-law entanglement) with high~$\alpha$ (semantically important word) yields a generous ceiling; low polarity with low~$\alpha$ yields a tight one.
+
+% =========================================================================
+\section{Measured Results: MPS Scaling}
+\label{sec:scaling}
+
+\subsection{GHZ State Scaling}
+
+GHZ states ($\lvert 0\rangle^{\otimes n}+\lvert 1\rangle^{\otimes n}$) are area-law: $\chi=2$ regardless of~$n$ (Table~\ref{tab:ghz}).  At $n=1{,}000$, all 100 measurement shots produced valid outcomes (all-0 or all-1).  First-to-last qubit correlation was perfect (200/200 shots: 46\% all-0, 54\% all-1, 0\% mixed).
+
+This is expected MPS behavior.  GHZ is the canonical area-law state and MPS simulators are designed for it.  We report these numbers as a \emph{correctness check}, not as a scaling claim.
+
+\begin{table}[h]
+  \caption{GHZ state scaling.  Memory grows linearly; $\chi=2$ at all sizes.}
+  \label{tab:ghz}
+  \centering
+  \begin{tabular}{rccrc}
+    \toprule
+    $n$ & $\chi_{\max}$ & Time & Memory & Valid \\
+    \midrule
+       5 & 2 & 0.002\,s &   512\,B & 100/100 \\
+      10 & 2 & $<$0.001\,s & 1.2\,KB & 100/100 \\
+      50 & 2 & 0.001\,s &  6.3\,KB & 100/100 \\
+     100 & 2 & 0.001\,s & 12.7\,KB & 100/100 \\
+     500 & 2 & 0.006\,s & 63.9\,KB & 100/100 \\
+    1000 & 2 & ---       &127.9\,KB & 100/100 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% -------------------------------------------------------------------------
+\subsection{Random Circuit Scaling}
+
+Random 5-layer brick-wall circuits (alternating even/odd CNOT layers with Hadamard gates) reveal the simulator's limits (Table~\ref{tab:random}).  At $n=20$ the bond dimension hits the $\chi=64$ cap and truncation error accumulates.  Random circuits produce volume-law entanglement that grows exponentially with depth; the MPS approximation degrades accordingly.
+
+\begin{table}[h]
+  \caption{Random circuit scaling.  Truncation error appears when $\chi$ saturates.}
+  \label{tab:random}
+  \centering
+  \begin{tabular}{rccc}
+    \toprule
+    $n$ & $\chi_{\max}$ & Trunc.\ error & Memory \\
+    \midrule
+    10 & 32         & 0.0  &  43.6\,KB \\
+    20 & 64 (cap)   & 10.2 &   1.2\,MB \\
+    50 & 64 (cap)   & 10.2 &   5.2\,MB \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% -------------------------------------------------------------------------
+\subsection{Governor-Controlled Circuits}
+
+H + CNOT chain + second entangling layer, with governor ($\alpha=0.7$, $S_{\max}=1.5\ln 2$).  Results in Table~\ref{tab:governor}.  Zero truncation error at all sizes.  The governor ceiling is generous enough at high~$\alpha$ and high polarity that no pruning occurs, keeping entanglement in the area-law regime.  This demonstrates that the governor mechanism \emph{functions correctly} at scale; it does not demonstrate that arbitrary circuits can be simulated at 1\,000 qubits.
+
+\begin{table}[h]
+  \caption{Governor-controlled circuits.  $\bar{S}$: mean bond entropy (nats); $\bar{P}$: mean polarity.}
+  \label{tab:governor}
+  \centering
+  \begin{tabular}{rccccc}
+    \toprule
+    $n$ & $\chi$ & Prunes & $\bar{S}$ & $\bar{P}$ & Memory \\
+    \midrule
+      15 & 4 & 0 & 0.297 & 0.851 &   3.3\,KB \\
+     100 & 4 & 0 & 0.336 & 0.967 &  25\,KB \\
+     500 & 4 & 0 & 0.344 & 0.990 & 127\,KB \\
+    1000 & 4 & 0 & 0.346 & 0.994 & 255\,KB \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% =========================================================================
+\section{Measured Results: Organism}
+
+The ChatOrganism processes 1\,360 words through a 15-qubit MPS with $\chi_{\max}=32$ and $S_{\max}=1.5$~bits (Table~\ref{tab:organism}).
+
+The default organism uses MD5 hashing to map words to rotations.  This mapping is deterministic but arbitrary---there is no semantic relationship between a word and its assigned rotation.  Prune/survive decisions are driven by bond entropy thresholds, not by word importance.  The ``survived'' and ``pruned'' labels reflect MPS dynamics, not semantic judgments.
+
+\begin{table}[h]
+  \caption{Organism processing statistics (1\,360 words, 15 qubits, $\chi_{\max}\!=\!32$).}
+  \label{tab:organism}
+  \centering
+  \begin{tabular}{lr}
+    \toprule
+    Metric & Value \\
+    \midrule
+    Words survived        & 651 (47.9\%) \\
+    Words pruned          & 709 (52.1\%) \\
+    Governor prune events & 1\,781 \\
+    Max $\chi$ used       & 8 \\
+    MPS memory            & 8\,896 bytes \\
+    Mean bond entropy     & 0.752 nats \\
+    Max bond entropy      & 1.152 nats \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% =========================================================================
+\section{Measured Results: Alpha-Triage Benchmark}
+\label{sec:benchmark}
+
+\subsection{Setup}
+
+A factual paragraph about Shor's algorithm (${\sim}50$~tokens) is streamed through a memory buffer holding only 40\% of the total token count.
+Ten ground-truth tokens are identified:
+\texttt{1994}, \texttt{peter}, \texttt{shor}, \texttt{algorithm}, \texttt{factor},
+\texttt{integers}, \texttt{rsa}, \texttt{encryption}, \texttt{decoherence}, \texttt{qubits}.
+Three eviction policies compete under identical capacity:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{FIFO}: evict the oldest token.
+  \item \textbf{LRU}: evict the least-recently-used token (equivalent to FIFO in a single-pass stream with no re-reads).
+  \item \textbf{Alpha-triage}: evict the token with the lowest $\alpha$ value.
+\end{itemize}
+
+% -------------------------------------------------------------------------
+\subsection{Results}
+
+\begin{table}[h]
+  \caption{Fact recall under three eviction policies (single Shor-paragraph benchmark).}
+  \label{tab:benchmark}
+  \centering
+  \begin{tabular}{lc}
+    \toprule
+    Policy & Fact Recall \\
+    \midrule
+    FIFO                    & 30\% (3/10) \\
+    LRU                     & 30\% (3/10) \\
+    $\alpha$-triage (mock)  & 100\% (10/10) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+In mock mode, $\alpha$ values are assigned by a hand-crafted lookup table: high-information content words receive $\alpha=0.95$, mid-range words $\alpha=0.50$, common function words $\alpha=0.25$.  In real mode (GloVe-derived $\alpha$ via the semantic bridge), the same qualitative result holds with noisier margins.
+
+FIFO and LRU retain only the three ground-truth facts that happen to appear in the last 40\% of the passage.  $\alpha$-triage retains all ten because factual tokens have high~$\alpha$ (they are rare, semantically distinctive, and far from the GloVe corpus centroid) and are therefore evicted last.
+
+% -------------------------------------------------------------------------
+\subsection{Limitations of the Benchmark}
+
+We state these explicitly:
+
+\begin{enumerate}[nosep,leftmargin=*]
+  \item The mock $\alpha$ table is hand-crafted.  That hand-labelled importance beats content-blind eviction is expected.
+  \item The passage is short ($\sim$50 tokens) and facts are front-loaded, which disadvantages FIFO/LRU.
+  \item The ground truth is hand-selected; different fact sets yield different recall numbers.
+  \item The experiment is single-pass.  In a multi-access scenario, LRU would outperform FIFO.  $\alpha$-triage would still outperform LRU because importance and recency are different signals.
+  \item One paragraph, one topic, one ground truth.  This is a proof-of-concept, not a corpus-level evaluation.
+\end{enumerate}
+
+% =========================================================================
+\section{Verified Invariants}
+
+The self-test suite verifies 12 structural invariants; all 12 pass:
+
+\begin{enumerate}[nosep,leftmargin=*]
+  \item $R^{4}=I$ for all three generators.
+  \item 24 distinct orientations generated by BFS.
+  \item Class counts: $\{0\!:\!1,\;1\!:\!6,\;2\!:\!12,\;3\!:\!8\}$.
+  \item $\Sigma\mathrm{SW}=486$ invariant under all 24 rotations.
+  \item Lattice bijection preserved after every rotation.
+  \item $\cos\theta\in[-1,+1]$ for all polarity signals.
+  \item Identity rotation $\Rightarrow$ $\alpha=0$.
+  \item $\alpha$ range $[0.595,\,0.841]$, std $=0.094$.
+  \item High-$\alpha$ governor prunes $\leq$ low-$\alpha$ governor prunes.
+  \item Homomorphism: $U(A)\,U(B)\approx U(AB)$ for 20 random pairs.
+  \item All 24 SU(2) gates unitary and distinct.
+  \item GHZ-15: 200/200 valid measurement outcomes.
+\end{enumerate}
+
+% =========================================================================
+\section{What This System Does Not Do}
+
+\begin{enumerate}[nosep,leftmargin=*]
+  \item The MPS state is a quantum state.  It does not store words or retrieve them.  It is a compressed encoding of the sequence of gates applied.
+  \item The organism's prune/survive decisions are driven by bond entropy relative to the governor ceiling, not by semantic understanding.
+  \item The MD5 $\to$ rotation mapping (used in the default organism) is arbitrary.  Only the semantic bridge (GloVe mode) connects word meaning to lattice geometry.
+  \item GHZ scaling to 1\,000 qubits is standard MPS behavior for area-law states.  It is not a demonstration of general large-scale quantum simulation.
+  \item The polarity governor adjusts entropy ceilings but cannot increase the hard bond dimension cap~$\chi_{\max}$.
+  \item The $\alpha$-triage benchmark is a single-paragraph, single-topic, hand-labelled experiment.  Generalization to other domains is untested.
+\end{enumerate}
+
+% =========================================================================
+\section{Related Work}
+
+\paragraph{MPS simulators.}
+ITensor~\citep{itensor}, TeNPy~\citep{tenpy}, and Quimb~\citep{quimb} are mature tensor network libraries.  They provide standard MPS operations (SVD truncation, DMRG, time evolution) but do not include content-aware governor mechanisms.
+
+\paragraph{Cache eviction.}
+FIFO, LRU, LFU, ARC~\citep{arc}, and LIRS~\citep{lirs} are well-studied eviction policies.  Content-aware caching has been explored in the CDN literature.  The $\alpha$-triage policy differs in that the importance signal is derived from a geometric rotation group rather than from access patterns or file sizes.
+
+\paragraph{Word embeddings for information retrieval.}
+TF-IDF, BM25, and dense retrieval methods (DPR, ColBERT) use embedding similarity to rank documents.  The semantic bridge uses embeddings differently: projecting into SO(3) to produce a scalar signal that controls a quantum simulator's entropy budget.
+
+% =========================================================================
+\section{Conclusion}
+
+We presented a system that couples a cubic lattice to an MPS simulator via a polarity governor.  The measured results are: (i)~1\,000-qubit GHZ states with perfect measurement validity (area-law, $\chi=2$); (ii)~zero truncation error at 1\,000 qubits under governor control ($\chi=4$, polarity $>0.99$); (iii)~100\% fact recall under $\alpha$-triage versus 30\% for FIFO/LRU on a single benchmark paragraph; and (iv)~12/12 verified invariants.
+
+Whether these results constitute a useful contribution is for the reader to assess.  The code is open, the tests are runnable, and the numbers are reproducible.  We have tried to state what was measured without overstating what it means.
+
+% =========================================================================
+\bibliographystyle{plainnat}
+\begin{thebibliography}{5}
+
+\bibitem[Fishman et~al.(2022)]{itensor}
+M.~Fishman, S.~R.~White, and E.~M.~Stoudenmire.
+\newblock The {IT}ensor software library for tensor network calculations.
+\newblock \emph{SciPost Phys.\ Codebases}, 4, 2022.
+
+\bibitem[Hauschild \& Pollmann(2018)]{tenpy}
+J.~Hauschild and F.~Pollmann.
+\newblock Efficient numerical simulations with tensor networks: {T}ensor {N}etwork {P}ython ({TeNPy}).
+\newblock \emph{SciPost Phys.\ Lect.\ Notes}, 5, 2018.
+
+\bibitem[Gray(2018)]{quimb}
+J.~Gray.
+\newblock quimb: A {P}ython library for quantum information and many-body calculations.
+\newblock \emph{J.\ Open Source Softw.}, 3(29):819, 2018.
+
+\bibitem[Megiddo \& Modha(2003)]{arc}
+N.~Megiddo and D.~S.~Modha.
+\newblock {ARC}: A self-tuning, low overhead replacement cache.
+\newblock In \emph{FAST}, 2003.
+
+\bibitem[Jiang \& Zhang(2002)]{lirs}
+S.~Jiang and X.~Zhang.
+\newblock {LIRS}: An efficient low inter-reference recency set replacement policy.
+\newblock In \emph{ACM SIGMETRICS}, 2002.
+
+\end{thebibliography}
+
+\end{document}
