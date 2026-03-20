@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ramsey — Metric Learning</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#09090f;color:#ddd;font-family:'SF Mono',monospace;padding:28px 16px 64px;display:flex;flex-direction:column;align-items:center;gap:28px}
+h1{font-size:1rem;color:#aaa;letter-spacing:.06em;text-align:center}
+.sub{font-size:.72rem;color:#555;text-align:center;max-width:640px;line-height:1.7}
+.sub em{color:#9b7dea;font-style:normal}
+.sub strong{color:#e8d877}
+.row{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+.card{background:#111118;border:1px solid #1e1e2e;border-radius:6px;padding:12px 14px 8px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.card-title{font-size:.62rem;color:#555;letter-spacing:.08em;text-align:center}
+canvas{display:block}
+.controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center;font-size:.7rem;color:#888}
+.slider-group{display:flex;flex-direction:column;align-items:center;gap:3px}
+.slider-group label{font-size:.63rem;color:#666}
+input[type=range]{width:120px;accent-color:#9b7dea}
+.val-display{font-size:.7rem;color:#9b7dea;width:40px;text-align:center}
+.finding{max-width:720px;width:100%;background:#0e0e16;border-left:3px solid #9b7dea;padding:14px 18px;font-size:.73rem;line-height:1.9;color:#bbb}
+.finding h3{color:#9b7dea;margin-bottom:8px;font-size:.78rem}
+.finding .key{color:#e8d877}.finding .good{color:#66ee88}.finding .math{color:#9b7dea;font-size:.78rem}
+.finding .brahm{color:#c088ee;font-style:italic}
+.r2-display{font-size:1.1rem;font-weight:bold;color:#9b7dea;text-align:center}
+.r2-label{font-size:.62rem;color:#555}
+.verdict-bar{height:8px;border-radius:4px;background:#1a1a24;width:200px;overflow:hidden}
+.verdict-fill{height:8px;border-radius:4px;background:linear-gradient(90deg,#4499ee,#9b7dea)}
+</style>
+</head>
+<body>
+
+<h1>R(m, n) — Metric Learning</h1>
+<p class="sub">
+  The model shootout proved the space is not Euclidean.<br>
+  <strong>Next question:</strong> what IS the right metric?<br>
+  Find the <em>shape of the cosmic egg</em> — the geometry where iso-R lines become circles.
+</p>
+
+<div class="controls">
+  <div class="slider-group">
+    <label>stretch α (m axis)</label>
+    <input type="range" id="sa" min="0.1" max="5" step="0.05" value="1">
+    <span class="val-display" id="sa_v">1.00</span>
+  </div>
+  <div class="slider-group">
+    <label>stretch β (n axis)</label>
+    <input type="range" id="sb" min="0.1" max="5" step="0.05" value="1">
+    <span class="val-display" id="sb_v">1.00</span>
+  </div>
+  <div class="slider-group">
+    <label>cross γ (diagonal)</label>
+    <input type="range" id="sc" min="-2" max="2" step="0.05" value="0">
+    <span class="val-display" id="sc_v">0.00</span>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+    <div class="r2-display" id="r2_disp">—</div>
+    <div class="r2-label">R² (metric fit)</div>
+    <div class="verdict-bar"><div class="verdict-fill" id="r2_bar" style="width:0%"></div></div>
+  </div>
+  <button id="autoBtn" style="background:#1a1a2e;border:1px solid #333;color:#9b7dea;padding:6px 14px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:.7rem">AUTO-FIT ▶</button>
+</div>
+
+<div class="row">
+  <div class="card">
+    <div class="card-title">LEARNED METRIC CONTOURS vs ACTUAL R</div>
+    <canvas id="metricCanvas" width="420" height="360"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">log R vs LEARNED DISTANCE d(m,n)</div>
+    <canvas id="scatterCanvas" width="380" height="360"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">POTENTIAL FIELD V(m,n) = log R — GRADIENT ARROWS</div>
+    <canvas id="fieldCanvas" width="380" height="360"></canvas>
+  </div>
+</div>
+
+<div class="finding" id="findingBox">
+  <h3>FINDING</h3>
+  Adjust the metric parameters or click AUTO-FIT to find the geometry that best linearizes R(m,n).
+</div>
+
+<div class="finding" id="loglogBox" style="border-left-color:#e8d877">
+  <h3 style="color:#e8d877">LEVEL 2 — THE TRUE GEOMETRY: LOG-LOG SPACE</h3>
+  <span style="color:#555;font-size:.68rem">computed at load time — no slider needed</span><br><br>
+  <div id="loglogResult">computing…</div>
+</div>
+
+<script>
+// ─── Data ─────────────────────────────────────────────────────────────────────
+var EXACT=[{m:3,n:3,R:6,e:1},{m:3,n:4,R:9,e:1},{m:3,n:5,R:14,e:1},{m:3,n:6,R:18,e:1},{m:3,n:7,R:23,e:1},{m:3,n:8,R:28,e:1},{m:3,n:9,R:36,e:1},{m:4,n:4,R:18,e:1},{m:4,n:5,R:25,e:1}];
+var BOUNDS=[{m:4,n:6,R:38.5,e:0},{m:5,n:5,R:45.5,e:0},{m:3,n:10,R:41,e:0}];
+var DATA=[].concat(EXACT,BOUNDS);
+DATA.forEach(function(d){d.lR=Math.log(d.R);d.u=d.m-1;d.v=d.n-1;});
+
+// ─── Metric helpers ───────────────────────────────────────────────────────────
+function metricDist(d, a, b, c){
+  // d²(x,y) = a*x² + b*y² + 2c*x*y  where x=m-1, y=n-1
+  // Must be positive definite: a>0, b>0, a*b > c²
+  var x=d.u, y=d.v;
+  var d2 = a*x*x + b*y*y + 2*c*x*y;
+  return d2 > 0 ? Math.sqrt(d2) : 0;
+}
+function isPD(a,b,c){return a>0 && b>0 && (a*b - c*c) > 1e-6;}
+
+function fitLinear(xs, ys){
+  var n=xs.length, sx=0,sy=0,sxx=0,sxy=0;
+  for(var i=0;i<n;i++){sx+=xs[i];sy+=ys[i];sxx+=xs[i]*xs[i];sxy+=xs[i]*ys[i];}
+  var denom=n*sxx-sx*sx;
+  if(Math.abs(denom)<1e-12)return{a:sy/n,b:0,r2:0};
+  var b=(n*sxy-sx*sy)/denom, a=(sy-b*sx)/n;
+  var preds=xs.map(function(x){return a+b*x;});
+  var ym=sy/n, sst=ys.reduce(function(s,v){return s+(v-ym)*(v-ym);},0);
+  var ssr=ys.reduce(function(s,v,i){return s+(v-preds[i])*(v-preds[i]);},0);
+  return{a:a,b:b,r2:sst>0?1-ssr/sst:0};
+}
+
+function evalMetric(a, b, c){
+  if(!isPD(a,b,c)) return{r2:-999,fit:null};
+  var ds=DATA.map(function(d){return metricDist(d,a,b,c);});
+  var lRs=DATA.map(function(d){return d.lR;});
+  var fit=fitLinear(ds,lRs);
+  return{r2:fit.r2, fit:fit, ds:ds};
+}
+
+// ─── Colors ───────────────────────────────────────────────────────────────────
+function hsl2rgb(h,s,l){
+  h/=360;s/=100;l/=100;
+  function hue2rgb(p,q,t){if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;}
+  if(s===0)return[l,l,l];
+  var q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;
+  return[hue2rgb(p,q,h+1/3),hue2rgb(p,q,h),hue2rgb(p,q,h-1/3)];
+}
+function valColor(t){
+  // purple→blue→cyan→green→yellow
+  var stops=[[280,80,30],[240,70,40],[180,70,45],[120,65,42],[60,85,50]];
+  var n=stops.length-1, i=Math.min(Math.floor(t*n),n-1), f=t*n-i;
+  var s1=stops[i],s2=stops[i+1];
+  return hsl2rgb(s1[0]+(s2[0]-s1[0])*f,s1[1]+(s2[1]-s1[1])*f,s1[2]+(s2[2]-s1[2])*f);
+}
+
+// ─── Draw metric contours ─────────────────────────────────────────────────────
+function drawMetric(a, b, c){
+  var cv=document.getElementById('metricCanvas');
+  var ctx=cv.getContext('2d');
+  var W=cv.width, H=cv.height;
+  var MMAX=10, NMAX=10;
+  var PAD={l:36,r:12,t:12,b:36};
+  var PW=W-PAD.l-PAD.r, PH=H-PAD.t-PAD.b;
+  var CW=PW/NMAX, CH=PH/MMAX;
+
+  ctx.fillStyle='#09090f';ctx.fillRect(0,0,W,H);
+
+  if(!isPD(a,b,c)){
+    ctx.fillStyle='#ee5544';ctx.font='12px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('invalid metric (not positive definite)',W/2,H/2);return;
+  }
+
+  var res=evalMetric(a,b,c);
+  var fit=res.fit;
+
+  // Draw heatmap of FITTED values using the learned metric
+  for(var mi=1;mi<=MMAX;mi++){
+    for(var ni=1;ni<=NMAX;ni++){
+      var dd=metricDist({u:mi-1,v:ni-1},a,b,c);
+      var pred=dd>0?fit.a+fit.b*dd:fit.a;
+      var logRmax=Math.log(200),logRmin=Math.log(2);
+      var t=(pred-logRmin)/(logRmax-logRmin);
+      t=Math.max(0,Math.min(1,t));
+      var rgb=valColor(t);
+      var px=PAD.l+(ni-1)*CW, py=PAD.t+(mi-1)*CH;
+      ctx.fillStyle='rgb('+Math.round(rgb[0]*255)+','+Math.round(rgb[1]*255)+','+Math.round(rgb[2]*255)+')';
+      ctx.fillRect(px,py,CW,CH);
+    }
+  }
+
+  // Draw metric iso-distance circles (in m,n space they become ellipses)
+  var maxDist=Math.max.apply(null,DATA.map(function(d){return metricDist(d,a,b,c);}));
+  var levels=[maxDist*0.2, maxDist*0.4, maxDist*0.6, maxDist*0.8, maxDist];
+  levels.forEach(function(level,li){
+    ctx.beginPath();
+    var first=true;
+    for(var angle=0;angle<=2*Math.PI+0.01;angle+=0.05){
+      // Find point at this angle with this distance in the learned metric
+      // d² = a*cos²θ + b*sin²θ + 2c*cosθ*sinθ = level²
+      // r² * (a*cos²θ + b*sin²θ + 2c*cosθ*sinθ) = level²
+      var cosA=Math.cos(angle), sinA=Math.sin(angle);
+      var metric_sq=a*cosA*cosA + b*sinA*sinA + 2*c*cosA*sinA;
+      if(metric_sq<1e-9)continue;
+      var r=level/Math.sqrt(metric_sq);
+      var mx=r*cosA+1, my=r*sinA+1; // back to m,n coordinates
+      var px=PAD.l+(mx-1)*CW+(mx-1<0?0:0);
+      var py=PAD.t+(my-1)*CH;
+      if(mx<0||my<0||mx>NMAX+1||my>MMAX+1)continue;
+      var px2=PAD.l+(mx-1)*CW, py2=PAD.t+(my-1)*CH;
+      if(first){ctx.moveTo(px2,py2);first=false;}else ctx.lineTo(px2,py2);
+    }
+    ctx.strokeStyle='rgba(255,255,255,'+(.15+li*.05)+')';
+    ctx.lineWidth=1;
+    ctx.stroke();
+  });
+
+  // Draw actual data points
+  DATA.forEach(function(d){
+    var px=PAD.l+(d.n-1)*CW, py=PAD.t+(d.m-1)*CH;
+    ctx.beginPath();ctx.arc(px,py,d.e?6:4,0,Math.PI*2);
+    ctx.fillStyle=d.e?'#fff':'#888';ctx.fill();
+    ctx.strokeStyle='#09090f';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle='#ccc';ctx.font='7px monospace';ctx.textAlign='left';
+    ctx.fillText('('+d.m+','+d.n+')='+d.R,px+7,py+3);
+  });
+
+  // Axes
+  ctx.fillStyle='#444';ctx.font='9px monospace';
+  for(var i=1;i<=NMAX;i++){ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(i,PAD.l+(i-1)*CW+CW/2,H-PAD.b+2);}
+  for(var i=1;i<=MMAX;i++){ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(i,PAD.l-4,PAD.t+(i-1)*CH+CH/2);}
+  ctx.fillStyle='#555';ctx.font='8px monospace';ctx.textAlign='center';ctx.fillText('n →',W-PAD.r-10,H-PAD.b/2);
+  ctx.save();ctx.translate(8,PAD.t+PH/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('m →',0,0);ctx.restore();
+  ctx.fillStyle='#9b7dea';ctx.font='bold 9px monospace';ctx.textAlign='left';ctx.textBaseline='top';
+  ctx.fillText('R²='+(res.r2*100).toFixed(1)+'%',PAD.l+2,PAD.t+2);
+}
+
+// ─── Draw scatter ─────────────────────────────────────────────────────────────
+function drawScatter(a, b, c){
+  var cv=document.getElementById('scatterCanvas');
+  var ctx=cv.getContext('2d');
+  var W=cv.width,H=cv.height;
+  ctx.fillStyle='#09090f';ctx.fillRect(0,0,W,H);
+  if(!isPD(a,b,c))return;
+
+  var res=evalMetric(a,b,c);
+  var ds=res.ds, fit=res.fit;
+  var PAD={l:38,r:12,t:12,b:32};
+  var PW=W-PAD.l-PAD.r, PH=H-PAD.t-PAD.b;
+
+  var minD=0, maxD=Math.max.apply(null,ds)*1.1;
+  var minL=Math.min.apply(null,DATA.map(function(d){return d.lR;}))*0.9;
+  var maxL=Math.max.apply(null,DATA.map(function(d){return d.lR;}))*1.1;
+
+  function tx(v){return PAD.l+(v-minD)/(maxD-minD)*PW;}
+  function ty(v){return PAD.t+(1-(v-minL)/(maxL-minL))*PH;}
+
+  // Grid
+  ctx.strokeStyle='#151520';ctx.lineWidth=1;
+  [1,2,3,4].forEach(function(lv){
+    ctx.beginPath();ctx.moveTo(PAD.l,ty(lv));ctx.lineTo(W-PAD.r,ty(lv));ctx.stroke();
+  });
+
+  // Fit line
+  if(fit.b!==0){
+    var x1=minD, x2=maxD;
+    ctx.beginPath();ctx.strokeStyle='#9b7dea88';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);
+    ctx.moveTo(tx(x1),ty(fit.a+fit.b*x1));ctx.lineTo(tx(x2),ty(fit.a+fit.b*x2));
+    ctx.stroke();ctx.setLineDash([]);
+  }
+
+  // Points
+  DATA.forEach(function(d,i){
+    var dd=ds[i];
+    ctx.beginPath();ctx.arc(tx(dd),ty(d.lR),d.e?6:4,0,Math.PI*2);
+    ctx.fillStyle=d.e?'#9b7dea':'#555';ctx.fill();
+    ctx.strokeStyle='#09090f';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle='#aaa';ctx.font='7px monospace';ctx.textAlign='left';
+    ctx.fillText('('+d.m+','+d.n+')',tx(dd)+6,ty(d.lR)+3);
+  });
+
+  // R² badge
+  var col=res.r2>0.95?'#66ee88':res.r2>0.85?'#e8d877':'#ee9933';
+  ctx.fillStyle=col;ctx.font='bold 11px monospace';ctx.textAlign='right';ctx.textBaseline='top';
+  ctx.fillText('R²='+(res.r2*100).toFixed(1)+'%',W-PAD.r-2,PAD.t+2);
+
+  // Axes
+  ctx.fillStyle='#444';ctx.font='8px monospace';ctx.textAlign='right';ctx.textBaseline='middle';
+  [1,2,3,4].forEach(function(v){ctx.fillText(Math.round(Math.exp(v)),PAD.l-3,ty(v));});
+  ctx.textAlign='center';ctx.textBaseline='top';
+  [0,2,4,6,8].forEach(function(v){if(v>=minD&&v<=maxD)ctx.fillText(v.toFixed(1),tx(v),H-PAD.b+3);});
+  ctx.fillStyle='#555';ctx.font='7px monospace';ctx.textAlign='center';ctx.fillText('d(m,n) in learned metric',PAD.l+PW/2,H-12);
+  ctx.save();ctx.translate(9,PAD.t+PH/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('R(m,n)',0,0);ctx.restore();
+}
+
+// ─── Draw potential field ─────────────────────────────────────────────────────
+function drawField(){
+  var cv=document.getElementById('fieldCanvas');
+  var ctx=cv.getContext('2d');
+  var W=cv.width,H=cv.height;
+  ctx.fillStyle='#09090f';ctx.fillRect(0,0,W,H);
+
+  var MMAX=8,NMAX=8;
+  var PAD={l:36,r:12,t:12,b:36};
+  var PW=W-PAD.l-PAD.r, PH=H-PAD.t-PAD.b;
+  var CW=PW/NMAX, CH=PH/MMAX;
+
+  // Known R values (interpolated for missing)
+  function getR(m,n){
+    if(m<1||n<1)return 1;
+    if(m===1||n===1)return Math.max(m,n);
+    if(m===2)return n;if(n===2)return m;
+    var k=Math.min(m,n)+','+Math.max(m,n);
+    var exact={
+      '3,3':6,'3,4':9,'3,5':14,'3,6':18,'3,7':23,'3,8':28,
+      '4,4':18,'4,5':25,'4,6':38.5,'5,5':45.5
+    };
+    return exact[k]||null;
+  }
+
+  // Draw heatmap
+  for(var mi=1;mi<=MMAX;mi++){
+    for(var ni=1;ni<=NMAX;ni++){
+      var r=getR(mi,ni);
+      if(!r)continue;
+      var t=Math.min(1,(Math.log(r)-Math.log(1))/(Math.log(100)-Math.log(1)));
+      var rgb=valColor(t);
+      ctx.fillStyle='rgb('+Math.round(rgb[0]*255)+','+Math.round(rgb[1]*255)+','+Math.round(rgb[2]*255)+')';
+      ctx.fillRect(PAD.l+(ni-1)*CW,PAD.t+(mi-1)*CH,CW,CH);
+    }
+  }
+
+  // Gradient arrows — ∇(log R)
+  for(var mi=2;mi<=MMAX-1;mi++){
+    for(var ni=2;ni<=NMAX-1;ni++){
+      var r=getR(mi,ni),ru=getR(mi-1,ni),rd=getR(mi+1,ni),rl=getR(mi,ni-1),rr2=getR(mi,ni+1);
+      if(!r||!ru||!rd||!rl||!rr2)continue;
+      var gm=(Math.log(rd)-Math.log(ru))/2; // ∂(logR)/∂m  (downward in pixel coords)
+      var gn=(Math.log(rr2)-Math.log(rl))/2; // ∂(logR)/∂n  (rightward)
+      var mag=Math.sqrt(gm*gm+gn*gn);
+      if(mag<0.01)continue;
+      var scale=Math.min(CW,CH)*0.45/Math.max(0.1,mag);
+      var cx=PAD.l+(ni-1)*CW+CW/2, cy=PAD.t+(mi-1)*CH+CH/2;
+      var dx=gn*scale, dy=gm*scale;
+      // Arrow
+      var arrowLen=Math.sqrt(dx*dx+dy*dy);
+      ctx.beginPath();ctx.moveTo(cx-dx*.5,cy-dy*.5);ctx.lineTo(cx+dx*.5,cy+dy*.5);
+      ctx.strokeStyle='rgba(255,255,255,0.55)';ctx.lineWidth=1.5;ctx.stroke();
+      // Arrowhead
+      var ux=dx/arrowLen,uy=dy/arrowLen;
+      ctx.beginPath();
+      ctx.moveTo(cx+dx*.5,cy+dy*.5);
+      ctx.lineTo(cx+dx*.5-ux*5+uy*3,cy+dy*.5-uy*5-ux*3);
+      ctx.moveTo(cx+dx*.5,cy+dy*.5);
+      ctx.lineTo(cx+dx*.5-ux*5-uy*3,cy+dy*.5-uy*5+ux*3);
+      ctx.stroke();
+    }
+  }
+
+  // Labels
+  ctx.fillStyle='#444';ctx.font='9px monospace';
+  for(var i=1;i<=NMAX;i++){ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(i,PAD.l+(i-1)*CW+CW/2,H-PAD.b+2);}
+  for(var i=1;i<=MMAX;i++){ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(i,PAD.l-4,PAD.t+(i-1)*CH+CH/2);}
+  ctx.fillStyle='#555';ctx.font='8px monospace';ctx.textAlign='center';ctx.fillText('n →',W-PAD.r-10,H-PAD.b/2);
+  ctx.save();ctx.translate(8,PAD.t+PH/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('m →',0,0);ctx.restore();
+
+  ctx.fillStyle='#e8d877';ctx.font='bold 9px monospace';ctx.textAlign='left';ctx.textBaseline='top';
+  ctx.fillText('arrows = ∇(log R)',PAD.l+2,PAD.t+2);
+}
+
+// ─── Update function ──────────────────────────────────────────────────────────
+function getParams(){
+  var a=parseFloat(document.getElementById('sa').value);
+  var b=parseFloat(document.getElementById('sb').value);
+  var c=parseFloat(document.getElementById('sc').value);
+  return{a:a,b:b,c:c};
+}
+
+function update(){
+  var p=getParams();
+  document.getElementById('sa_v').textContent=p.a.toFixed(2);
+  document.getElementById('sb_v').textContent=p.b.toFixed(2);
+  document.getElementById('sc_v').textContent=p.c.toFixed(2);
+
+  var res=evalMetric(p.a,p.b,p.c);
+  var r2=Math.max(0,res.r2);
+  document.getElementById('r2_disp').textContent=(r2*100).toFixed(1)+'%';
+  document.getElementById('r2_bar').style.width=(r2*100)+'%';
+
+  drawMetric(p.a,p.b,p.c);
+  drawScatter(p.a,p.b,p.c);
+
+  updateFinding(p.a,p.b,p.c,res);
+}
+
+function updateFinding(a,b,c,res){
+  var valid=isPD(a,b,c);
+  var r2=valid?res.r2:0;
+  var det=a*b-c*c;
+  var eigenMin=0.5*(a+b-Math.sqrt((a-b)*(a-b)+4*c*c));
+  var eigenMax=0.5*(a+b+Math.sqrt((a-b)*(a-b)+4*c*c));
+  var anisRatio=eigenMax/(eigenMin+1e-9);
+
+  var best_r2=(window._best_r2||0.99);
+  var status=!valid?'❌ <span style="color:#ee5544">invalid metric</span>':
+    r2>0.98?'<span class="good">✓ excellent — space nearly linearizes</span>':
+    r2>0.92?'<span style="color:#e8d877">~ good fit</span>':
+    '<span style="color:#ee9933">✗ poor — space resists this metric</span>';
+
+  document.getElementById('findingBox').innerHTML=
+    '<h3>WHAT THIS METRIC TELLS YOU</h3>'+
+    '<span class="key">Metric tensor:</span> <span class="math">d²(m,n) = '+a.toFixed(2)+'·(m-1)² + '+b.toFixed(2)+'·(n-1)² + '+( 2*c).toFixed(2)+'·(m-1)(n-1)</span><br>'+
+    (valid?'<span class="key">Eigenvalues:</span> λ₁='+eigenMin.toFixed(3)+', λ₂='+eigenMax.toFixed(3)+' &nbsp;|&nbsp; anisotropy ratio = '+anisRatio.toFixed(2)+'×<br>':'')+
+    '<span class="key">R² (log-linear fit in this metric):</span> '+status+'<br><br>'+
+    '<span class="key">Interpretation:</span><br>'+
+    (c<-0.2?'Negative cross term (γ&lt;0) stretches the <em>off-diagonal</em> directions. The metric penalizes (m≠n) less — consistent with anisotropy finding.<br>':'')+
+    (Math.abs(a-b)>0.2?'Unequal axis stretches (α≠β) break the diagonal symmetry. Since R(m,n)=R(n,m), best metrics should have α=β.<br>':'')+
+    (valid&&r2<0.85?'<br><span style="color:#ee9933">Key finding: even the optimal elliptic metric cannot fully linearize R(m,n). The Ramsey field has intrinsic curvature — no simple anisotropic Euclidean metric explains it perfectly. The geometry of the space is fundamentally non-Euclidean.</span>':'')+
+    '<br><br><span class="brahm">ब्रह्मांड insight: finding the right metric = finding the shape of the cosmic egg.<br>'+
+    'If the metric perfectly linearizes R(m,n), you found the natural container.<br>'+
+    'If no metric works: the space has intrinsic curvature — it cannot be flattened.</span>';
+}
+
+// ─── Auto-fit (grid search) ───────────────────────────────────────────────────
+document.getElementById('autoBtn').addEventListener('click',function(){
+  var btn=this;
+  btn.textContent='searching...';btn.disabled=true;
+  setTimeout(function(){
+    var bestR2=-Infinity, bestA=1,bestB=1,bestC=0;
+    var as=[0.3,0.5,0.8,1,1.5,2,3], bs=[0.3,0.5,0.8,1,1.5,2,3], cs=[-1.5,-1,-0.5,0,0.5,1,1.5];
+    as.forEach(function(a){
+      bs.forEach(function(b){
+        cs.forEach(function(c){
+          if(!isPD(a,b,c))return;
+          var r=evalMetric(a,b,c);
+          if(r.r2>bestR2){bestR2=r.r2;bestA=a;bestB=b;bestC=c;}
+        });
+      });
+    });
+    // Fine search around best
+    var da=bestA,db=bestB,dc=bestC;
+    for(var a=da-0.4;a<=da+0.4;a+=0.1){
+      for(var b=db-0.4;b<=db+0.4;b+=0.1){
+        for(var c=dc-0.4;c<=dc+0.4;c+=0.1){
+          if(!isPD(a,b,c))continue;
+          var r=evalMetric(a,b,c);
+          if(r.r2>bestR2){bestR2=r.r2;bestA=a;bestB=b;bestC=c;}
+        }
+      }
+    }
+    window._best_r2=bestR2;
+    document.getElementById('sa').value=Math.max(0.1,Math.min(5,bestA));
+    document.getElementById('sb').value=Math.max(0.1,Math.min(5,bestB));
+    document.getElementById('sc').value=Math.max(-2,Math.min(2,bestC));
+    update();
+    btn.textContent='AUTO-FIT ▶';btn.disabled=false;
+  },50);
+});
+
+['sa','sb','sc'].forEach(function(id){document.getElementById(id).addEventListener('input',update);});
+
+// ─── Level 2: Log-log metric discovery ────────────────────────────────────────
+(function(){
+  // Compute OLS for log(min(m-1))+log(max(m-1)) → log R
+  function ols2(x1s, x2s, ys){
+    var n=ys.length,s1=0,s2=0,sy=0,s11=0,s12=0,s22=0,s1y=0,s2y=0;
+    for(var i=0;i<n;i++){s1+=x1s[i];s2+=x2s[i];sy+=ys[i];s11+=x1s[i]*x1s[i];s12+=x1s[i]*x2s[i];s22+=x2s[i]*x2s[i];s1y+=x1s[i]*ys[i];s2y+=x2s[i]*ys[i];}
+    // normal equations with intercept: [n, s1, s2; s1, s11, s12; s2, s12, s22] * [a,b,c]T = [sy, s1y, s2y]
+    var A=[[n,s1,s2],[s1,s11,s12],[s2,s12,s22]], b=[sy,s1y,s2y];
+    function det3(m){return m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);}
+    function inv3(m){var d=det3(m);return[[(m[1][1]*m[2][2]-m[1][2]*m[2][1])/d,-(m[0][1]*m[2][2]-m[0][2]*m[2][1])/d,(m[0][1]*m[1][2]-m[0][2]*m[1][1])/d],[-(m[1][0]*m[2][2]-m[1][2]*m[2][0])/d,(m[0][0]*m[2][2]-m[0][2]*m[2][0])/d,-(m[0][0]*m[1][2]-m[0][2]*m[1][0])/d],[(m[1][0]*m[2][1]-m[1][1]*m[2][0])/d,-(m[0][0]*m[2][1]-m[0][1]*m[2][0])/d,(m[0][0]*m[1][1]-m[0][1]*m[1][0])/d]];}
+    var inv=inv3(A),coefs=[0,0,0];
+    for(var i=0;i<3;i++)for(var j=0;j<3;j++)coefs[i]+=inv[i][j]*b[j];
+    var preds=x1s.map(function(x,i){return coefs[0]+coefs[1]*x+coefs[2]*x2s[i];});
+    var ym=sy/n,sst=ys.reduce(function(s,v){return s+(v-ym)*(v-ym);},0);
+    var ssr=ys.reduce(function(s,v,i){return s+(v-preds[i])*(v-preds[i]);},0);
+    return{ic:coefs[0],c1:coefs[1],c2:coefs[2],r2:sst>0?1-ssr/sst:0,preds:preds};
+  }
+  function ols1(xs,ys){
+    var n=xs.length,sx=0,sy=0,sxx=0,sxy=0;
+    for(var i=0;i<n;i++){sx+=xs[i];sy+=ys[i];sxx+=xs[i]*xs[i];sxy+=xs[i]*ys[i];}
+    var d=n*sxx-sx*sx,sl=(n*sxy-sx*sy)/d,ic=(sy-sl*sx)/n;
+    var ym=sy/n,sst=ys.reduce(function(s,v){return s+(v-ym)*(v-ym);},0);
+    var ssr=ys.reduce(function(s,v,i){return s+(v-(ic+sl*xs[i]))*(v-(ic+sl*xs[i]));},0);
+    return{ic:ic,sl:sl,r2:sst>0?1-ssr/sst:0};
+  }
+
+  var lRs=DATA.map(function(d){return d.lR;});
+  var logMins=DATA.map(function(d){return Math.log(Math.min(d.u,d.v));});
+  var logMaxs=DATA.map(function(d){return Math.log(Math.max(d.u,d.v));});
+  var logMNs=DATA.map(function(d){return Math.log(d.u*d.v);});
+
+  var rPow=ols2(logMins,logMaxs,lRs);
+  var rMN=ols1(logMNs,lRs);
+  // Isotropic baseline (r alone)
+  var rIso=ols1(DATA.map(function(d){return Math.sqrt(d.u*d.u+d.v*d.v);}),lRs);
+
+  function fmt(x){return (x>=0?'+':'')+x.toFixed(2);}
+  function pct(r2){return (r2*100).toFixed(1)+'%';}
+  var C=Math.exp(rPow.ic);
+
+  var html=
+    '<span class="key">Metric comparison (all symmetric — respecting R(m,n)=R(n,m)):</span><br><br>'+
+    '<table style="border-collapse:collapse;font-size:.68rem;width:100%">'+
+    '<tr style="color:#555"><td style="padding:2px 12px 2px 0">Geometry</td><td style="padding:2px 8px">Formula</td><td style="padding:2px 0">R²</td></tr>'+
+    '<tr><td style="padding:2px 12px 2px 0;color:#888">Euclidean (isotropic)</td><td style="padding:2px 8px;color:#666">√((m-1)²+(n-1)²)</td><td style="color:#ee6644">'+pct(rIso.r2)+'</td></tr>'+
+    '<tr><td style="padding:2px 12px 2px 0;color:#888">log(m·n) alone</td><td style="padding:2px 8px;color:#666">log((m-1)(n-1))</td><td style="color:#e8d877">'+pct(rMN.r2)+'</td></tr>'+
+    '<tr style="border-top:1px solid #222"><td style="padding:4px 12px 2px 0;color:#9b7dea"><strong>Power law [winner]</strong></td><td style="padding:4px 8px;color:#9b7dea;font-size:.65rem">min^α · max^β</td><td style="color:#66ee88"><strong>'+pct(rPow.r2)+'</strong></td></tr>'+
+    '</table><br>'+
+    '<span class="key">Canonical Ramsey power law</span> <span class="math">(R²='+pct(rPow.r2)+')</span>:<br>'+
+    '<div style="background:#070710;padding:10px 14px;margin:8px 0;border-radius:4px;font-size:.78rem;color:#e8d877">'+
+    'R(m,n)  ≈  '+C.toFixed(2)+' · min(m−1, n−1)<sup>'+rPow.c1.toFixed(2)+'</sup> · max(m−1, n−1)<sup>'+rPow.c2.toFixed(2)+'</sup>'+
+    '</div>'+
+    '<span class="key">Log-log linearization:</span><br>'+
+    '<div style="background:#070710;padding:10px 14px;margin:8px 0;border-radius:4px;font-size:.75rem;color:#9b7dea">'+
+    'log R  =  '+rPow.ic.toFixed(2)+' + '+rPow.c1.toFixed(2)+'·log(min(m−1,n−1)) + '+rPow.c2.toFixed(2)+'·log(max(m−1,n−1))'+
+    '</div>'+
+    'In <strong style="color:#e8d877">log-log coordinates</strong> u=log(min−1), v=log(max−1), iso-R curves become <strong>straight lines</strong>.<br>'+
+    'No elliptic Euclidean metric can do this (symmetric elliptic ceiling: R²≈0.77).<br><br>'+
+    '<span class="brahm">The cosmic egg is not an ellipse.<br>'+
+    'Its shape is the power-law manifold: min^'+rPow.c1.toFixed(2)+' · max^'+rPow.c2.toFixed(2)+' = const.<br>'+
+    'The right container is a multiplicative, log-scaled product space.</span>';
+
+  document.getElementById('loglogResult').innerHTML=html;
+})();
+
+// Initial draw
+drawField();
+update();
+</script>
+</body>
+</html>

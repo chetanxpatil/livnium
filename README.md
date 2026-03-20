@@ -43,9 +43,9 @@ model-index:
 
 NLI classifier on SNLI where inference is not a single forward pass — it is a sequence of geometry-aware state updates before the final readout.
 
-📄 **Paper v1 (PDF):** [Livnium.pdf](https://github.com/chetanxpatil/livnium/blob/main/Livnium.pdf)
-📄 **Paper v2 — Three Laws (LaTeX):** [livnium_paper_v2.tex](https://github.com/chetanxpatil/livnium/blob/main/livnium_paper_v2.tex)
-📝 **v1 LaTeX source:** [livnium_paper.tex](https://github.com/chetanxpatil/livnium/blob/main/livnium_paper.tex)
+📄 **Paper v1 (PDF):** [Livnium.pdf](paper/Livnium.pdf)
+📄 **Paper v2 — Three Laws (LaTeX):** [livnium_paper_v2.tex](paper/livnium_paper_v2.tex)
+📝 **v1 LaTeX source:** [livnium_paper.tex](paper/livnium_paper.tex)
 🌐 **Zenodo preprint:** [zenodo.org/records/19058910](https://zenodo.org/records/19058910)
 🤗 **Model on HuggingFace:** [chetanxpatil/livnium-snli](https://huggingface.co/chetanxpatil/livnium-snli)
 
@@ -220,41 +220,39 @@ Pipeline breakdown at batch=32: BERT spends 95% of time in the encoder; native e
 
 ```
 livnium/
+├── system/                            ← core SNLI model system
+│   └── snli/
+│       ├── model/
+│       │   ├── train.py               ← unified training script (all encoder types)
+│       │   ├── train_livnium_joint.py ← v2.1 joint retraining under grad-V dynamics
+│       │   ├── test_gradient_collapse.py ← gradient collapse comparison (3 modes)
+│       │   ├── tunnel_test.py         ← trajectory diagnostic (TYPE-1/2/3/?)
+│       │   ├── eval.py                ← evaluation
+│       │   ├── infer.py               ← interactive / batch inference
+│       │   ├── speed_test.py          ← latency benchmark
+│       │   ├── extract_livnium_basis.py  ← geometry extractor (v2)
+│       │   ├── core/                  ← VectorCollapseEngine, BasinField, physics_laws
+│       │   ├── tasks/snli/            ← all encoders + heads
+│       │   ├── text/                  ← vocab-based text encoders
+│       │   └── utils/                 ← vocab helpers
+│       └── embed/                     ← v1 pretrained embedding module
+├── cortex_v1/                         ← deterministic geometric controller (beats FIFO/LRU)
+│   ├── livnium_cortex_v1.py           ← core: lattice + MPS + polarity governor
+│   ├── semantic_bridge.py             ← GloVe → SO(3) geometry mapping
+│   ├── organism_seed.py               ← text-driven lattice+MPS state machine
+│   ├── contextual_router.py           ← semantic weight routing
+│   ├── output_decoder.py              ← structural persistence report
+│   ├── benchmark/                     ← retrieval triage (α-triage > FIFO/LRU)
+│   └── mps/                           ← MPS simulator + polarity governor + tests
+├── paper/                             ← publications
+│   ├── Livnium.pdf                    ← v1 paper
+│   ├── livnium_paper_v2.pdf           ← v2 Three Laws paper
+│   ├── livnium_paper_v2.tex           ← LaTeX source
+│   └── generate_paper.py              ← PDF generator
+├── ramsey/                            ← Ramsey number analysis + visualizations
 ├── book/                              ← design rationale (Pages 1–6)
-│   ├── page_1_what_is_livnium.md
-│   ├── page_2_the_physics.md
-│   ├── page_3_collapse_engine.md
-│   ├── page_4_basin_field.md
-│   ├── page_5_encoder_story.md        ← full accuracy journey
-│   └── page_6_livnium_native_representation.md  ← v2 native encoder design
-├── pretrained/
-│   ├── collapse4/
-│   │   └── quantum_embeddings_final.pt  ← v1 pretrained BoW embeddings
-│   ├── bert-joint/                      ← v2 joint BERT checkpoint (82.06%)
-│   ├── livnium-joint-30k/               ← v2.1 joint grad-V checkpoint (82.79%, N-rec 76.6%)
-│   └── livnium-native/                  ← v2 native encoder (in training)
-├── training_logs/                     ← saved training runs
-└── system/
-    └── snli/
-        ├── model/
-        │   ├── train.py               ← unified training script (all encoder types)
-        │   ├── train_livnium_joint.py ← v2.1 joint retraining under grad-V dynamics
-        │   ├── test_gradient_collapse.py ← gradient collapse comparison (3 modes)
-        │   ├── tunnel_test.py         ← trajectory diagnostic (TYPE-1/2/3/? classification)
-        │   ├── eval.py                ← evaluation
-        │   ├── infer.py               ← interactive / batch inference
-        │   ├── speed_test.py          ← latency benchmark
-        │   ├── extract_livnium_basis.py  ← geometry extractor (v2)
-        │   ├── run_specialists.sh     ← 3-specialist pipeline
-        │   ├── core/                  ← VectorCollapseEngine, BasinField, physics_laws
-        │   ├── tasks/snli/            ← all encoders + heads
-        │   │   ├── encoding_snli.py   ← SNLIEncoder, BERTSNLIEncoder,
-        │   │   │                         CrossEncoderBERTSNLIEncoder,
-        │   │   │                         LivniumNativeEncoder
-        │   │   └── head_snli.py       ← SNLIHead, BinaryHead, LinearSNLIHead
-        │   ├── text/                  ← vocab-based text encoders
-        │   └── utils/                 ← vocab helpers
-        └── embed/                     ← v1 pretrained embedding module
+├── docs/                              ← project goals (v2, v3)
+└── scripts/                           ← release + commit scripts
 ```
 
 ---

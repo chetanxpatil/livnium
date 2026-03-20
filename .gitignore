@@ -14,6 +14,19 @@ pretrained/
 # Model weights
 *.pt
 
+# Large data & training artifacts
+training_logs/
+runs/
+.eval_results/
+
+# LaTeX build artifacts
+*.aux
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+missfont.log
+
 # Logs & OS
 *.log
 .DS_Store
@@ -29,5 +42,6 @@ archive/
 
 # Eyes (audit trail — local only)
 eyes/
-pretrained/
-pretrained/
+
+# Quantum sandbox (local experiments only — not tracked)
+uantum/

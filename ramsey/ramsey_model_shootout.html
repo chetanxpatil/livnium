@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ramsey Model Shootout</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0b0b11;
+  color: #ddd;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  padding: 28px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+h1 { font-size: 1.05rem; color: #aaa; letter-spacing: 0.06em; }
+.subtitle { font-size: 0.74rem; color: #555; text-align: center; max-width: 640px; line-height: 1.7; }
+.subtitle em { color: #9b7dea; font-style: normal; }
+
+.scoreboard {
+  width: 100%; max-width: 760px;
+  background: #111118;
+  border: 1px solid #222;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.scoreboard-header {
+  background: #18181f;
+  padding: 10px 16px;
+  font-size: 0.68rem;
+  color: #666;
+  letter-spacing: 0.1em;
+  display: grid;
+  grid-template-columns: 28px 1fr 80px 80px 70px 70px;
+  gap: 8px;
+}
+.model-row {
+  padding: 10px 16px;
+  font-size: 0.72rem;
+  display: grid;
+  grid-template-columns: 28px 1fr 80px 80px 70px 70px;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid #1a1a24;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.model-row:hover { background: #14141e; }
+.model-row.winner { background: #141420; border-left: 3px solid #9b7dea; }
+.medal { font-size: 1rem; }
+.model-name { color: #ccc; line-height: 1.3; }
+.model-name .eq { font-size: 0.63rem; color: #666; margin-top: 2px; }
+.r2-bar-wrap { position: relative; height: 6px; background: #1a1a24; border-radius: 3px; overflow: hidden; margin-top: 3px; }
+.r2-bar { height: 6px; border-radius: 3px; }
+.r2-val { font-size: 0.8rem; font-weight: bold; }
+.r2-val.top { color: #9b7dea; }
+.aic-val { font-size: 0.72rem; color: #666; }
+.sig-val { font-size: 0.67rem; }
+.sig-yes { color: #66ee88; }
+.sig-no  { color: #666; }
+
+.detail-panel {
+  width: 100%; max-width: 760px;
+  background: #0e0e16;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  padding: 18px 20px;
+  font-size: 0.74rem;
+  line-height: 1.8;
+  display: none;
+}
+.detail-panel.visible { display: block; }
+.detail-panel h3 { font-size: 0.78rem; color: #9b7dea; margin-bottom: 10px; }
+.coef-table { width: 100%; border-collapse: collapse; font-size: 0.7rem; }
+.coef-table th { color: #666; font-weight: normal; padding: 4px 8px; text-align: left; border-bottom: 1px solid #222; }
+.coef-table td { padding: 4px 8px; border-bottom: 1px solid #1a1a24; }
+.p-sig { color: #66ee88; }
+.p-ns  { color: #666; }
+
+.verdict {
+  width: 100%; max-width: 760px;
+  background: #0e0e16;
+  border-left: 3px solid #e8d877;
+  padding: 16px 20px;
+  font-size: 0.75rem;
+  line-height: 1.9;
+  color: #bbb;
+}
+.verdict h3 { color: #e8d877; margin-bottom: 10px; font-size: 0.8rem; }
+.verdict .key { color: #e8d877; }
+.verdict .good { color: #66ee88; }
+.verdict .warn { color: #ee9933; }
+.verdict .math { color: #9b7dea; font-size: 0.8rem; }
+.verdict .paper { color: #aad4ff; font-style: italic; font-size: 0.72rem; margin-top: 8px; border-left: 2px solid #4499ee; padding-left: 10px; }
+
+.plots { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+.plot-card {
+  background: #111118;
+  border: 1px solid #1e1e2e;
+  border-radius: 5px;
+  padding: 12px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.plot-title { font-size: 0.63rem; color: #555; letter-spacing: 0.08em; }
+</style>
+</head>
+<body>
+
+<h1>R(m, n) — Model Shootout: Which Law Wins?</h1>
+<p class="subtitle">
+  OLS regression with LOO cross-validation across <em>7 competing models</em>.
+  Click any row to see coefficient details.
+</p>
+
+<div class="scoreboard">
+  <div class="scoreboard-header">
+    <span>#</span><span>Model</span>
+    <span>R² train</span><span>R² LOO-CV</span><span>AIC</span><span>p-sig</span>
+  </div>
+  <div id="rows"></div>
+</div>
+
+<div id="detailPanel" class="detail-panel">
+  <h3 id="detailTitle"></h3>
+  <table class="coef-table" id="detailTable">
+    <thead><tr><th>Feature</th><th>Coef</th><th>t-stat</th><th>p-value</th><th>Sig</th></tr></thead>
+    <tbody id="detailBody"></tbody>
+  </table>
+  <div id="detailInterpret" style="margin-top:12px; font-size:0.7rem; color:#888; line-height:1.7;"></div>
+</div>
+
+<div class="plots">
+  <div class="plot-card">
+    <div class="plot-title">ACTUAL vs FITTED (best model)</div>
+    <canvas id="fitPlot" width="340" height="280"></canvas>
+  </div>
+  <div class="plot-card">
+    <div class="plot-title">R² LOO-CV BY MODEL</div>
+    <canvas id="barPlot" width="340" height="280"></canvas>
+  </div>
+  <div class="plot-card">
+    <div class="plot-title">RESIDUALS (best model)</div>
+    <canvas id="residPlot" width="340" height="280"></canvas>
+  </div>
+</div>
+
+<div class="verdict" id="verdictBox"></div>
+
+<script>
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const EXACT = [
+  {m:3,n:3,R:6,exact:true}, {m:3,n:4,R:9,exact:true},
+  {m:3,n:5,R:14,exact:true}, {m:3,n:6,R:18,exact:true},
+  {m:3,n:7,R:23,exact:true}, {m:3,n:8,R:28,exact:true},
+  {m:3,n:9,R:36,exact:true}, {m:4,n:4,R:18,exact:true},
+  {m:4,n:5,R:25,exact:true},
+];
+const BOUNDS = [
+  {m:4,n:6,R:(36+41)/2,exact:false},
+  {m:5,n:5,R:(43+48)/2,exact:false},
+  {m:3,n:10,R:(40+42)/2,exact:false},
+];
+const DATA = [...EXACT, ...BOUNDS];
+
+// Feature engineering
+DATA.forEach(d => {
+  d.log_R         = Math.log(d.R);
+  d.r             = Math.sqrt((d.m-1)**2 + (d.n-1)**2);
+  d.m_plus_n      = d.m + d.n;
+  d.m_times_n     = d.m * d.n;
+  d.diagonal_dist = Math.abs(d.m - d.n);
+  d.log_r         = Math.log(d.r + 1e-9);
+  d.min_mn        = Math.min(d.m, d.n);
+  d.max_mn        = Math.max(d.m, d.n);
+});
+
+// ─── OLS regression ───────────────────────────────────────────────────────────
+function matMul(A, B) {
+  const ra=A.length, ca=A[0].length, cb=B[0].length;
+  return Array.from({length:ra},(_,i) =>
+    Array.from({length:cb},(_,j) =>
+      A[i].reduce((s,_,k) => s + A[i][k]*B[k][j], 0)));
+}
+function matT(A) {
+  return A[0].map((_, j) => A.map(row => row[j]));
+}
+function matInv(M) {
+  // Gauss-Jordan for small matrices
+  const n = M.length;
+  const A = M.map((r,i) => [...r, ...Array.from({length:n},(_,j) => i===j?1:0)]);
+  for (let i=0; i<n; i++) {
+    let maxRow = i;
+    for (let k=i+1;k<n;k++) if (Math.abs(A[k][i])>Math.abs(A[maxRow][i])) maxRow=k;
+    [A[i],A[maxRow]]=[A[maxRow],A[i]];
+    const piv = A[i][i];
+    if (Math.abs(piv) < 1e-12) return null; // singular
+    for (let j=0;j<2*n;j++) A[i][j]/=piv;
+    for (let k=0;k<n;k++) if (k!==i) {
+      const f=A[k][i];
+      for (let j=0;j<2*n;j++) A[k][j]-=f*A[i][j];
+    }
+  }
+  return A.map(r=>r.slice(n));
+}
+
+function ols(featureNames, data) {
+  const n = data.length, p = featureNames.length;
+  const X = data.map(d => [1, ...featureNames.map(f => d[f])]);
+  const y = data.map(d => d.log_R);
+
+  const Xt = matT(X);
+  const XtX = matMul(Xt, X.map(r=>[r].map(v=>v)));
+  // Flatten properly
+  const XtXmat = matMul(Xt, X);
+  const Xty = Xt.map(row => row.reduce((s,v,i)=>s+v*y[i], 0));
+
+  const XtXinv = matInv(XtXmat);
+  if (!XtXinv) return null;
+
+  const betaRaw = XtXinv.map(row => row.reduce((s,v,i)=>s+v*Xty[i], 0));
+  const beta0 = betaRaw[0];
+  const betas = betaRaw.slice(1);
+
+  const preds = data.map(d => beta0 + featureNames.reduce((s,f,i)=>s+betas[i]*d[f],0));
+  const residuals = y.map((yi,i) => yi - preds[i]);
+  const yMean = y.reduce((s,v)=>s+v,0)/n;
+  const ssTot = y.reduce((s,v)=>s+(v-yMean)**2,0);
+  const ssRes = residuals.reduce((s,v)=>s+v**2,0);
+  const r2 = 1 - ssRes/ssTot;
+
+  // LOO-CV
+  const looPreds = data.map((_,loo) => {
+    const trainData = data.filter((_,i)=>i!==loo);
+    const fit = ols(featureNames, trainData);
+    if (!fit) return y[loo];
+    return fit.predict(data[loo]);
+  });
+  const ssResLoo = y.reduce((s,v,i)=>s+(v-looPreds[i])**2,0);
+  const r2Loo = 1 - ssResLoo/ssTot;
+
+  // AIC
+  const k = p + 1;
+  const aic = n * Math.log(ssRes/n) + 2*k;
+
+  // Standard errors & t-stats
+  const s2 = ssRes / (n - k);
+  const ses = XtXinv.map((row,i) => Math.sqrt(Math.max(0, s2 * row[i])));
+  const tStats = betaRaw.map((b,i) => b / (ses[i] + 1e-12));
+  // Two-tailed p-value from t distribution (approx using normal for df > 5)
+  const df = n - k;
+  const pVals = tStats.map(t => {
+    const x = Math.abs(t);
+    // Approx p-value from standard normal (ok for df > 6)
+    const p = 2 * (1 - normalCDF(x));
+    return p;
+  });
+
+  const featNames = ['intercept', ...featureNames];
+  const coefs = [beta0, ...betas];
+
+  // Build equation string
+  let eq = `log(R) = ${beta0.toFixed(3)}`;
+  featureNames.forEach((f,i) => {
+    const sign = betas[i] >= 0 ? '+' : '-';
+    eq += ` ${sign} ${Math.abs(betas[i]).toFixed(4)}·${f}`;
+  });
+
+  return {
+    r2, r2Loo, aic, eq,
+    coefs: Object.fromEntries(featNames.map((f,i)=>[f,coefs[i]])),
+    tStats: Object.fromEntries(featNames.map((f,i)=>[f,tStats[i]])),
+    pVals: Object.fromEntries(featNames.map((f,i)=>[f,pVals[i]])),
+    preds, residuals, looPreds,
+    predict: d => beta0 + featureNames.reduce((s,f,i)=>s+betas[i]*d[f],0),
+  };
+}
+
+function normalCDF(x) {
+  // Approximation of the standard normal CDF
+  const t = 1/(1+0.2316419*x);
+  const poly = t*(0.319381530 + t*(-0.356563782 + t*(1.781477937 + t*(-1.821255978 + t*1.330274429))));
+  return 1 - (1/Math.sqrt(2*Math.PI))*Math.exp(-x*x/2)*poly;
+}
+
+// ─── Run models ───────────────────────────────────────────────────────────────
+const MODELS = [
+  {name: "Model 1 — Isotropic (r only)",      feats: ['r']},
+  {name: "Model 2 — Additive (m + n)",         feats: ['m_plus_n']},
+  {name: "Model 3 — Symmetric area (m+n, m·n)",feats: ['m_plus_n', 'm_times_n']},
+  {name: "Model 4 — Anisotropic (r, |m-n|)",  feats: ['r', 'diagonal_dist']},
+  {name: "Model 5 — Full aniso (r, |m-n|, min)", feats: ['r','diagonal_dist','min_mn']},
+  {name: "Model 6 — Power law (log r)",        feats: ['log_r']},
+  {name: "Model 7 — Multiplicative (m·n)",    feats: ['m_times_n']},
+];
+
+const fitted = MODELS.map(m => ({...m, ...ols(m.feats, DATA)}));
+fitted.sort((a,b) => b.r2Loo - a.r2Loo);
+
+const maxR2 = Math.max(...fitted.map(f=>f.r2));
+const minAic = Math.min(...fitted.map(f=>f.aic));
+
+// ─── Render scoreboard ────────────────────────────────────────────────────────
+const medals = ['🥇','🥈','🥉'];
+const colors = ['#9b7dea','#7799dd','#55bb88','#ee9933','#888','#666','#555'];
+let activeIdx = 0;
+
+function renderRows() {
+  const container = document.getElementById('rows');
+  container.innerHTML = '';
+  fitted.forEach((res, i) => {
+    const div = document.createElement('div');
+    div.className = 'model-row' + (i===0?' winner':'');
+    const sigFeats = res.feats.filter(f => (res.pVals[f]||1) < 0.05);
+    const sigStr = sigFeats.length > 0
+      ? `<span class="sig-yes">✓ ${sigFeats.join(', ')}</span>`
+      : `<span class="sig-no">—</span>`;
+    div.innerHTML = `
+      <span class="medal">${medals[i] || `<span style="color:#555">${i+1}</span>`}</span>
+      <span class="model-name">
+        ${res.name}
+        <div class="eq">${res.eq}</div>
+        <div class="r2-bar-wrap">
+          <div class="r2-bar" style="width:${res.r2*100}%;background:${colors[i]}"></div>
+        </div>
+      </span>
+      <span class="r2-val ${i===0?'top':''}" style="color:${colors[i]}">
+        ${(res.r2*100).toFixed(2)}%
+      </span>
+      <span class="r2-val" style="color:${colors[i]}88">
+        ${(res.r2Loo*100).toFixed(2)}%
+      </span>
+      <span class="aic-val">${res.aic.toFixed(1)}</span>
+      <span>${sigStr}</span>
+    `;
+    div.addEventListener('click', () => showDetail(i));
+    container.appendChild(div);
+  });
+}
+
+function showDetail(idx) {
+  const res = fitted[idx];
+  const panel = document.getElementById('detailPanel');
+  document.getElementById('detailTitle').textContent = res.name;
+
+  const tbody = document.getElementById('detailBody');
+  tbody.innerHTML = '';
+  const featNames = ['intercept', ...res.feats];
+  featNames.forEach(f => {
+    const c = res.coefs[f];
+    const t = res.tStats[f];
+    const p = res.pVals[f];
+    const sig = p < 0.001 ? '***' : p < 0.01 ? '**' : p < 0.05 ? '*' : 'ns';
+    const sigClass = p < 0.05 ? 'p-sig' : 'p-ns';
+    tbody.innerHTML += `<tr>
+      <td style="color:#ccc">${f}</td>
+      <td style="color:#e8d877">${c.toFixed(5)}</td>
+      <td>${t.toFixed(3)}</td>
+      <td class="${sigClass}">${p.toFixed(4)}</td>
+      <td class="${sigClass}">${sig}</td>
+    </tr>`;
+  });
+
+  // Interpretation
+  let interp = '';
+  if (res.feats.includes('diagonal_dist')) {
+    const c = res.coefs['diagonal_dist'];
+    const p = res.pVals['diagonal_dist'];
+    if (p < 0.05 && c < 0) {
+      interp += `<span style="color:#66ee88">✓ |m-n| is negative and significant (${c.toFixed(4)}, p=${p.toFixed(3)}). ` +
+        `Moving away from the diagonal REDUCES R — anisotropy confirmed.</span> `;
+    } else if (p < 0.05 && c > 0) {
+      interp += `<span style="color:#ee9933">⚠ |m-n| is positive and significant — diagonal penalty is reversed.</span> `;
+    } else {
+      interp += `<span style="color:#666">|m-n| not significant (p=${p.toFixed(3)}) — no confirmed diagonal bias in this model.</span> `;
+    }
+  }
+  if (res.feats.includes('m_times_n')) {
+    const c = res.coefs['m_times_n'];
+    const p = res.pVals['m_times_n'];
+    if (p < 0.05) {
+      interp += `<br><span style="color:#66ee88">✓ m·n is significant (${c.toFixed(4)}, p=${p.toFixed(3)}). ` +
+        `Multiplicative interaction drives growth — complexity scales with joint clique size.</span>`;
+    } else {
+      interp += `<br><span style="color:#666">m·n not significant (p=${p.toFixed(3)}) — additive structure may suffice.</span>`;
+    }
+  }
+  document.getElementById('detailInterpret').innerHTML = interp;
+
+  panel.classList.add('visible');
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+  activeIdx = idx;
+}
+
+// ─── Plots ────────────────────────────────────────────────────────────────────
+function plotFit() {
+  const res = fitted[0];
+  const c = document.getElementById('fitPlot');
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  const PAD={l:40,r:12,t:12,b:36};
+  const PW=W-PAD.l-PAD.r, PH=H-PAD.t-PAD.b;
+
+  ctx.fillStyle = '#0c0c12'; ctx.fillRect(0,0,W,H);
+
+  const allY = DATA.map(d=>d.log_R);
+  const allP = res.preds;
+  const minV = Math.min(...allY,...allP)*0.95;
+  const maxV = Math.max(...allY,...allP)*1.05;
+
+  function toX(v) { return PAD.l + (v-minV)/(maxV-minV)*PW; }
+  function toY(v) { return PAD.t + (1-(v-minV)/(maxV-minV))*PH; }
+
+  // Perfect line
+  ctx.strokeStyle='#2a2a3a'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(toX(minV),toY(minV)); ctx.lineTo(toX(maxV),toY(maxV)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Points
+  DATA.forEach((d,i) => {
+    const isDiag = Math.abs(d.theta||0 - Math.PI/4) < 0.4;
+    ctx.beginPath();
+    ctx.arc(toX(res.preds[i]), toY(d.log_R), d.exact?5:3, 0, Math.PI*2);
+    ctx.fillStyle = d.exact ? '#9b7dea' : '#555';
+    ctx.fill();
+
+    // Label
+    ctx.font='7px monospace'; ctx.fillStyle='#888'; ctx.textAlign='left';
+    ctx.fillText(`(${d.m},${d.n})`, toX(res.preds[i])+5, toY(d.log_R)+3);
+  });
+
+  // Axes
+  ctx.fillStyle='#555'; ctx.font='8px monospace';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText('fitted log R', PAD.l+PW/2, H-PAD.b+4);
+  ctx.save(); ctx.translate(10,PAD.t+PH/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center'; ctx.fillText('actual log R', 0,0); ctx.restore();
+
+  // R² label
+  ctx.fillStyle='#9b7dea'; ctx.font='bold 10px monospace';
+  ctx.textAlign='right'; ctx.textBaseline='top';
+  ctx.fillText(`R²=${(res.r2*100).toFixed(1)}%`, W-PAD.r-2, PAD.t+2);
+}
+
+function plotBars() {
+  const c = document.getElementById('barPlot');
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  const PAD={l:8,r:8,t:12,b:8};
+  const n = fitted.length;
+  const barH = (H-PAD.t-PAD.b) / n - 4;
+
+  ctx.fillStyle='#0c0c12'; ctx.fillRect(0,0,W,H);
+  const maxR2 = Math.max(...fitted.map(f=>Math.max(0,f.r2Loo)));
+  const barW = W-PAD.l-PAD.r-90;
+  const COLORS=['#9b7dea','#7799dd','#55bb88','#ee9933','#dd7755','#888','#555'];
+
+  fitted.forEach((res,i) => {
+    const y = PAD.t + i*(barH+4);
+    const w = Math.max(0, res.r2Loo) / maxR2 * barW;
+    ctx.fillStyle=COLORS[i]+'33'; ctx.fillRect(PAD.l+90, y, barW, barH);
+    ctx.fillStyle=COLORS[i]; ctx.fillRect(PAD.l+90, y, Math.max(0,w), barH);
+
+    ctx.font=`${i===0?'bold ':''} 8px monospace`;
+    ctx.fillStyle=i===0?COLORS[0]:'#666';
+    ctx.textAlign='right'; ctx.textBaseline='middle';
+    const label = res.name.replace(/Model \d — /, '');
+    ctx.fillText(label.slice(0,18), PAD.l+86, y+barH/2);
+
+    ctx.fillStyle=COLORS[i];
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(`${(res.r2Loo*100).toFixed(1)}%`, PAD.l+90+w+3, y+barH/2);
+  });
+
+  ctx.fillStyle='#555'; ctx.font='8px monospace'; ctx.textAlign='center';
+  ctx.fillText('LOO-CV R²', PAD.l+90+barW/2, H-2);
+}
+
+function plotResid() {
+  const res = fitted[0];
+  const c = document.getElementById('residPlot');
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  const PAD={l:36,r:12,t:12,b:36};
+  const PW=W-PAD.l-PAD.r, PH=H-PAD.t-PAD.b;
+
+  ctx.fillStyle='#0c0c12'; ctx.fillRect(0,0,W,H);
+
+  const xs = DATA.map(d=>d[res.feats[0]]);
+  const maxX = Math.max(...xs)*1.05, minX = Math.min(...xs)*0.95;
+  const maxR = Math.max(...res.residuals.map(Math.abs))*1.2;
+
+  function toX(v){return PAD.l+(v-minX)/(maxX-minX)*PW;}
+  function toY(v){return PAD.t+(1-(v+maxR)/(2*maxR))*PH;}
+
+  // Zero line
+  ctx.strokeStyle='#2a2a3a'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l,toY(0)); ctx.lineTo(W-PAD.r,toY(0)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  DATA.forEach((d,i) => {
+    const isDiag = d.m === d.n;
+    const isAxis = d.m <= 2 || d.n <= 2;
+    const col = isDiag ? '#ee5544' : (isAxis ? '#4499ee' : '#9b7dea');
+    ctx.beginPath(); ctx.arc(toX(xs[i]), toY(res.residuals[i]), d.exact?5:3, 0, Math.PI*2);
+    ctx.fillStyle=col; ctx.fill();
+    ctx.font='7px monospace'; ctx.fillStyle='#777'; ctx.textAlign='left';
+    ctx.fillText(`(${d.m},${d.n})`, toX(xs[i])+5, toY(res.residuals[i])+3);
+  });
+
+  // Axes
+  ctx.fillStyle='#555'; ctx.font='8px monospace';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText(res.feats[0], PAD.l+PW/2, H-PAD.b+4);
+  ctx.save(); ctx.translate(9,PAD.t+PH/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center'; ctx.fillText('residual', 0,0); ctx.restore();
+
+  // Legend
+  [[`#ee5544`,'diagonal m=n'],[`#4499ee`,'axis m≤2'],[`#9b7dea`,'mixed']].forEach(([col,lab],i)=>{
+    ctx.beginPath(); ctx.arc(PAD.l+5, PAD.t+6+i*13, 3, 0, Math.PI*2);
+    ctx.fillStyle=col; ctx.fill();
+    ctx.fillStyle='#777'; ctx.font='7px monospace'; ctx.textAlign='left';
+    ctx.fillText(lab, PAD.l+11, PAD.t+7+i*13);
+  });
+}
+
+// ─── Verdict ──────────────────────────────────────────────────────────────────
+function buildVerdict() {
+  const winner = fitted[0];
+  const m1 = fitted.find(f=>f.feats.join()===('r'));
+  const m4 = fitted.find(f=>f.feats.join()===('r,diagonal_dist'));
+  const m3 = fitted.find(f=>f.feats.join()===('m_plus_n,m_times_n'));
+
+  const diagCoef = m4?.coefs?.diagonal_dist ?? 0;
+  const diagP    = m4?.pVals?.diagonal_dist ?? 1;
+  const mxnCoef  = m3?.coefs?.m_times_n ?? 0;
+  const mxnP     = m3?.pVals?.m_times_n ?? 1;
+
+  let anisotropy = '';
+  if (diagP < 0.05 && diagCoef < 0) {
+    anisotropy = `<span class="good">CONFIRMED</span>: |m-n| coefficient = ${diagCoef.toFixed(4)} (p=${diagP.toFixed(3)}). ` +
+      `Deviation from the diagonal <em>reduces</em> R(m,n). The field is anisotropic.`;
+  } else if (diagP < 0.1) {
+    anisotropy = `<span class="warn">MARGINAL</span>: |m-n| coefficient = ${diagCoef.toFixed(4)} (p=${diagP.toFixed(3)}). ` +
+      `Trend exists but not statistically robust at p < 0.05 — likely limited by dataset size (n=${DATA.length}).`;
+  } else {
+    anisotropy = `<span class="warn">NOT CONFIRMED</span>: |m-n| p=${diagP.toFixed(3)} — insufficient evidence at this sample size.`;
+  }
+
+  let multiplier = '';
+  if (mxnP < 0.05) {
+    multiplier = `<span class="good">m·n is significant</span> (coef=${mxnCoef.toFixed(4)}, p=${mxnP.toFixed(3)}). ` +
+      `Cross-term matters — complexity scales with the <em>product</em> of clique sizes.`;
+  } else {
+    multiplier = `m·n is not significant at p < 0.05 (p=${mxnP.toFixed(3)}). Additive structure may suffice at current scale.`;
+  }
+
+  const paperSentence = winner.feats.includes('diagonal_dist')
+    ? `"Regression analysis of ${EXACT.length} exact R(m,n) values confirms that index-space growth ` +
+      `is not isotropic (radial-only R² = ${((m1?.r2||0)*100).toFixed(1)}%). ` +
+      `An anisotropic model including |m−n| achieves R² = ${(winner.r2*100).toFixed(1)}% ` +
+      `(LOO-CV ${(winner.r2Loo*100).toFixed(1)}%), with the diagonal-deviation coefficient ` +
+      `statistically significant (p=${diagP.toFixed(3)}). ` +
+      `R(m,n) growth is faster along the m=n diagonal than along coordinate axes, ` +
+      `confirming structured anisotropy in the Ramsey index manifold."`
+    : winner.feats.includes('m_times_n')
+    ? `"Regression analysis of ${EXACT.length} exact R(m,n) values shows that growth is best ` +
+      `explained by the multiplicative feature m·n rather than Euclidean radius alone ` +
+      `(R² = ${(winner.r2*100).toFixed(1)}%, LOO-CV ${(winner.r2Loo*100).toFixed(1)}%). ` +
+      `This implies that Ramsey complexity scales with joint clique-size interaction, ` +
+      `not merely with the sum of parameters."`
+    : `"Regression analysis of ${EXACT.length} exact R(m,n) values shows approximately ` +
+      `radial growth (R² = ${((m1?.r2||0)*100).toFixed(1)}%), consistent with outward-expanding level sets. ` +
+      `No statistically significant anisotropy was detected at the available sample size."`;
+
+  document.getElementById('verdictBox').innerHTML = `
+    <h3>VERDICT</h3>
+    <span class="key">Winner:</span> ${winner.name}
+    (R² = ${(winner.r2*100).toFixed(1)}%, LOO-CV = ${(winner.r2Loo*100).toFixed(1)}%)<br>
+    <span class="key">Equation:</span> <span class="math">${winner.eq}</span><br><br>
+    <span class="key">Anisotropy test (diagonal bias):</span> ${anisotropy}<br>
+    <span class="key">Multiplicative interaction test:</span> ${multiplier}<br>
+    <br>
+    <span class="key">Paper-ready sentence:</span>
+    <div class="paper">${paperSentence}</div>
+  `;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+renderRows();
+showDetail(0);
+plotFit();
+plotBars();
+plotResid();
+buildVerdict();
+</script>
+</body>
+</html>

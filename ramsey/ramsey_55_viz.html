@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>R(5,5) — Structural Squeeze</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#09090f;color:#ddd;font-family:'SF Mono',monospace;padding:24px 16px 80px;display:flex;flex-direction:column;align-items:center;gap:24px}
+h1{font-size:.95rem;color:#aaa;letter-spacing:.08em;text-align:center}
+.sub{font-size:.7rem;color:#555;text-align:center;max-width:640px;line-height:1.8}
+.sub em{color:#9b7dea;font-style:normal}
+.sub strong{color:#e8d877}
+.row{display:flex;gap:18px;flex-wrap:wrap;justify-content:center}
+.card{background:#111118;border:1px solid #1e1e2e;border-radius:6px;padding:12px 14px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:200px}
+.card-title{font-size:.58rem;color:#444;letter-spacing:.1em;text-align:center}
+canvas{display:block}
+.panel{max-width:900px;width:100%;background:#0d0d14;border:1px solid #1e1e2e;border-radius:6px;padding:18px 22px;font-size:.7rem;line-height:2}
+.panel h2{font-size:.75rem;color:#9b7dea;margin-bottom:12px;letter-spacing:.06em}
+.panel .key{color:#e8d877}
+.panel .good{color:#66ee88}
+.panel .warn{color:#ee9933}
+.panel .fail{color:#ee5544}
+.panel .math{color:#9b7dea;font-size:.75rem}
+.level-bar{display:flex;align-items:center;gap:10px;margin:6px 0}
+.level-label{width:80px;color:#555;font-size:.63rem;text-align:right;flex-shrink:0}
+.level-track{flex:1;height:6px;background:#1a1a24;border-radius:3px;overflow:hidden}
+.level-fill{height:6px;border-radius:3px}
+.level-desc{font-size:.65rem;color:#888;flex-shrink:0;width:280px}
+.squeeze-table{width:100%;border-collapse:collapse;font-size:.66rem;margin-top:8px}
+.squeeze-table th{color:#555;font-weight:normal;text-align:left;padding:3px 10px 3px 0;border-bottom:1px solid #1a1a24}
+.squeeze-table td{padding:3px 10px 3px 0;vertical-align:top}
+.badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:.58rem}
+.badge-ok{background:#1a3a1a;color:#66ee88;border:1px solid #2a5a2a}
+.badge-warn{background:#2a2a10;color:#e8d877;border:1px solid #4a4a20}
+.badge-open{background:#1a1a2e;color:#9b7dea;border:1px solid #2e2e4e}
+.badge-fail{background:#2a1010;color:#ee5544;border:1px solid #4e2020}
+</style>
+</head>
+<body>
+
+<h1>R(5,5) — STRUCTURAL SQUEEZE</h1>
+<p class="sub">
+  Goal: 2-color K₄₃ with no monochromatic K₅.<br>
+  Method: assume it exists → apply Ramsey constraints layer by layer → find contradiction (or fail).<br>
+  <strong>This is how R(5,5) ∈ [43, 48] was established — and why the exact value remains unknown.</strong>
+</p>
+
+<div class="row">
+  <div class="card">
+    <div class="card-title">DEGREE WINDOW</div>
+    <canvas id="degCanvas" width="320" height="240"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">RAMSEY CHAIN USED</div>
+    <canvas id="chainCanvas" width="320" height="240"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">PALEY(41) vs PALEY(43)</div>
+    <canvas id="paleyCanvas" width="320" height="240"></canvas>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>THE SQUEEZE — LEVEL BY LEVEL</h2>
+  <div id="squeezeContent"></div>
+</div>
+
+<div class="panel">
+  <h2>WHAT WAS PROVED</h2>
+  <div id="proofBox"></div>
+</div>
+
+<div class="panel">
+  <h2>STATE OF THE ART</h2>
+  <div id="sotaBox"></div>
+</div>
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+var N=43, GOAL=5;
+var r_min=18, r_max=24, deg=42;
+var E_total=903;
+var feasible=[Math.ceil(N*r_min/2), Math.floor(N*r_max/2)]; // [387,516]
+
+// Goodman
+var T_total=N*(N-1)*(N-2)/6; // 12341
+var T_mono_min=T_total-N*441/2; // 12341 - 9481.5 = 2859.5 → 2860
+var T_mono_max=T_total-N*432/2; // 12341 - 9288 = 3053
+
+// Paley results (computed)
+var paley41={
+  p:41, edges:410, deg:20, red_k5:true, blue_k5:true,
+  t_red:1230, t_blue:1230, note:'Fails: has monochromatic K₅'
+};
+var paley43_broken={
+  p:43, edges:430, degs:{16:2,17:4,18:5,19:4,20:6,21:12,22:8,23:2},
+  note:'43≡3(mod4): QR-adjacency is asymmetric → broken construction'
+};
+
+// ─── Colors ───────────────────────────────────────────────────────────────────
+function hsl(h,s,l){
+  h/=360;s/=100;l/=100;
+  function hue2(p,q,t){if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;}
+  if(!s)return'rgb('+Math.round(l*255)+','+Math.round(l*255)+','+Math.round(l*255)+')';
+  var q=l<.5?l*(1+s):l+s-l*s,p_=2*l-q;
+  return'rgb('+Math.round(hue2(p_,q,h+1/3)*255)+','+Math.round(hue2(p_,q,h)*255)+','+Math.round(hue2(p_,q,h-1/3)*255)+')';
+}
+
+// ─── Canvas 1: Degree window ──────────────────────────────────────────────────
+(function(){
+  var cv=document.getElementById('degCanvas');
+  var ctx=cv.getContext('2d');
+  var W=cv.width, H=cv.height;
+  ctx.fillStyle='#09090f';ctx.fillRect(0,0,W,H);
+
+  var PAD={l:42,r:16,t:20,b:36};
+  var PW=W-PAD.l-PAD.r, PH=H-PAD.t-PAD.b;
+
+  // Bar chart of "allowed" red degrees
+  var allVals=[];
+  for(var r=r_min;r<=r_max;r++) allVals.push(r);
+  var barW=PW/allVals.length;
+
+  allVals.forEach(function(r,i){
+    var b_=deg-r;
+    var balanced=Math.abs(r-21)<=1;
+    ctx.fillStyle=balanced?'#4a8a6a':'#2a3a4a';
+    var x=PAD.l+i*barW+barW*.1, bh=PH*.65;
+    ctx.fillRect(x, PAD.t+PH-bh, barW*.8, bh);
+    // Label
+    ctx.fillStyle=balanced?'#66ee88':'#555';
+    ctx.font='7px monospace';ctx.textAlign='center';ctx.textBaseline='top';
+    ctx.fillText(r, x+barW*.4, PAD.t+PH+4);
+  });
+
+  // Forbidden zones
+  ctx.fillStyle='rgba(238,85,68,0.12)';
+  ctx.fillRect(PAD.l-30,PAD.t,30,PH);  // r < 18
+  ctx.fillRect(PAD.l+PW,PAD.t,30,PH);   // r > 24
+
+  ctx.fillStyle='#ee5544';ctx.font='7px monospace';ctx.textAlign='center';
+  ctx.fillText('r<18', PAD.l-15, PAD.t+PH/2-4);
+  ctx.fillText('→K₅!', PAD.l-15, PAD.t+PH/2+4);
+  ctx.fillText('r>24', PAD.l+PW+15, PAD.t+PH/2-4);
+  ctx.fillText('→K₅!', PAD.l+PW+15, PAD.t+PH/2+4);
+
+  // Axis
+  ctx.fillStyle='#444';ctx.font='8px monospace';ctx.textAlign='center';
+  ctx.fillText('red degree r(v)  ←  forced window from R(4,5)=25', PAD.l+PW/2, H-8);
+
+  // Paley marker
+  ctx.fillStyle='#9b7dea';ctx.font='7px monospace';
+  var p_idx=allVals.indexOf(21);
+  if(p_idx>=0){
+    var px=PAD.l+p_idx*barW+barW/2;
+    ctx.beginPath();ctx.moveTo(px,PAD.t+2);ctx.lineTo(px,PAD.t+12);
+    ctx.strokeStyle='#9b7dea';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.textAlign='center';ctx.fillText('Paley=21',px,PAD.t-4);
+  }
+
+  // Title
+  ctx.fillStyle='#9b7dea';ctx.font='bold 8px monospace';ctx.textAlign='left';ctx.textBaseline='top';
+  ctx.fillText('r(v) ∈ [18,24]  (from R(4,5)=25)',PAD.l,2);
+})();
+
+// ─── Canvas 2: Ramsey chain ────────────────────────────────────────────────────
+(function(){
+  var cv=document.getElementById('chainCanvas');
+  var ctx=cv.getContext('2d');
+  var W=cv.width, H=cv.height;
+  ctx.fillStyle='#09090f';ctx.fillRect(0,0,W,H);
+
+  var chain=[
+    {label:'R(4,5)=25',use:'if r(v)≥25→red K₄ in nbhd→K₅',result:'r(v)≤24',col:'#ee9933'},
+    {label:'R(4,4)=18',use:'r(v)≥18→mono K₄ in red nbhd',result:'blue K₄ forced in red nbhd',col:'#9b7dea'},
+    {label:'R(3,5)=14',use:'inside red nbhd: r\'(u)≤13',result:'max inner red degree=13',col:'#4499ee'},
+    {label:'R(3,3)=6', use:'Goodman → T_mono≥2860',result:'≥23% triangles mono',col:'#66ee88'},
+    {label:'Turán K₄', use:'G_R is K₄-free',result:'|E_R|≤T(43,3)=614',col:'#e8d877'},
+  ];
+
+  var step=H/(chain.length+1);
+  chain.forEach(function(c,i){
+    var y=step*(i+1);
+    // Box
+    ctx.fillStyle='#111120';
+    ctx.beginPath();ctx.roundRect(10,y-14,W-20,28,4);ctx.fill();
+    ctx.strokeStyle=c.col+'44';ctx.lineWidth=1;
+    ctx.beginPath();ctx.roundRect(10,y-14,W-20,28,4);ctx.stroke();
+    // Text
+    ctx.fillStyle=c.col;ctx.font='bold 8px monospace';ctx.textAlign='left';ctx.textBaseline='middle';
+    ctx.fillText(c.label, 18, y-5);
+    ctx.fillStyle='#666';ctx.font='7px monospace';
+    ctx.fillText(c.use, 18, y+5);
+    ctx.fillStyle='#aaa';ctx.font='7px monospace';ctx.textAlign='right';
+    ctx.fillText('→ '+c.result, W-14, y);
+    // Arrow
+    if(i<chain.length-1){
+      ctx.beginPath();ctx.moveTo(W/2,y+14);ctx.lineTo(W/2,step*(i+2)-14);
+      ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.stroke();
+    }
+  });
+})();
+
+// ─── Canvas 3: Paley comparison ───────────────────────────────────────────────
+(function(){
+  var cv=document.getElementById('paleyCanvas');
+  var ctx=cv.getContext('2d');
+  var W=cv.width, H=cv.height;
+  ctx.fillStyle='#09090f';ctx.fillRect(0,0,W,H);
+
+  var rows=[
+    {label:'Paley(29)',p:29,mod4:1,works:true,note:'p≡1(mod4) ✓, no K₅ found'},
+    {label:'Paley(37)',p:37,mod4:1,works:true,note:'p≡1(mod4) ✓, no K₅ found'},
+    {label:'Paley(41)',p:41,mod4:1,works:false,note:'p≡1(mod4) but HAS K₅!'},
+    {label:'Paley(43)',p:43,mod4:3,works:false,note:'p≡3(mod4): DIRECTED only'},
+  ];
+
+  var PAD={l:12,r:12,t:20,b:12};
+  var rowH=(H-PAD.t-PAD.b)/rows.length;
+
+  ctx.fillStyle='#555';ctx.font='7px monospace';ctx.textAlign='center';ctx.textBaseline='top';
+  ctx.fillText('Paley graph Ramsey suitability', W/2, 4);
+
+  rows.forEach(function(r,i){
+    var y=PAD.t+i*rowH+rowH/2;
+    var col=r.works?'#66ee88':'#ee5544';
+    var bg=r.works?'#0a1a0a':'#1a0a0a';
+    ctx.fillStyle=bg;
+    ctx.beginPath();ctx.roundRect(PAD.l,PAD.t+i*rowH+2,W-PAD.l-PAD.r,rowH-4,4);ctx.fill();
+    ctx.strokeStyle=col+'33';ctx.lineWidth=1;
+    ctx.beginPath();ctx.roundRect(PAD.l,PAD.t+i*rowH+2,W-PAD.l-PAD.r,rowH-4,4);ctx.stroke();
+    // Icon
+    ctx.fillStyle=col;ctx.font='10px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(r.works?'✓':'✗', PAD.l+14, y);
+    // Label
+    ctx.fillStyle=col;ctx.font='bold 8px monospace';ctx.textAlign='left';
+    ctx.fillText(r.label, PAD.l+26, y-5);
+    ctx.fillStyle='#666';ctx.font='7px monospace';
+    ctx.fillText(r.note, PAD.l+26, y+5);
+  });
+
+  ctx.fillStyle='#9b7dea';ctx.font='7px monospace';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillText('⚠ No algebraic construction solves K₄₃', W/2, H-2);
+})();
+
+// ─── Squeeze content ──────────────────────────────────────────────────────────
+document.getElementById('squeezeContent').innerHTML=
+'<table class="squeeze-table">'+
+'<tr><th>Level</th><th>Tool</th><th>What it forces</th><th>Status</th></tr>'+
+'<tr><td><span class="key">L1</span> degree bounds</td><td>R(4,5)=25</td>'+
+'<td>r(v)∈[18,24] for ALL 43 nodes. Every node must be near-balanced in color.</td>'+
+'<td><span class="badge badge-ok">proved</span></td></tr>'+
+
+'<tr><td><span class="key">L2</span> edge counts</td><td>handshaking</td>'+
+'<td>|E_R|∈[387,516], |E_B|∈[387,516], roughly ~451 each. Both graphs dense.</td>'+
+'<td><span class="badge badge-ok">proved</span></td></tr>'+
+
+'<tr><td><span class="key">L3</span> forced structure</td><td>R(4,4)=18</td>'+
+'<td><b>Every</b> red neighborhood (≥18 nodes) must contain a blue K₄.<br>'+
+'<b>Every</b> blue neighborhood must contain a red K₄.</td>'+
+'<td><span class="badge badge-ok">proved</span></td></tr>'+
+
+'<tr><td><span class="key">L4</span> triangles</td><td>Goodman 1959</td>'+
+'<td>T_mono∈[2860, 3053] monochromatic triangles. Unavoidable — ≥23% of all triangles.</td>'+
+'<td><span class="badge badge-ok">proved</span></td></tr>'+
+
+'<tr><td><span class="key">L5</span> inner degrees</td><td>R(3,5)=14</td>'+
+'<td>Inside any red neighborhood, max inner red degree ≤13 (else R(3,5) cascade gives K₅).</td>'+
+'<td><span class="badge badge-ok">proved</span></td></tr>'+
+
+'<tr><td><span class="key">L6</span> G_R structure</td><td>Turán K₄-free</td>'+
+'<td>Red graph G_R is K₄-free with ≥387 edges. <br>'+
+'Red triangles unavoidable (|E_R| > Turán-K₃-free = 462? let\'s check: 387 &lt; 462 → G_R can be K₃-free).</td>'+
+'<td><span class="badge badge-warn">partial</span></td></tr>'+
+
+'<tr><td><span class="key">L7</span> Paley test</td><td>explicit construction</td>'+
+'<td>Paley(41): HAS K₅. Paley(43): asymmetric construction, HAS K₅.<br>'+
+'No natural algebraic construction avoids K₅ in K₄₃.</td>'+
+'<td><span class="badge badge-fail">both fail</span></td></tr>'+
+
+'<tr><td><span class="key">L8</span> contradiction?</td><td>—</td>'+
+'<td>Constraints L1–L6 are all SATISFIED by the hypothetical coloring. No contradiction found.<br>'+
+'The system is highly constrained but not yet proved impossible.</td>'+
+'<td><span class="badge badge-open">open</span></td></tr>'+
+'</table>';
+
+// ─── Proof box ────────────────────────────────────────────────────────────────
+document.getElementById('proofBox').innerHTML=
+'<b class="key">What IS proved (analytically):</b><br><br>'+
+'<span style="color:#aaa">Assuming a valid 2-coloring of K₄₃ exists:</span><br><br>'+
+'1. &nbsp;Every node has red degree r(v) ∈ [18, 24]  &nbsp;<span class="good">— from R(4,5)=25</span><br>'+
+'2. &nbsp;Every red neighborhood contains a blue K₄  &nbsp;<span class="good">— from R(4,4)=18</span><br>'+
+'3. &nbsp;Every blue neighborhood contains a red K₄  &nbsp;<span class="good">— by symmetry</span><br>'+
+'4. &nbsp;At least 2860 monochromatic triangles must exist  &nbsp;<span class="good">— Goodman</span><br>'+
+'5. &nbsp;G_R is K₄-free with 387–516 edges  &nbsp;<span class="good">— direct</span><br>'+
+'6. &nbsp;Inside any red neighborhood, inner red degree ≤ 13  &nbsp;<span class="good">— from R(3,5)=14</span><br><br>'+
+'<b class="fail">What is NOT proved:</b><br><br>'+
+'— That these constraints are mutually contradictory.<br>'+
+'— That no valid coloring exists (i.e., R(5,5) = 43).<br><br>'+
+'<span style="color:#555">The constraints narrow the search space dramatically but do not close it.<br>'+
+'The next lever: flag algebra (Razborov 2007) — encode densities of small subgraphs as an SDP.<br>'+
+'This is how R(5,5) ≤ 48 was proved, and it\'s the tool needed to push R(5,5) ≤ 43 (if true).</span>';
+
+// ─── State of the art ─────────────────────────────────────────────────────────
+document.getElementById('sotaBox').innerHTML=
+'<table class="squeeze-table">'+
+'<tr><th>Bound</th><th>What it means</th><th>How proved</th></tr>'+
+'<tr><td class="key">R(5,5) ≥ 43</td>'+
+'<td>K₄₂ CAN be 2-colored with no monochromatic K₅</td>'+
+'<td>Computer search (Exoo 1989, McKay-Radziszowski 1995) — NOT a Paley graph</td></tr>'+
+
+'<tr><td class="warn">R(5,5) ≤ 48</td>'+
+'<td>K₄₈ CANNOT be 2-colored with no monochromatic K₅</td>'+
+'<td>Theoretical upper bound via Ramsey recursion + flag algebras</td></tr>'+
+
+'<tr><td style="color:#9b7dea">R(5,5) = ?</td>'+
+'<td>Is K₄₃ colorable? K₄₄? ... K₄₇?</td>'+
+'<td>OPEN. The gap [43, 48] has not been closed in 30+ years.</td></tr>'+
+'</table><br>'+
+
+'<b class="key">Why it\'s hard:</b><br><br>'+
+'The valid K₄₂ coloring was found by computer but is NOT unique nor algebraic.<br>'+
+'Checking K₄₃ requires either:<br>'+
+'&nbsp; (A) Finding ONE valid coloring (proving R(5,5) ≥ 44), or<br>'+
+'&nbsp; (B) Proving NO valid coloring exists (proving R(5,5) = 43).<br><br>'+
+'Path A: search space is ~2^(903) ≈ 10^271 — impossible by brute force.<br>'+
+'Path B: requires a combinatorial/algebraic argument — the squeeze above is the start.<br><br>'+
+'The gap between "what constraints force" and "contradiction" is the research frontier.<br>'+
+'<span style="color:#555">Erdős: "If aliens demanded R(5,5), humanity should try every computer on earth."</span>';
+</script>
+</body>
+</html>

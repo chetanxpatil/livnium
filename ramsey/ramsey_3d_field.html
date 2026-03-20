@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>R(m,n) — Constraint Field</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#09090f;overflow:hidden;font-family:'SF Mono',monospace}
+#canvas{display:block;width:100vw;height:100vh}
+#ui{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#header{position:absolute;top:18px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none}
+#header h1{font-size:.8rem;color:#555;letter-spacing:.12em}
+#header p{font-size:.62rem;color:#333;margin-top:3px}
+#side{position:absolute;left:18px;top:50%;transform:translateY(-50%);
+  background:#0d0d14;border:1px solid #1e1e2e;border-radius:6px;
+  padding:14px 16px;width:200px;pointer-events:all;font-size:.65rem;line-height:1.9;color:#888}
+#side h2{font-size:.65rem;color:#9b7dea;margin-bottom:8px;letter-spacing:.06em}
+#info{margin-top:12px;padding-top:12px;border-top:1px solid #1a1a24;min-height:60px}
+.legend-row{display:flex;align-items:center;gap:7px;margin:2px 0}
+.dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.key{color:#e8d877}
+input[type=range]{width:100%;accent-color:#9b7dea;margin:6px 0}
+label{font-size:.6rem;color:#555}
+#levelVal{color:#9b7dea}
+#hint{position:absolute;bottom:14px;right:18px;font-size:.6rem;color:#2a2a3a;text-align:right}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <div id="header">
+    <h1>R(m,n) — CONSTRAINT FIELD</h1>
+    <p>height = R(m,n) &nbsp;|&nbsp; drag to rotate &nbsp;|&nbsp; scroll to zoom</p>
+  </div>
+  <div id="side">
+    <h2>LEGEND</h2>
+    <div class="legend-row"><div class="dot" style="background:#66cc88"></div><span>exact value</span></div>
+    <div class="legend-row"><div class="dot" style="background:#9b7dea;opacity:.5"></div><span>bounds [lo, hi]</span></div>
+    <div class="legend-row"><div class="dot" style="background:#ff4488"></div><span style="color:#ff4488">R(5,5) — unknown</span></div>
+    <div class="legend-row"><div class="dot" style="background:#44aaee"></div><span>floor gradient ∇R</span></div>
+    <br>
+    <label>LEVEL CUT: R = <span id="levelVal">—</span></label>
+    <input type="range" id="levelSlider" min="1" max="200" value="0" step="1">
+    <div id="info"><span style="color:#333">hover a bar for details</span></div>
+  </div>
+  <div id="hint">drag → rotate &nbsp;·&nbsp; scroll → zoom &nbsp;·&nbsp; shift+drag → pan</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── Data ─────────────────────────────────────────────────────────────────────
+var RData = [
+  // [m, n, lo, hi, exact(1=yes)]
+  // R(2,k)=k
+  [2,2,2,2,1],[2,3,3,3,1],[2,4,4,4,1],[2,5,5,5,1],[2,6,6,6,1],[2,7,7,7,1],[2,8,8,8,1],
+  // Exact small Ramsey
+  [3,3,6,6,1],[3,4,9,9,1],[3,5,14,14,1],[3,6,18,18,1],[3,7,23,23,1],[3,8,28,28,1],[3,9,36,36,1],
+  [4,4,18,18,1],[4,5,25,25,1],
+  // Known bounds
+  [3,10,40,42,0],
+  [4,6,35,41,0],[4,7,49,61,0],[4,8,56,84,0],
+  [5,5,43,48,0],  // ← THE MYSTERY
+  [5,6,58,87,0],[5,7,80,143,0],[5,8,101,216,0],
+  [6,6,102,165,0],[6,7,113,298,0],[6,8,127,495,0],
+  [7,7,205,540,0],[7,8,217,1031,0],
+  [8,8,282,1870,0]
+];
+
+var RMAP = {};
+RData.forEach(function(d) {
+  var entry = {lo:d[2], hi:d[3], exact:!!d[4], mystery:(d[0]===5&&d[1]===5)};
+  RMAP[d[0]+','+d[1]] = entry;
+  RMAP[d[1]+','+d[0]] = entry;
+});
+function getR(m,n) { return RMAP[m+','+n] || null; }
+function midR(d) { return d ? (d.lo+d.hi)/2 : 0; }
+function barH(v) { return Math.log(Math.max(1,v)+1) * 1.15; }
+
+// ─── Scene Setup ──────────────────────────────────────────────────────────────
+var W = window.innerWidth, H = window.innerHeight;
+var renderer = new THREE.WebGLRenderer({canvas:document.getElementById('canvas'), antialias:true});
+renderer.setSize(W, H);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.setClearColor(0x09090f);
+
+var scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x09090f, 0.04);
+
+var camera = new THREE.PerspectiveCamera(55, W/H, 0.1, 200);
+var camTheta = 0.6, camPhi = 0.9, camR = 26;
+function updateCam() {
+  camera.position.set(
+    camR * Math.sin(camPhi) * Math.sin(camTheta),
+    camR * Math.cos(camPhi),
+    camR * Math.sin(camPhi) * Math.cos(camTheta)
+  );
+  camera.lookAt(camTarget);
+}
+var camTarget = new THREE.Vector3(0, 2, 0);
+updateCam();
+
+// ─── Lighting ─────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x223355, 1.2));
+var dirLight = new THREE.DirectionalLight(0xccddff, 1.8);
+dirLight.position.set(8, 20, 10);
+dirLight.castShadow = true;
+scene.add(dirLight);
+var rimLight = new THREE.DirectionalLight(0x9b7dea, 0.5);
+rimLight.position.set(-10, 5, -10);
+scene.add(rimLight);
+
+// ─── Color helpers ────────────────────────────────────────────────────────────
+function valToColor(v, exact, mystery) {
+  if(mystery) return new THREE.Color(1.0, 0.15, 0.45);
+  var t = Math.min(1, barH(v) / barH(200));
+  if(!exact) {
+    return new THREE.Color(
+      0.4 + 0.3*t,
+      0.3 + 0.2*t,
+      0.8 - 0.2*t
+    );
+  }
+  // exact: deep blue → purple → gold
+  return new THREE.Color(
+    0.1 + 0.75*t,
+    0.5 + 0.4*t,
+    0.8 - 0.35*t
+  );
+}
+
+// ─── Grid ─────────────────────────────────────────────────────────────────────
+var MRANGE = [2, 8], NRANGE = [2, 8];
+var CELL = 2.2, BSIZE = 1.5;
+var MID_M = (MRANGE[0]+MRANGE[1])/2, MID_N = (NRANGE[0]+NRANGE[1])/2;
+function cellPos(m, n) {
+  return new THREE.Vector3((m - MID_M)*CELL, 0, (n - MID_N)*CELL);
+}
+
+// Floor grid
+var floorGeo = new THREE.PlaneGeometry(
+  (MRANGE[1]-MRANGE[0]+2)*CELL, (NRANGE[1]-NRANGE[0]+2)*CELL
+);
+var floorMat = new THREE.MeshLambertMaterial({color:0x0d0d18, side:THREE.DoubleSide});
+var floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI/2;
+floor.position.y = -0.02;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Grid lines
+for(var m=MRANGE[0];m<=MRANGE[1]+1;m++) {
+  var pts = [
+    new THREE.Vector3((m-0.5-MID_M)*CELL, 0, (NRANGE[0]-1-MID_N)*CELL),
+    new THREE.Vector3((m-0.5-MID_M)*CELL, 0, (NRANGE[1]+0-MID_N)*CELL)
+  ];
+  var lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  scene.add(new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0x1a1a28, transparent:true, opacity:0.6})));
+}
+for(var n=NRANGE[0];n<=NRANGE[1]+1;n++) {
+  var pts = [
+    new THREE.Vector3((MRANGE[0]-1-MID_M)*CELL, 0, (n-0.5-MID_N)*CELL),
+    new THREE.Vector3((MRANGE[1]+0-MID_M)*CELL, 0, (n-0.5-MID_N)*CELL)
+  ];
+  var lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  scene.add(new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0x1a1a28, transparent:true, opacity:0.6})));
+}
+
+// ─── Build bars ───────────────────────────────────────────────────────────────
+var bars = [];  // [{m,n,mesh,lo,hi,exact,mystery,pos}]
+var mysteryBar = null;
+
+function buildBars() {
+  for(var m=MRANGE[0]; m<=MRANGE[1]; m++) {
+    for(var n=NRANGE[0]; n<=NRANGE[1]; n++) {
+      var rd = getR(m, n);
+      if(!rd) continue;
+
+      var mid = midR(rd);
+      var loH = barH(rd.lo);
+      var hiH = barH(rd.hi);
+      var midH = barH(mid);
+      var col = valToColor(mid, rd.exact, rd.mystery);
+      var pos = cellPos(m, n);
+
+      var group = new THREE.Group();
+      group.position.copy(pos);
+
+      if(rd.exact) {
+        // Solid bar
+        var bGeo = new THREE.BoxGeometry(BSIZE, midH, BSIZE);
+        bGeo.translate(0, midH/2, 0);
+        var bMat = new THREE.MeshLambertMaterial({color:col});
+        var bar = new THREE.Mesh(bGeo, bMat);
+        bar.castShadow = true;
+        bar.receiveShadow = true;
+        group.add(bar);
+
+        // Top face glow (thin cap)
+        var capGeo = new THREE.BoxGeometry(BSIZE+0.04, 0.04, BSIZE+0.04);
+        capGeo.translate(0, midH + 0.02, 0);
+        var capCol = col.clone().multiplyScalar(2);
+        var capMat = new THREE.MeshBasicMaterial({color:capCol});
+        group.add(new THREE.Mesh(capGeo, capMat));
+
+      } else if(rd.mystery) {
+        // R(5,5) — pulsing uncertainty pillar
+        var pillarH = hiH - loH;
+        var pGeo = new THREE.BoxGeometry(BSIZE+0.1, pillarH, BSIZE+0.1);
+        pGeo.translate(0, loH + pillarH/2, 0);
+        var pMat = new THREE.MeshLambertMaterial({
+          color: new THREE.Color(1, 0.15, 0.45),
+          transparent: true,
+          opacity: 0.6
+        });
+        var pillar = new THREE.Mesh(pGeo, pMat);
+        pillar.castShadow = false;
+        group.add(pillar);
+
+        // Lo cap
+        var loGeo = new THREE.BoxGeometry(BSIZE+0.2, 0.06, BSIZE+0.2);
+        loGeo.translate(0, loH, 0);
+        group.add(new THREE.Mesh(loGeo, new THREE.MeshBasicMaterial({color:0x44aaee})));
+        // Hi cap
+        var hiGeo = new THREE.BoxGeometry(BSIZE+0.2, 0.06, BSIZE+0.2);
+        hiGeo.translate(0, hiH, 0);
+        group.add(new THREE.Mesh(hiGeo, new THREE.MeshBasicMaterial({color:0xee6644})));
+
+        // Solid base
+        var baseGeo = new THREE.BoxGeometry(BSIZE, loH, BSIZE);
+        baseGeo.translate(0, loH/2, 0);
+        group.add(new THREE.Mesh(baseGeo, new THREE.MeshLambertMaterial({color:0x441122})));
+
+        mysteryBar = {group:group, mat:pMat, loH:loH, hiH:hiH};
+
+      } else {
+        // Bounded bar — semi-transparent
+        var bndH = hiH - loH;
+        if(bndH < 0.02) bndH = 0.05;
+        var bndGeo = new THREE.BoxGeometry(BSIZE, Math.max(0.05, bndH), BSIZE);
+        bndGeo.translate(0, loH + bndH/2, 0);
+        var bndMat = new THREE.MeshLambertMaterial({
+          color: col, transparent: true, opacity: 0.35
+        });
+        group.add(new THREE.Mesh(bndGeo, bndMat));
+
+        // Lo cap
+        var loCapGeo = new THREE.BoxGeometry(BSIZE+0.1, 0.05, BSIZE+0.1);
+        loCapGeo.translate(0, loH, 0);
+        group.add(new THREE.Mesh(loCapGeo, new THREE.MeshBasicMaterial({color:0x4488ee})));
+        // Hi cap
+        var hiCapGeo = new THREE.BoxGeometry(BSIZE+0.1, 0.05, BSIZE+0.1);
+        hiCapGeo.translate(0, hiH, 0);
+        group.add(new THREE.Mesh(hiCapGeo, new THREE.MeshBasicMaterial({color:0xeecc44})));
+
+        // Solid base column
+        var sBaseGeo = new THREE.BoxGeometry(BSIZE, loH, BSIZE);
+        sBaseGeo.translate(0, loH/2, 0);
+        group.add(new THREE.Mesh(sBaseGeo, new THREE.MeshLambertMaterial({color:col.clone().multiplyScalar(0.4)})));
+      }
+
+      scene.add(group);
+      bars.push({m:m, n:n, group:group, lo:rd.lo, hi:rd.hi, exact:rd.exact, mystery:rd.mystery});
+    }
+  }
+}
+buildBars();
+
+// ─── Axis labels (sprites) ────────────────────────────────────────────────────
+function makeTextSprite(text, color) {
+  var c = document.createElement('canvas');
+  c.width = 128; c.height = 64;
+  var ctx = c.getContext('2d');
+  ctx.fillStyle = 'transparent';
+  ctx.clearRect(0,0,128,64);
+  ctx.font = 'bold 28px monospace';
+  ctx.fillStyle = color || '#555555';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 64, 32);
+  var tex = new THREE.CanvasTexture(c);
+  var mat = new THREE.SpriteMaterial({map:tex, transparent:true, depthWrite:false});
+  var sp = new THREE.Sprite(mat);
+  sp.scale.set(0.8, 0.4, 1);
+  return sp;
+}
+
+// m-axis labels
+for(var m=MRANGE[0]; m<=MRANGE[1]; m++) {
+  var sp = makeTextSprite('m='+m, '#2a2a3a');
+  sp.position.set((m-MID_M)*CELL, -0.3, (NRANGE[1]-MID_N)*CELL + 1.4);
+  scene.add(sp);
+}
+// n-axis labels
+for(var n=NRANGE[0]; n<=NRANGE[1]; n++) {
+  var sp = makeTextSprite('n='+n, '#2a2a3a');
+  sp.position.set((MRANGE[1]-MID_M)*CELL + 1.4, -0.3, (n-MID_N)*CELL);
+  scene.add(sp);
+}
+
+// R(5,5) label
+var r55sp = makeTextSprite('R(5,5)=?', '#ff4488');
+r55sp.scale.set(1.4, 0.7, 1);
+var r55pos = cellPos(5,5);
+r55sp.position.set(r55pos.x, barH(50) + 0.6, r55pos.z);
+scene.add(r55sp);
+
+// ─── Gradient arrows on floor ─────────────────────────────────────────────────
+function floorGradArrows() {
+  for(var m=MRANGE[0]; m<=MRANGE[1]; m++) {
+    for(var n=NRANGE[0]; n<=NRANGE[1]; n++) {
+      var c = getR(m,n), r_ = getR(m+1,n), l_ = getR(m-1,n);
+      var u_ = getR(m,n+1), d_ = getR(m,n-1);
+      if(!c || !r_ || !l_ || !u_ || !d_) continue;
+      var gm = (midR(r_) - midR(l_)) / 2;
+      var gn = (midR(u_) - midR(d_)) / 2;
+      var mag = Math.sqrt(gm*gm + gn*gn);
+      if(mag < 0.5) continue;
+      var nx = gm/mag, nz = gn/mag;
+      var origin = new THREE.Vector3((m-MID_M)*CELL, 0.05, (n-MID_N)*CELL);
+      var dir = new THREE.Vector3(nx, 0, nz).normalize();
+      var len = Math.min(0.7, mag * 0.03);
+      var arrow = new THREE.ArrowHelper(dir, origin, len, 0x224466, 0.25*len, 0.2*len);
+      arrow.line.material.transparent = true;
+      arrow.line.material.opacity = 0.35;
+      scene.add(arrow);
+    }
+  }
+}
+floorGradArrows();
+
+// ─── Level cut plane ─────────────────────────────────────────────────────────
+var levelGeo = new THREE.PlaneGeometry(
+  (MRANGE[1]-MRANGE[0]+3)*CELL, (NRANGE[1]-NRANGE[0]+3)*CELL
+);
+var levelMat = new THREE.MeshBasicMaterial({
+  color: 0x9b7dea, transparent: true, opacity: 0.0, side: THREE.DoubleSide
+});
+var levelPlane = new THREE.Mesh(levelGeo, levelMat);
+levelPlane.rotation.x = -Math.PI/2;
+levelPlane.position.y = -100; // hidden initially
+scene.add(levelPlane);
+
+// Level slider control
+var levelSlider = document.getElementById('levelSlider');
+var levelVal = document.getElementById('levelVal');
+var levelActive = false;
+
+levelSlider.addEventListener('input', function() {
+  var v = parseInt(this.value);
+  if(v <= 1) {
+    levelPlane.position.y = -100;
+    levelMat.opacity = 0;
+    levelVal.textContent = '—';
+    levelActive = false;
+    // reset bar colors
+    resetBarColors();
+    return;
+  }
+  levelActive = true;
+  var h = barH(v);
+  levelPlane.position.y = h;
+  levelMat.opacity = 0.18;
+  levelVal.textContent = v;
+  // Color bars by above/below
+  updateBarColors(h, v);
+});
+
+function resetBarColors() {
+  bars.forEach(function(b) {
+    b.group.traverse(function(obj) {
+      if(obj.isMesh && obj.material && !obj.material.transparent) {
+        // do nothing — bar colors already set
+      }
+    });
+  });
+}
+function updateBarColors(cutH, cutV) {
+  // just visual: bars above cut glow, bars below dim
+  // We handle this via emissive... actually let's skip and just show the plane
+}
+
+// ─── Mouse orbit ──────────────────────────────────────────────────────────────
+var mouseDown = false, lastX = 0, lastY = 0, isShift = false;
+var panTarget = new THREE.Vector3(0, 2, 0);
+
+document.addEventListener('mousedown', function(e) {
+  if(e.target.tagName === 'INPUT') return;
+  mouseDown = true; lastX = e.clientX; lastY = e.clientY;
+  isShift = e.shiftKey;
+});
+document.addEventListener('mouseup', function() { mouseDown = false; });
+document.addEventListener('mousemove', function(e) {
+  if(!mouseDown) return;
+  var dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  if(isShift) {
+    // Pan
+    var right = new THREE.Vector3();
+    right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+    camTarget.addScaledVector(right, -dx * 0.02);
+    camTarget.y += dy * 0.02;
+  } else {
+    camTheta -= dx * 0.008;
+    camPhi = Math.max(0.1, Math.min(Math.PI/2 - 0.05, camPhi + dy * 0.005));
+  }
+  updateCam();
+  camera.lookAt(camTarget);
+});
+document.addEventListener('wheel', function(e) {
+  camR = Math.max(5, Math.min(60, camR + e.deltaY * 0.03));
+  updateCam();
+}, {passive:true});
+
+// Touch support
+document.addEventListener('touchstart', function(e) {
+  if(e.touches.length === 1) { mouseDown = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; }
+}, {passive:true});
+document.addEventListener('touchend', function() { mouseDown = false; }, {passive:true});
+document.addEventListener('touchmove', function(e) {
+  if(!mouseDown || e.touches.length !== 1) return;
+  var dx = e.touches[0].clientX - lastX, dy = e.touches[0].clientY - lastY;
+  lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+  camTheta -= dx * 0.008;
+  camPhi = Math.max(0.1, Math.min(Math.PI/2 - 0.05, camPhi + dy * 0.005));
+  updateCam();
+}, {passive:true});
+
+// ─── Hover ray ────────────────────────────────────────────────────────────────
+var raycaster = new THREE.Raycaster();
+var mouse2d = new THREE.Vector2();
+var infoDiv = document.getElementById('info');
+var allMeshes = [];
+bars.forEach(function(b) {
+  b.group.traverse(function(obj) {
+    if(obj.isMesh) { obj.userData.barRef = b; allMeshes.push(obj); }
+  });
+});
+
+document.addEventListener('mousemove', function(e) {
+  if(mouseDown) return;
+  mouse2d.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse2d.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse2d, camera);
+  var hits = raycaster.intersectObjects(allMeshes);
+  if(hits.length > 0) {
+    var b = hits[0].object.userData.barRef;
+    if(b) {
+      var str = '<span class="key">(m,n) = ('+b.m+','+b.n+')</span><br>';
+      if(b.exact) {
+        str += 'R('+b.m+','+b.n+') = <span style="color:#66cc88">'+b.lo+'</span><br>(exact)';
+      } else if(b.mystery) {
+        str += 'R(5,5) ∈ [<span style="color:#44aaee">'+b.lo+'</span>, <span style="color:#ee6644">'+b.hi+'</span>]<br>'+
+               '<span style="color:#ff4488">THE OPEN PROBLEM</span>';
+      } else {
+        str += 'R('+b.m+','+b.n+') ∈ [<span style="color:#44aaee">'+b.lo+'</span>, <span style="color:#eecc44">'+b.hi+'</span>]<br>'+
+               'gap = '+(b.hi-b.lo);
+      }
+      infoDiv.innerHTML = str;
+    }
+  } else {
+    infoDiv.innerHTML = '<span style="color:#2a2a3a">hover a bar for details</span>';
+  }
+});
+
+// ─── Particles (ambient field) ────────────────────────────────────────────────
+(function() {
+  var pts = [];
+  for(var i=0; i<400; i++) {
+    pts.push(new THREE.Vector3(
+      (Math.random()-0.5)*30,
+      Math.random()*12,
+      (Math.random()-0.5)*30
+    ));
+  }
+  var pGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  var pMat = new THREE.PointsMaterial({color:0x223355, size:0.06, transparent:true, opacity:0.5});
+  scene.add(new THREE.Points(pGeo, pMat));
+})();
+
+// ─── Animate ──────────────────────────────────────────────────────────────────
+var t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.02;
+
+  // Pulse R(5,5) mystery
+  if(mysteryBar) {
+    var pulse = 0.5 + 0.5*Math.sin(t*1.8);
+    mysteryBar.mat.opacity = 0.3 + 0.4*pulse;
+    mysteryBar.mat.emissive = new THREE.Color(0.4*pulse, 0, 0.2*pulse);
+    r55sp.material.opacity = 0.5 + 0.5*pulse;
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', function() {
+  W = window.innerWidth; H = window.innerHeight;
+  camera.aspect = W/H;
+  camera.updateProjectionMatrix();
+  renderer.setSize(W, H);
+});
+</script>
+</body>
+</html>

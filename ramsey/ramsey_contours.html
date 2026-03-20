@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ramsey Numbers — Contour Map</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f0f14;
+    color: #e8e8e8;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 48px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 1.25rem; letter-spacing: 0.05em; color: #b8b8cc; margin-bottom: 6px; }
+  .subtitle { font-size: 0.78rem; color: #666; margin-bottom: 32px; text-align: center; }
+  .subtitle span { color: #9b7dea; }
+
+  .panels { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; }
+
+  .panel { display: flex; flex-direction: column; align-items: center; }
+  .panel-title { font-size: 0.72rem; color: #888; margin-bottom: 10px; text-align: center; letter-spacing: 0.08em; }
+
+  canvas { border-radius: 4px; }
+
+  .legend {
+    display: flex;
+    gap: 0;
+    margin-top: 12px;
+    border-radius: 3px;
+    overflow: hidden;
+    height: 10px;
+    width: 300px;
+  }
+  .legend-label {
+    display: flex;
+    justify-content: space-between;
+    width: 300px;
+    font-size: 0.65rem;
+    color: #666;
+    margin-top: 3px;
+  }
+
+  .info {
+    margin-top: 28px;
+    max-width: 680px;
+    font-size: 0.75rem;
+    color: #666;
+    line-height: 1.7;
+    text-align: center;
+  }
+  .info strong { color: #9b7dea; }
+
+  .hover-info {
+    margin-top: 18px;
+    font-size: 0.85rem;
+    color: #ccc;
+    height: 22px;
+    text-align: center;
+    letter-spacing: 0.03em;
+  }
+  .hover-info span { color: #e8d877; }
+</style>
+</head>
+<body>
+
+<h1>R(m, n) — Ramsey Numbers as a Field</h1>
+<p class="subtitle">
+  "It doesn't grow in rows or columns — it grows <span>outward</span>."
+</p>
+
+<div class="panels">
+  <div class="panel">
+    <div class="panel-title">HEAT MAP + CONTOUR LINES</div>
+    <canvas id="heatmap" width="480" height="480"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-title">ISO-VALUE CONTOURS ONLY</div>
+    <canvas id="contour" width="480" height="480"></canvas>
+  </div>
+</div>
+
+<div class="hover-info" id="hoverInfo">hover over the grid to inspect values</div>
+
+<div style="margin-top:14px; display:flex; align-items:center; gap:12px;">
+  <canvas id="legendBar" width="300" height="10"></canvas>
+</div>
+<div style="display:flex; justify-content:space-between; width:300px; font-size:0.65rem; color:#666; margin-top:3px;">
+  <span>1</span><span>Ramsey R(m,n)</span><span>48+</span>
+</div>
+
+<div class="info">
+  <strong>Why the contours curve:</strong> R(m,n) = R(n,m) forces every iso-value line to be
+  symmetric across the diagonal. Growth accelerates in both directions simultaneously,
+  so equal-value curves bend outward — like wavefronts expanding from (1,1).
+  <br><br>
+  This is exactly <strong>level-set thinking</strong>: each contour is a surface of constant "energy"
+  R(m,n) = k. The gradient of R points radially outward, just like ∇V(h) in Livnium
+  points toward the nearest anchor.
+  <br><br>
+  <strong>Shaded cells:</strong> known exact values.
+  <strong>Hatched cells:</strong> open bounds (best known interval).
+</div>
+
+<script>
+// ─── Ramsey number data ───────────────────────────────────────────────────────
+// [m][n] -> { lo: lower bound, hi: upper bound, exact: bool }
+// R(m,n) = R(n,m), stored for m <= n
+
+const R = {};
+
+function set(m, n, lo, hi, exact) {
+  const key = `${Math.min(m,n)},${Math.max(m,n)}`;
+  R[key] = { lo, hi, exact: exact || lo === hi };
+}
+function get(m, n) {
+  if (m === 1 || n === 1) return { lo: 1, hi: 1, exact: true };
+  if (m === 2) return { lo: n, hi: n, exact: true };
+  if (n === 2) return { lo: m, hi: m, exact: true };
+  const key = `${Math.min(m,n)},${Math.max(m,n)}`;
+  return R[key] || null;
+}
+
+// Exact values
+set(3,3, 6,6);
+set(3,4, 9,9);
+set(3,5, 14,14);
+set(3,6, 18,18);
+set(3,7, 23,23);
+set(3,8, 28,28);
+set(3,9, 36,36);
+set(4,4, 18,18);
+set(4,5, 25,25);
+
+// Known bounds (not exact)
+set(3,10, 40,42);
+set(3,11, 46,51);
+set(3,12, 52,59);
+set(4,6, 36,41);
+set(4,7, 49,61);
+set(4,8, 58,84);
+set(4,9, 73,115);
+set(5,5, 43,48);
+set(5,6, 58,87);
+set(5,7, 80,143);
+set(6,6, 102,165);
+
+// ─── Canvas setup ─────────────────────────────────────────────────────────────
+const GRID_M = 10;  // rows: m = 1..GRID_M
+const GRID_N = 10;  // cols: n = 1..GRID_N
+
+const hmCanvas = document.getElementById('heatmap');
+const ctCanvas = document.getElementById('contour');
+const hmCtx = hmCanvas.getContext('2d');
+const ctCtx = ctCanvas.getContext('2d');
+const W = hmCanvas.width;
+const H = hmCanvas.height;
+
+const PAD_L = 36, PAD_T = 12, PAD_R = 12, PAD_B = 36;
+const CELL_W = (W - PAD_L - PAD_R) / GRID_N;
+const CELL_H = (H - PAD_T - PAD_B) / GRID_M;
+
+// Color scale: dark purple → orange → yellow
+function colorScale(t) {
+  // t in [0,1]
+  const stops = [
+    [15, 10, 40],      // deep purple (low)
+    [80, 30, 120],     // purple
+    [160, 60, 90],     // magenta-red
+    [220, 110, 30],    // orange
+    [240, 200, 40],    // yellow (high)
+  ];
+  const n = stops.length - 1;
+  const i = Math.min(Math.floor(t * n), n - 1);
+  const f = t * n - i;
+  const [r1,g1,b1] = stops[i];
+  const [r2,g2,b2] = stops[i+1];
+  return `rgb(${Math.round(r1+(r2-r1)*f)},${Math.round(g1+(g2-g1)*f)},${Math.round(b1+(b2-b1)*f)})`;
+}
+
+const MAX_VAL = 165;
+
+function valToT(v) {
+  return Math.min(Math.log(v + 1) / Math.log(MAX_VAL + 1), 1.0);
+}
+
+function cellRect(m, n) {
+  // m = row (1-indexed top), n = col (1-indexed left)
+  const x = PAD_L + (n - 1) * CELL_W;
+  const y = PAD_T + (m - 1) * CELL_H;
+  return { x, y, w: CELL_W, h: CELL_H };
+}
+
+// ─── Draw heat map ────────────────────────────────────────────────────────────
+function drawHeatmap() {
+  hmCtx.fillStyle = '#0f0f14';
+  hmCtx.fillRect(0, 0, W, H);
+
+  for (let m = 1; m <= GRID_M; m++) {
+    for (let n = 1; n <= GRID_N; n++) {
+      const { x, y, w, h } = cellRect(m, n);
+      const info = get(m, n);
+
+      if (!info) {
+        // Unknown
+        hmCtx.fillStyle = '#1a1a24';
+        hmCtx.fillRect(x, y, w, h);
+        hmCtx.strokeStyle = '#333';
+        hmCtx.lineWidth = 0.5;
+        hmCtx.strokeRect(x + 0.25, y + 0.25, w - 0.5, h - 0.5);
+        hmCtx.fillStyle = '#333';
+        hmCtx.font = '9px monospace';
+        hmCtx.textAlign = 'center';
+        hmCtx.textBaseline = 'middle';
+        hmCtx.fillText('?', x + w/2, y + h/2);
+        continue;
+      }
+
+      const midVal = (info.lo + info.hi) / 2;
+      const t = valToT(midVal);
+      const col = colorScale(t);
+
+      hmCtx.fillStyle = col;
+      hmCtx.fillRect(x, y, w, h);
+
+      // Hatch pattern for non-exact
+      if (!info.exact) {
+        hmCtx.save();
+        hmCtx.strokeStyle = 'rgba(0,0,0,0.35)';
+        hmCtx.lineWidth = 1;
+        for (let d = -h; d < w + h; d += 7) {
+          hmCtx.beginPath();
+          hmCtx.moveTo(x + d, y);
+          hmCtx.lineTo(x + d + h, y + h);
+          hmCtx.stroke();
+        }
+        hmCtx.restore();
+      }
+
+      // Cell border
+      hmCtx.strokeStyle = 'rgba(0,0,0,0.4)';
+      hmCtx.lineWidth = 0.5;
+      hmCtx.strokeRect(x + 0.25, y + 0.25, w - 0.5, h - 0.5);
+
+      // Value text
+      const label = info.exact ? String(info.lo) : `${info.lo}–${info.hi}`;
+      hmCtx.fillStyle = t > 0.5 ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.75)';
+      hmCtx.font = `bold ${info.exact ? 11 : 8}px monospace`;
+      hmCtx.textAlign = 'center';
+      hmCtx.textBaseline = 'middle';
+      hmCtx.fillText(label, x + w/2, y + h/2);
+    }
+  }
+
+  drawAxes(hmCtx);
+}
+
+// ─── Draw contour-only view ───────────────────────────────────────────────────
+const CONTOUR_LEVELS = [2, 3, 4, 5, 6, 9, 14, 18, 23, 25, 28, 36, 43, 58, 100, 165];
+const CONTOUR_COLORS = [
+  '#4466ee', '#5577ee', '#6699ee',
+  '#44aacc', '#33bbaa', '#44cc88',
+  '#88cc44', '#ccbb33', '#ee9933',
+  '#ee7722', '#ee5511', '#cc3333',
+  '#aa22aa', '#8833cc', '#6644ee', '#9966ff',
+];
+
+function drawContourView() {
+  ctCtx.fillStyle = '#0c0c12';
+  ctCtx.fillRect(0, 0, W, H);
+
+  // Render each cell as faint colored dot for context
+  for (let m = 1; m <= GRID_M; m++) {
+    for (let n = 1; n <= GRID_N; n++) {
+      const { x, y, w, h } = cellRect(m, n);
+      const info = get(m, n);
+      if (!info) continue;
+      const midVal = (info.lo + info.hi) / 2;
+      const t = valToT(midVal);
+      ctCtx.fillStyle = colorScale(t).replace('rgb', 'rgba').replace(')', ',0.15)');
+      ctCtx.fillRect(x, y, w, h);
+    }
+  }
+
+  // Draw contour lines
+  CONTOUR_LEVELS.forEach((level, li) => {
+    const col = CONTOUR_COLORS[li % CONTOUR_COLORS.length];
+
+    // For each grid cell pair, check if the contour level passes between them
+    // Use simple linear interpolation along cell edges
+    ctCtx.beginPath();
+    ctCtx.strokeStyle = col;
+    ctCtx.lineWidth = 1.5;
+    ctCtx.setLineDash([]);
+
+    // Collect crossing points and draw segments
+    const segments = [];
+
+    for (let m = 1; m <= GRID_M; m++) {
+      for (let n = 1; n <= GRID_N - 1; n++) {
+        const a = get(m, n);
+        const b = get(m, n + 1);
+        if (!a || !b) continue;
+        const va = (a.lo + a.hi) / 2;
+        const vb = (b.lo + b.hi) / 2;
+        if ((va - level) * (vb - level) < 0) {
+          const t = (level - va) / (vb - va);
+          const { x: xa, y: ya, w, h } = cellRect(m, n);
+          const px = xa + w + (w * (t - 0));
+          const py = ya + h / 2;
+          segments.push({ m, n: n + t, type: 'h', px, py });
+        }
+      }
+    }
+
+    for (let m = 1; m <= GRID_M - 1; m++) {
+      for (let n = 1; n <= GRID_N; n++) {
+        const a = get(m, n);
+        const b = get(m + 1, n);
+        if (!a || !b) continue;
+        const va = (a.lo + a.hi) / 2;
+        const vb = (b.lo + b.hi) / 2;
+        if ((va - level) * (vb - level) < 0) {
+          const t = (level - va) / (vb - va);
+          const { x, y, w, h } = cellRect(m, n);
+          const px = x + w / 2;
+          const py = y + h + (h * (t - 0));
+          segments.push({ m: m + t, n, type: 'v', px, py });
+        }
+      }
+    }
+
+    // Draw crossing points as circles + connect nearby ones
+    segments.forEach(s => {
+      ctCtx.beginPath();
+      ctCtx.arc(s.px, s.py, 2.5, 0, Math.PI * 2);
+      ctCtx.fillStyle = col;
+      ctCtx.fill();
+    });
+
+    // Connect h-segments in same row
+    for (let m = 1; m <= GRID_M; m++) {
+      const row = segments.filter(s => s.type === 'h' && Math.abs(s.m - m) < 0.1)
+                          .sort((a, b) => a.n - b.n);
+      if (row.length >= 2) {
+        ctCtx.beginPath();
+        ctCtx.moveTo(row[0].px, row[0].py);
+        for (let i = 1; i < row.length; i++) ctCtx.lineTo(row[i].px, row[i].py);
+        ctCtx.strokeStyle = col + 'aa';
+        ctCtx.lineWidth = 1;
+        ctCtx.stroke();
+      }
+    }
+
+    // Connect v-segments in same col
+    for (let n = 1; n <= GRID_N; n++) {
+      const col_segs = segments.filter(s => s.type === 'v' && Math.abs(s.n - n) < 0.1)
+                               .sort((a, b) => a.m - b.m);
+      if (col_segs.length >= 2) {
+        ctCtx.beginPath();
+        ctCtx.moveTo(col_segs[0].px, col_segs[0].py);
+        for (let i = 1; i < col_segs.length; i++) ctCtx.lineTo(col_segs[i].px, col_segs[i].py);
+        ctCtx.strokeStyle = col + 'aa';
+        ctCtx.lineWidth = 1;
+        ctCtx.stroke();
+      }
+    }
+
+    // Label
+    if (segments.length > 0) {
+      const s = segments[0];
+      ctCtx.font = 'bold 9px monospace';
+      ctCtx.fillStyle = col;
+      ctCtx.textAlign = 'left';
+      ctCtx.textBaseline = 'middle';
+      ctCtx.fillText(String(level), s.px + 3, s.py - 4);
+    }
+  });
+
+  // Diagonal line (symmetry axis R(m,n)=R(n,m))
+  ctCtx.beginPath();
+  ctCtx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctCtx.lineWidth = 1;
+  ctCtx.setLineDash([4, 4]);
+  ctCtx.moveTo(PAD_L, PAD_T);
+  ctCtx.lineTo(PAD_L + GRID_N * CELL_W, PAD_T + GRID_M * CELL_H);
+  ctCtx.stroke();
+  ctCtx.setLineDash([]);
+
+  ctCtx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctCtx.font = '9px monospace';
+  ctCtx.textAlign = 'left';
+  ctCtx.fillText('R(m,n)=R(n,m)', PAD_L + 2, PAD_T + 11);
+
+  drawAxes(ctCtx);
+}
+
+function drawAxes(ctx) {
+  ctx.fillStyle = '#555';
+  ctx.font = '10px monospace';
+
+  // Column headers (n)
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let n = 1; n <= GRID_N; n++) {
+    const { x, w } = cellRect(1, n);
+    ctx.fillText(String(n), x + w/2, H - PAD_B/2);
+  }
+  ctx.fillStyle = '#444';
+  ctx.fillText('n →', W - PAD_R - 4, H - PAD_B/2);
+
+  // Row headers (m)
+  ctx.textAlign = 'center';
+  for (let m = 1; m <= GRID_M; m++) {
+    const { y, h } = cellRect(m, 1);
+    ctx.fillText(String(m), PAD_L/2, y + h/2);
+  }
+  ctx.save();
+  ctx.translate(PAD_L/2, PAD_T + 10);
+  ctx.fillText('m', 0, 0);
+  ctx.restore();
+}
+
+// ─── Legend bar ───────────────────────────────────────────────────────────────
+function drawLegend() {
+  const lc = document.getElementById('legendBar');
+  const lx = lc.getContext('2d');
+  for (let i = 0; i < 300; i++) {
+    lx.fillStyle = colorScale(i / 300);
+    lx.fillRect(i, 0, 1, 10);
+  }
+}
+
+// ─── Hover interaction ────────────────────────────────────────────────────────
+function canvasToGrid(canvas, e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const cx = (e.clientX - rect.left) * scaleX;
+  const cy = (e.clientY - rect.top) * scaleY;
+  const m = Math.floor((cy - PAD_T) / CELL_H) + 1;
+  const n = Math.floor((cx - PAD_L) / CELL_W) + 1;
+  return { m, n };
+}
+
+function handleHover(e) {
+  const { m, n } = canvasToGrid(this, e);
+  if (m < 1 || m > GRID_M || n < 1 || n > GRID_N) {
+    document.getElementById('hoverInfo').innerHTML = 'hover over the grid to inspect values';
+    return;
+  }
+  const info = get(m, n);
+  const div = document.getElementById('hoverInfo');
+  if (!info) {
+    div.innerHTML = `R(${m}, ${n}) = <span style="color:#666">unknown</span>`;
+    return;
+  }
+  const sym = (m !== n) ? ` = R(${n}, ${m})` : '';
+  const valStr = info.exact
+    ? `<span style="color:#e8d877">${info.lo}</span>`
+    : `<span style="color:#ee9933">${info.lo}–${info.hi}</span> (bounds)`;
+  div.innerHTML = `R(${m}, ${n})${sym} = ${valStr}`;
+}
+
+[hmCanvas, ctCanvas].forEach(c => c.addEventListener('mousemove', handleHover));
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+drawHeatmap();
+drawContourView();
+drawLegend();
+</script>
+
+</body>
+</html>
