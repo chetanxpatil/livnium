@@ -83,6 +83,8 @@ The SU(2) gate is applied to a qubit, followed by a CNOT to an adjacent qubit.  
 
 The lattice consists of 27 nodes at integer coordinates $(x,y,z)$ with $x,y,z\in\{-1,0,1\}$.  Each node carries a symbolic weight $\mathrm{SW}=9f$, where $f$ is the number of coordinates equal to $\pm 1$ (boundary exposure).  The sum $\Sigma\mathrm{SW}=486$ is invariant under all 24~rotations.
 
+$\Sigma\mathrm{SW}$ is a \emph{conserved quantity} of the cubic rotation group: because every rotation is a bijection on the 27 nodes, boundary exposures are permuted but never created or destroyed.  This is the discrete analogue of charge conservation under a continuous symmetry group---the symmetry here being the 24-element subgroup of SO(3) that maps the cube to itself.  The conservation is verified actively: \texttt{is\_valid()} checks $\Sigma\mathrm{SW}=486$ after every rotation and the self-test suite (T4) asserts it across all 24 elements.
+
 The rotation group of the cube has 24 elements distributed across four conjugacy classes (Table~\ref{tab:conjugacy}).  Three generators ($90^{\circ}$ rotations about $x$, $y$, and $z$) produce all 24 elements by BFS, each satisfying $R^{4}=I$.
 
 \begin{table}[h]
