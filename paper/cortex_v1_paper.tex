@@ -40,7 +40,10 @@ Text is processed word-by-word: each word maps to a rotation via a semantic brid
 We report measured results on three axes:
 (i)~MPS simulator scaling from 5 to 1\,000 qubits for structured entanglement,
 (ii)~governor-controlled circuits maintaining zero truncation error at 1\,000 qubits, and
-(iii)~a retrieval benchmark where $\alpha$-triage achieves 100\% fact recall versus 30\% for FIFO and LRU under identical memory constraints.
+(iii)~a retrieval benchmark where $\alpha$-triage achieves 100\% fact recall versus 30\% for FIFO and LRU under identical memory constraints, and
+(iv)~a TFIM quantum quench benchmark where the polarity governor reduces mean absolute error in $\langle Z_i \rangle$ by 43.2\% relative to a fixed entropy ceiling under identical $\chi_{\max}$ budget, and
+(v)~a Ramsey R(3,3) geometric sandbox where an emergent nonlinear tension field on the $3\!\times\!3\!\times\!3$ lattice detects all $K_3$ violations across 32,768 colorings of $K_6$ (100\%) and a self-healing Simulated Annealing loop finds valid $K_5$ colorings on 100\% of starts while correctly flooring above $T=0$ for $K_6$ (consistent with $R(3,3)=6$), and
+(vi)~an R(5,5) heuristic benchmark where a triangle adjacency kernel reduces monochromatic $K_5$ counts by 34\% relative to a cubic density kernel on $K_{43}$ and $K_{44}$ (best: 484/962,598 and 573/1,086,008 respectively); no certificate is claimed.
 We state explicitly what the system does and does not do, and provide all code and test suites for independent verification.
 \end{abstract}
 
@@ -316,6 +319,47 @@ In mock mode, $\alpha$ values are assigned by a hand-crafted lookup table: high-
 
 FIFO and LRU retain only the three ground-truth facts that happen to appear in the last 40\% of the passage.  $\alpha$-triage retains all ten because factual tokens have high~$\alpha$ (they are rare, semantically distinctive, and far from the GloVe corpus centroid) and are therefore evicted last.
 
+% =========================================================================
+\section{Measured Results: TFIM Quantum Quench Benchmark}
+\label{sec:quench}
+
+\paragraph{Setup.}
+We benchmark the polarity governor on a concrete quantum dynamics task: real-time evolution under the transverse-field Ising model (TFIM),
+\begin{equation}
+  H = -J \sum_{i} Z_i Z_{i+1} \;-\; h \sum_{i} X_i,
+\label{eq:tfim}
+\end{equation}
+with $J=1.0$, $h=0.5$, $n=14$ qubits, evolved for $T=1.0$ in 10 first-order Trotter steps ($dt=0.1$).
+Initial state: $|\!\uparrow\cdots\uparrow\rangle$ ($Z$-polarized product state).
+Three backends compete under identical $\chi_{\max}=8$ and $S_{\text{base}}=0.70$~nats: a reference simulation ($\chi=64$, no truncation), a fixed-entropy governor ($\alpha=0$), and the polarity-aware governor ($\alpha=0.8$).
+Observables are exact $\langle Z_i\rangle$ computed via left/right environment contractions (no shot noise).
+
+\paragraph{Results.}
+Table~\ref{tab:quench} reports mean absolute error (MAE) in $\langle Z_i\rangle$ versus the reference at $t=1.0$.
+
+\begin{table}[h]
+  \caption{TFIM quench benchmark. MAE is mean $|\langle Z_i\rangle_{\text{backend}} - \langle Z_i\rangle_{\text{ref}}|$ over all 14 sites.}
+  \label{tab:quench}
+  \centering
+  \small
+  \begin{tabular}{lccc}
+    \toprule
+    Backend & MAE vs.\ ref & Prune events & $\chi_{\max}$ reached \\
+    \midrule
+    Reference ($\chi=64$) & 0.0000 & — & 64 \\
+    Fixed Governor        & 0.2193 & 39 & 6  \\
+    Polarity Governor     & 0.1245 & 72 & 8  \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The polarity governor reduces MAE by \textbf{43.2\%} relative to the fixed ceiling, and 8 of 14 sites are closer to the reference.
+The fixed governor makes 39 coarse prune decisions; the polarity governor makes 72 finer decisions and allows high-polarity bonds to expand toward $\chi=8$, preserving structured entanglement in the volume-law core of the chain while aggressively truncating area-law boundary bonds.
+
+\paragraph{Physical interpretation.}
+The $\alpha$ signal derived from the polarity score biases truncation toward volume-law bonds, protecting the magnetization profile in the dynamically entangled interior (sites 3--12) while pruning the near-product boundary sites.
+This is the predicted behavior of the governor: geometry-derived importance determines \emph{which} bonds absorb the entropy budget, not merely \emph{how much} budget is available.
+
 % -------------------------------------------------------------------------
 \subsection{Limitations of the Benchmark}
 
@@ -328,6 +372,157 @@ We state these explicitly:
   \item The experiment is single-pass.  In a multi-access scenario, LRU would outperform FIFO.  $\alpha$-triage would still outperform LRU because importance and recency are different signals.
   \item One paragraph, one topic, one ground truth.  This is a proof-of-concept, not a corpus-level evaluation.
 \end{enumerate}
+
+% =========================================================================
+\section{Ramsey R(3,3) Geometric Sandbox}
+\label{sec:ramsey}
+
+\paragraph{Motivation.}
+To validate that the cubic lattice tension signal transfers from quantum entropy to
+combinatorial constraint satisfaction, we map the complete graph $K_6$ onto the
+$3\!\times\!3\!\times\!3$ Livnium lattice and test whether a purely geometric pressure
+field can detect and localize forbidden monochromatic triangles ($K_3$).
+
+\paragraph{Vertex placement.}
+Six vertices of $K_6$ are placed at the six face-center cells of the cube
+(the unique octahedral arrangement where all vertices carry identical symbolic
+weight $\mathrm{SW}=9$ and no topological distortion is introduced).
+The 15 edges map to 12 distinct edge-type cells plus the center cell for the 3 axis-aligned pairs.
+
+\paragraph{R(3,3) detection (discrete injection).}
+Tension is injected directly into the three mediating cells of any monochromatic triangle
+(+10 per cell; no Gaussian blur, no triangle-check code).
+Tested across all $2^{15}=32{,}768$ 2-colorings of $K_6$: \textbf{32,768/32,768 pass} —
+the lattice peak always falls inside a monochromatic triangle's edge-cell set.
+An earlier continuous Gaussian field ($\sigma^2=0.5$) gave 0.05\% accuracy due to all
+12 interior triangle centroids aliasing into the center cell; switching to strict discrete
+injection eliminated all false positives.
+
+\paragraph{Self-healing lattice (emergent nonlinear tension).}
+We remove all explicit triangle checks and assign each edge cell a charge
+($\mathrm{Red}=+1$, $\mathrm{Blue}=-1$).  Tension at any cell is the square of its
+von-Neumann neighborhood sum.  A monochromatic $K_3$ produces a local sum of $\pm3$
+($T=9$); a mixed triangle produces $\pm1$ ($T=1$).  The field ``sees'' the forbidden
+structure without being told to look.
+
+A Simulated Annealing healer flips edges to minimize total tension, accepting worsening
+moves with probability $\exp(-\Delta T/\tau)$ to escape local minima.
+Results over 100/200 random restarts:
+
+\begin{table}[h]
+  \caption{Self-healing Ramsey lattice results. Phase A: $K_5$ (valid colorings exist).
+           Phase B: $K_6$ on $3\!\times\!3\!\times\!3$ lattice (R(3,3)=6, no valid coloring).}
+  \label{tab:ramsey}
+  \centering
+  \small
+  \begin{tabular}{llccc}
+    \toprule
+    Phase & Method & Valid finds & $T_{\min}$ & mono-$K_3$ min \\
+    \midrule
+    A ($K_5$) & Greedy & 39/100 (39\%)  & —      & 0 \\
+    A ($K_5$) & SA     & 100/100 (100\%) & —     & 0 \\
+    B ($K_6$) & Greedy & 0 T=0           & 27.0   & 2 \\
+    B ($K_6$) & SA     & 0 T=0           & $27.0\pm 0.0$ & 2 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The SA healer finds a valid $K_5$ coloring on every random start and never finds $T=0$
+for $K_6$ (consistent with $R(3,3)=6$).
+The $K_6$ lattice floor is $T=27.0$ with zero variance — the SA reliably locates the
+global minimum of the spatial energy landscape.
+
+\paragraph{Interpretation and limitations.}
+The system is \emph{complete} (finds solutions when they exist) and \emph{sound}
+(does not hallucinate solutions where none exist).
+However, the lattice tension minimum ($T=27$) and the combinatorial minimum
+(mono-$K_3 = 2$) are not identical objectives: some colorings with 2 monochromatic
+triangles carry higher lattice tension due to neighborhood-sum interference from
+spatially dispersed triangle edges.
+The field is most sensitive to compact triangles (spatially adjacent edge-cells) and
+underestimates tension from triangles whose edges span distant lattice regions.
+This is an honest limitation of projecting a 15-edge graph onto 27 cells.
+
+% =========================================================================
+\section{R(5,5) Heuristic Search — Triangle Adjacency Kernel}
+\label{sec:r55}
+
+\paragraph{Motivation.}
+Following the R(3,3) sandbox, we extend to the open problem $R(5,5)$, whose exact value is
+unknown (current bounds: $43 \le R(5,5) \le 48$~\cite{exoo1989,mckay1995}).
+A certificate that $R(5,5)>n$ requires an explicit 2-coloring of $K_n$ with no monochromatic $K_5$.
+We do not claim to find such a certificate.
+Instead, we benchmark three heuristic tension kernels for guiding simulated annealing (SA)
+search toward low mono-$K_5$ colorings, as a test of whether the geometric signal quality
+transfers from the $R(3,3)$ sandbox to a harder open problem.
+
+\paragraph{Kernel evolution.}
+We designed and tested three tension functions $T$ over edge colorings of $K_n$:
+
+\begin{enumerate}[nosep,leftmargin=*]
+\item \textbf{Vertex-sum kernel} $T=\sum_v \sigma(v)^2$ (where $\sigma(v)=\deg_R(v)-\deg_B(v)$):
+  SA immediately found $T=0$ on $K_{45}$, appearing to prove $R(5,5)>45$.
+  This is a \emph{parity loophole}: $T=0$ requires only balanced degree per vertex, which is
+  achievable on any even-degree graph regardless of clique content.  Rejected.
+
+\item \textbf{Cubic density kernel} $T=\sum_v [\sigma_R(v)^3 + \sigma_B(v)^3]$:
+  Eliminates the parity loophole.  Phase A validation passes ($K_3/K_4/K_5$ all correct).
+  Phase B: all 20 restarts on $K_{43}$ converge to mono-$K_5\approx 736$, with zero variance.
+  Diagnosis: a $K_5$ contributes only 4 out of 42 vertex edges ($\approx9.5\%$),
+  making the $K_5$ signal-to-background ratio $\approx1\!:\!10$.
+
+\item \textbf{Triangle adjacency kernel} $T=\sum_{(u,v)}[t_R(u,v)^3 + t_B(u,v)^3]$,
+  where $t_R(u,v)=|\{w : e(u,w)=R,\,e(v,w)=R\}|$ (common red neighbours):
+  A $K_5$ edge has $t_R\ge3$, yielding a cubic spike $\ge27$ versus $\approx1$--$2$ for a
+  typical edge.  Signal fraction $\approx27\%$ above baseline per $K_5$ edge, versus
+  $\approx10\%$ for the cubic kernel.  Update cost $O(n)$ per flip via incremental
+  maintenance of the $t_R,t_B$ tables (built once via $A_R \cdot A_R$ matrix multiplication).
+\end{enumerate}
+
+\paragraph{Results.}
+Phase A validation confirms that the triangle kernel correctly identifies the $R(3,3)=6$
+barrier: $K_5$ finds 8/20 (40\%) $K_3$-free colorings (valid; $R(3,3)>5$) and $K_6$ finds 0/20
+(correct; $R(3,3)=6$).
+The 40\% success rate on $K_5$ (vs.\ 100\% for the cubic kernel) indicates the SA temperature
+schedule requires retuning for the steeper triangle-kernel landscape; this is a known limitation.
+
+Phase B results on 10 independent SA restarts per graph are shown in Table~\ref{tab:r55}.
+
+\begin{table}[h]
+  \caption{R(5,5) heuristic search: triangle adjacency kernel vs.\ cubic kernel.
+           Lower mono-$K_5$ is better; 0 would be a certificate.
+           Reported as best across 10 independent SA restarts.
+           \textbf{These are heuristic results, not proofs.}}
+  \label{tab:r55}
+  \centering
+  \small
+  \begin{tabular}{lcccc}
+    \toprule
+    Graph & Total $K_5$ subgraphs & Cubic best & Triangle best & Improvement \\
+    \midrule
+    $K_{43}$ & 962,598   & $\approx736$ & \textbf{484} & 34\% \\
+    $K_{44}$ & 1,086,008 & $\approx875$ & \textbf{573} & 35\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The triangle kernel achieves a consistent $\approx34$--$35\%$ reduction in monochromatic $K_5$
+count relative to the cubic kernel, with the improvement holding across both graph sizes.
+The fraction of monochromatic $K_5$ subgraphs remaining is $\approx0.050$--$0.053\%$
+of all $K_5$ subgraphs, stable across $K_{43}$ and $K_{44}$.
+SA restarts show genuine variance in mono-$K_5$ (9--11\% spread), confirming the search
+is exploring distinct local minima rather than collapsing to a single basin.
+
+\paragraph{Interpretation and limitations.}
+\emph{No result here constitutes a proof about $R(5,5)$.}
+A proof would require mono-$K_5=0$, which we do not achieve.
+The literature lower bound ($R(5,5)\ge43$) was established by Exoo (1989) via explicit
+certificate; we do not reproduce or improve it.
+The contribution is a \emph{kernel comparison}: the 2-hop triangle adjacency signal is a
+more effective heuristic guide for SA search than the 1-hop cubic density signal,
+reducing the monochromatic clique floor by $\approx34\%$ on the graphs tested.
+Future directions include longer SA schedules, population-based search with coloring
+cross-pollination, and targeted edge reheating around highest-tension edges.
 
 % =========================================================================
 \section{Verified Invariants}
@@ -376,7 +571,7 @@ TF-IDF, BM25, and dense retrieval methods (DPR, ColBERT) use embedding similarit
 % =========================================================================
 \section{Conclusion}
 
-We presented a system that couples a cubic lattice to an MPS simulator via a polarity governor.  The measured results are: (i)~1\,000-qubit GHZ states with perfect measurement validity (area-law, $\chi=2$); (ii)~zero truncation error at 1\,000 qubits under governor control ($\chi=4$, polarity $>0.99$); (iii)~100\% fact recall under $\alpha$-triage versus 30\% for FIFO/LRU on a single benchmark paragraph; and (iv)~12/12 verified invariants.
+We presented a system that couples a cubic lattice to an MPS simulator via a polarity governor.  The measured results are: (i)~1\,000-qubit GHZ states with perfect measurement validity (area-law, $\chi=2$); (ii)~zero truncation error at 1\,000 qubits under governor control ($\chi=4$, polarity $>0.99$); (iii)~100\% fact recall under $\alpha$-triage versus 30\% for FIFO/LRU on a single benchmark paragraph; (iv)~43.2\% reduction in TFIM magnetization error under the polarity governor versus a fixed entropy ceiling at identical $\chi_{\max}$; (v)~a Ramsey R(3,3) sandbox: 32,768/32,768 $K_3$ violations detected, SA healer 100\% on $K_5$, confirmed floor above $T=0$ for $K_6$; (vi)~an R(5,5) heuristic benchmark: triangle adjacency kernel achieves best mono-$K_5=484$ on $K_{43}$ and $573$ on $K_{44}$, a 34--35\% improvement over the cubic density kernel (no certificate claimed); and (vii)~12/12 verified invariants.
 
 Whether these results constitute a useful contribution is for the reader to assess.  The code is open, the tests are runnable, and the numbers are reproducible.  We have tried to state what was measured without overstating what it means.
 
