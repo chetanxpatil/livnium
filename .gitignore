@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (not redistributed — see results/README.md for download instructions)
+results/anli_data/
+results/data/
+*.parquet
+*.jsonl
+
+# Editor
+.vscode/
+.idea/

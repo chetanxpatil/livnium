@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Livnium World — see inside the geometry</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#121823; --ink:#e6edf3; --muted:#8b98a9;
+    --core:#3a4a5e; --center:#3fa7ff; --edge:#ffb53f; --corner:#ff5d6c; --om:#b07bff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  .panel{position:absolute;background:rgba(18,24,35,.86);backdrop-filter:blur(8px);border:1px solid #233044;border-radius:14px;padding:14px 16px}
+  #hud{top:14px;left:14px;min-width:210px}
+  #hud h1{margin:0 0 8px;font-size:15px;letter-spacing:.3px}
+  #hud .row{display:flex;justify-content:space-between;font-size:13px;margin:3px 0;color:var(--muted)}
+  #hud .row b{color:var(--ink);font-variant-numeric:tabular-nums}
+  #sw{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  #swnote{font-size:11px;color:#56d364;margin-top:2px;height:14px}
+  #controls{bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:94vw}
+  button,select{background:#1b2433;color:var(--ink);border:1px solid #2b3a52;border-radius:10px;padding:8px 12px;font-size:13px;cursor:pointer;transition:.15s}
+  button:hover{background:#243248;border-color:#3a4f70}
+  button.on{background:#2b3a52;border-color:var(--om)}
+  #legend{top:14px;right:14px;font-size:12px}
+  #legend .k{display:flex;align-items:center;gap:8px;margin:5px 0;color:var(--muted)}
+  #legend .sw{width:14px;height:14px;border-radius:4px;display:inline-block}
+  #legend b{color:var(--ink)}
+  #hint{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div class="panel" id="hud">
+  <h1>Livnium World</h1>
+  <div class="row"><span>dimension N</span><b id="hN">3</b></div>
+  <div class="row"><span>cells (N³)</span><b id="hCells">27</b></div>
+  <div class="row"><span>core / center</span><b id="hCC">1 / 6</b></div>
+  <div class="row"><span>edge / corner</span><b id="hEC">12 / 8</b></div>
+  <hr style="border:none;border-top:1px solid #233044;margin:8px 0">
+  <div class="row"><span>ΣSW ledger</span></div>
+  <div id="sw">486</div>
+  <div id="swnote"></div>
+</div>
+
+<div class="panel" id="legend">
+  <div class="k"><span class="sw" style="background:var(--om)"></span><b>Om</b> &nbsp;center (0,0,0) · SW 0</div>
+  <div class="k"><span class="sw" style="background:var(--core)"></span><b>Core</b> &nbsp;f=0 · SW 0</div>
+  <div class="k"><span class="sw" style="background:var(--center)"></span><b>Center</b> &nbsp;f=1 · SW 9</div>
+  <div class="k"><span class="sw" style="background:var(--edge)"></span><b>Edge</b> &nbsp;f=2 · SW 18</div>
+  <div class="k"><span class="sw" style="background:var(--corner)"></span><b>Corner</b> &nbsp;f=3 · SW 27</div>
+</div>
+
+<div id="hint">drag to orbit · scroll to zoom</div>
+
+<div class="panel" id="controls">
+  <select id="dim">
+    <option value="3">N = 3 (the cube)</option>
+    <option value="5">N = 5</option>
+    <option value="7">N = 7</option>
+  </select>
+  <button id="spin">⟳ Rotate (conserves ΣSW)</button>
+  <button id="explode">◌ Explode — see inside</button>
+  <button id="autorot" class="on">↻ Auto-orbit</button>
+  <button id="labels">Aa base-27 labels</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const ALPH="0abcdefghijklmnopqrstuvwxyz";
+let scene,camera,renderer,world,cells=[],N=3,exploded=false,autorot=true,showLabels=false;
+let dragging=false,px=0,py=0,rotX=-0.5,rotY=0.7,dist=11;
+
+function expClass(x,y,z,half){
+  return (Math.abs(x)===half)+(Math.abs(y)===half)+(Math.abs(z)===half);
+}
+const CLASSCOL={0:0x3a4a5e,1:0x3fa7ff,2:0xffb53f,3:0xff5d6c};
+const OMCOL=0xb07bff;
+
+function classCounts(n){const k=n-2;return{core:k*k*k,center:6*k*k,edge:12*k,corner:8};}
+function sigmaSW(n){return 54*(n-2)*(n-2)+216*(n-2)+216;}
+
+function makeLabelSprite(ch){
+  const c=document.createElement('canvas');c.width=c.height=128;
+  const g=c.getContext('2d');g.fillStyle='rgba(0,0,0,0)';g.fillRect(0,0,128,128);
+  g.fillStyle='#fff';g.font='bold 84px monospace';g.textAlign='center';g.textBaseline='middle';
+  g.fillText(ch,64,70);
+  const t=new THREE.CanvasTexture(c);const m=new THREE.SpriteMaterial({map:t,transparent:true});
+  const s=new THREE.Sprite(m);s.scale.set(.6,.6,.6);return s;
+}
+
+function build(n){
+  if(world) scene.remove(world);
+  world=new THREE.Group();cells=[];
+  const half=(n-1)/2;let idx=0;
+  for(let x=-half;x<=half;x++)for(let y=-half;y<=half;y++)for(let z=-half;z<=half;z++){
+    const f=expClass(x,y,z,half);
+    const isOm=(x===0&&y===0&&z===0);
+    const col=isOm?OMCOL:CLASSCOL[f];
+    const geo=new THREE.BoxGeometry(.86,.86,.86);
+    const mat=new THREE.MeshStandardMaterial({color:col,roughness:.45,metalness:.25,
+      emissive:isOm?OMCOL:0x000000,emissiveIntensity:isOm?.6:0});
+    const cube=new THREE.Mesh(geo,mat);
+    cube.position.set(x,y,z);
+    cube.userData={home:new THREE.Vector3(x,y,z),f,isOm,ch:ALPH[(idx)%27]};
+    // wire outline
+    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({color:0x0a0e14,transparent:true,opacity:.5}));
+    cube.add(edges);
+    if(showLabels){const sp=makeLabelSprite(cube.userData.ch);sp.position.set(0,0,.5);cube.add(sp);}
+    world.add(cube);cells.push(cube);idx++;
+  }
+  scene.add(world);
+  // HUD
+  N=n;const cc=classCounts(n);
+  hN.textContent=n;hCells.textContent=n*n*n;
+  hCC.textContent=cc.core+" / "+cc.center;hEC.textContent=cc.edge+" / "+cc.corner;
+  sw.textContent=sigmaSW(n);
+  dist=n*3.6;
+}
+
+function init(){
+  scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x0a0e14,.018);
+  camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,.1,200);
+  renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(2,devicePixelRatio));
+  document.getElementById('app').appendChild(renderer.domElement);
+  scene.add(new THREE.AmbientLight(0xffffff,.55));
+  const d1=new THREE.DirectionalLight(0xffffff,.9);d1.position.set(6,9,7);scene.add(d1);
+  const d2=new THREE.DirectionalLight(0x88aaff,.4);d2.position.set(-7,-4,-6);scene.add(d2);
+  build(3);
+  // interaction
+  const cv=renderer.domElement;
+  cv.addEventListener('pointerdown',e=>{dragging=true;px=e.clientX;py=e.clientY;autorot=false;autrotBtn.classList.remove('on');});
+  addEventListener('pointerup',()=>dragging=false);
+  addEventListener('pointermove',e=>{if(!dragging)return;rotY+=(e.clientX-px)*.008;rotX+=(e.clientY-py)*.008;px=e.clientX;py=e.clientY;});
+  cv.addEventListener('wheel',e=>{dist*=(1+Math.sign(e.deltaY)*.08);dist=Math.max(4,Math.min(60,dist));e.preventDefault();},{passive:false});
+  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+  animate();
+}
+
+let spinning=null;
+function startSpin(){
+  if(spinning)return;
+  // rotate the top layer (y == half) 90° about Y, then confirm conservation
+  const half=(N-1)/2;
+  const layer=cells.filter(c=>Math.abs(c.userData.home.y-half)<1e-6);
+  const pivot=new THREE.Group();world.add(pivot);
+  layer.forEach(c=>{world.remove(c);pivot.add(c);});
+  let a=0;const target=Math.PI/2;
+  spinning={pivot,layer,a,target};
+  swnote.textContent="rotating…";swnote.style.color="#8b98a9";
+}
+function stepSpin(){
+  if(!spinning)return;
+  const s=spinning;const d=Math.min(.06,s.target-s.a);s.a+=d;s.pivot.rotation.y=s.a;
+  if(s.a>=s.target-1e-4){
+    // bake back: snap positions, return to world
+    s.layer.forEach(c=>{
+      const p=c.position.clone();s.pivot.localToWorld(p);
+      world.remove;c.position.copy(p.round());c.rotation.set(0,0,0);
+      s.pivot.remove(c);world.add(c);c.userData.home.copy(c.position);
+    });
+    world.remove(s.pivot);spinning=null;
+    swnote.textContent="ΣSW = "+sigmaSW(N)+" — conserved ✓";swnote.style.color="#56d364";
+  }
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(autorot)rotY+=.003;
+  if(world){world.rotation.x=rotX;world.rotation.y=rotY;}
+  cells.forEach(c=>{
+    const h=c.userData.home;const k=exploded?(N*0.55):0;
+    const tgt=new THREE.Vector3(h.x*(1+k*.18),h.y*(1+k*.18),h.z*(1+k*.18));
+    if(!spinning||!spinning.layer.includes(c))c.position.lerp(tgt,.12);
+  });
+  stepSpin();
+  camera.position.set(0,0,dist);camera.lookAt(0,0,0);
+  renderer.render(scene,camera);
+}
+
+// UI
+const dimSel=document.getElementById('dim'),autrotBtn=document.getElementById('autorot');
+dimSel.onchange=e=>{exploded=false;explodeBtn.classList.remove('on');build(+e.target.value);};
+const spinBtn=document.getElementById('spin');spinBtn.onclick=startSpin;
+const explodeBtn=document.getElementById('explode');
+explodeBtn.onclick=()=>{exploded=!exploded;explodeBtn.classList.toggle('on',exploded);};
+autrotBtn.onclick=()=>{autorot=!autorot;autrotBtn.classList.toggle('on',autorot);};
+const labelsBtn=document.getElementById('labels');
+labelsBtn.onclick=()=>{showLabels=!showLabels;labelsBtn.classList.toggle('on',showLabels);build(N);};
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# Core library (livnium_core) has ZERO dependencies — pure Python standard library.
+# The packages below are only needed to reproduce the results in results/.
+numpy
+pandas
+scikit-learn
+scipy
+pyarrow
+gensim      # only for the GloVe baseline in results/rung2_lib.py
