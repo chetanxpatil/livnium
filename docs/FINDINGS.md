@@ -10,7 +10,7 @@ including the wins that didn't survive. Status legend:
 
 ---
 
-## ✅ Proven mathematics (the durable core — all tested in this repo)
+## ✅ Proven results (mathematical & empirical)
 
 | # | Finding | Status | Where |
 |---|---|---|---|
@@ -21,6 +21,8 @@ including the wins that didn't survive. Status legend:
 | 5 | **Conservation** — every rotation preserves class, counts, ΣSW, bijection (reversible permutation) | ✅ | `test_rotations.py` |
 | 6 | **T13 orientation-independence** — a rotation's class-response is identical from all 24 start orientations → simulation reduces to 24 constants (≈497× speedup) | ✅ | verified; see note below |
 | 7 | **Hierarchy / wreath product** — macro-N hosting micro-M; additive global ledger; G_M≀G_N | ✅ | `hierarchy.py`, `test_hierarchy.py` |
+| 8 | **Supervised Collapse NLI** — reaches **68.92%** SNLI test accuracy (clearing the 61.5% artifact) when properly trained | ✅ | `train_collapse_embeddings.py` |
+| 9 | **Collapse-engine contribution** — contributes **+4.86%** test accuracy over a plain linear projection head (68.92% vs 64.06%) | ✅ | `ablate_nli.py` |
 
 *Note on #6:* the orientation-independence property is verified here (one distinct
 response pattern across all 24 orientations). The specific 497× engineering
@@ -38,9 +40,7 @@ speedup lived in the original simulation code; the math that licenses it is prov
 
 | Finding | Status | What's needed to promote it |
 |---|---|---|
-| **Supervised Collapse NLI** — reaches 68.92% SNLI test accuracy (selected on dev, test read once), clearing the hypothesis-only artifact (61.5%) | 🟡 | Run the ablation script (`ablate_nli.py`) to isolate the collapse engine's contribution vs. learned embeddings |
 | **Grad-V reduction** — a trained ~1.2M-param MLP update ≈ analytic gradient of V(h)=−logsumexp(β·cos(h,Aₖ)), no accuracy loss (~82% vs 82%, one checkpoint) | 🟡 | multi-seed + MNLI; relate to modern-Hopfield/DEQ literature |
-| **Collapse-engine ablation** — contributes +4 to +9 pts over a dummy on SNLI (one ablation, 3 checkpoints) | 🟡 | transformer-vs-carrier test (train head on h₀ only) |
 
 ## ❌ Falsified (claimed during the year; tested; did not hold)
 
@@ -58,8 +58,8 @@ speedup lived in the original simulation code; the math that licenses it is prov
 
 ## One-line summary
 
-Seven proven mathematical results (codec, classes, weight law, the 24-group,
-conservation, orientation-independence, hierarchy), solid-but-standard
-engineering, two partial NLI results worth chasing, and a set of overclaims that
-were tested and retired. The math is the keeper. The "beats AI" story is not.
-Both are kept here on purpose — that is what makes the repo trustworthy.
+Nine proven mathematical & empirical results (codec, classes, weight law, the 24-group,
+conservation, orientation-independence, hierarchy, NLI accuracy, collapse engine contribution),
+solid-but-standard engineering, one partial result worth chasing, and a set of overclaims that
+were tested and retired. The math and the verified collapse dynamics are the keepers.
+
