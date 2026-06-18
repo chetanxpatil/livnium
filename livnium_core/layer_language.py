@@ -32,9 +32,12 @@ NOT encode meaning: F(cat->mom) would transform the *codes*, not the fact that a
 cat loves a mom. Meaning would enter only as data deforming this base. See
 LIMITS.md and REARRANGEMENT.md.
 """
+
 from __future__ import annotations
+
 import re
 from typing import Dict
+
 from .base27 import int_to_base27
 
 _SIGN = {"o": -1, "○": -1, "*": +1, "●": +1}

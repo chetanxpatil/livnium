@@ -1,5 +1,6 @@
 import random
-from livnium_core import int_to_base27, base27_to_int, base27_to_binary, binary_to_base27
+
+from livnium_core import base27_to_binary, base27_to_int, binary_to_base27, int_to_base27
 from livnium_core.base27 import add
 
 
@@ -29,8 +30,8 @@ def test_carry():
     # 26 + 1 = 27 must roll a digit over: 'z' + 'a' -> 'a0'
     assert add("z", "a") == "a0"
     assert add("zz", "a") == "a00"
-    assert add("a0", "a0") == "b0"        # 27 + 27 = 54
-    assert add("zzz", "a") == "a000"      # 19682 + 1 = 19683
+    assert add("a0", "a0") == "b0"  # 27 + 27 = 54
+    assert add("zzz", "a") == "a000"  # 19682 + 1 = 19683
 
 
 def test_carry_matches_integer_addition():

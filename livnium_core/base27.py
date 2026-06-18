@@ -15,9 +15,10 @@ binary.
 
 Verified by tests/test_base27.py.
 """
+
 from __future__ import annotations
 
-ALPHABET = "0abcdefghijklmnopqrstuvwxyz"          # index == digit value
+ALPHABET = "0abcdefghijklmnopqrstuvwxyz"  # index == digit value
 _CHAR_TO_VAL = {c: v for v, c in enumerate(ALPHABET)}
 _VAL_TO_CHAR = {v: c for v, c in enumerate(ALPHABET)}
 BASE = 27

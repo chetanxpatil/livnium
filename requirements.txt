@@ -1,5 +1,12 @@
 # Core library (livnium_core) has ZERO dependencies — pure Python standard library.
 # The packages below are only needed to reproduce the results in results/.
+# (Equivalent to: pip install "livnium-core[results]")
+#
+# The experimental prototypes are NOT covered here — they are not part of the
+# proven core and have their own heavy deps:
+#   cortex_v2/         -> numpy
+#   collapse_retrain/  -> torch, tqdm
+# Install them with:  pip install "livnium-core[experimental]"
 numpy
 pandas
 scikit-learn

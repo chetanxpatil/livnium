@@ -1,5 +1,7 @@
 from livnium_core.lattice import (
-    class_counts, symbolic_weight_total, brute_force_total,
+    brute_force_total,
+    class_counts,
+    symbolic_weight_total,
 )
 
 
@@ -18,7 +20,7 @@ def test_class_counts_known():
 def test_total_symbolic_weight_closed_form():
     assert symbolic_weight_total(3) == 486
     assert symbolic_weight_total(5) == 1350
-    assert symbolic_weight_total(7) == 2646       # corrects the old 3024 typo
+    assert symbolic_weight_total(7) == 2646  # corrects the old 3024 typo
     assert symbolic_weight_total(9) == 4374
 
 

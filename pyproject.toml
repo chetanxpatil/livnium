@@ -12,8 +12,43 @@ license = { text = "PolyForm Noncommercial 1.0.0 — commercial use requires a p
 authors = [{ name = "Chetan Patil" }]
 keywords = ["geometry", "reversible-computing", "base-27", "lattice", "group-theory"]
 
+[project.urls]
+Homepage = "https://github.com/chetanxpatil/livnium"
+Repository = "https://github.com/chetanxpatil/livnium"
+
 [project.optional-dependencies]
 test = ["pytest"]
+dev = ["pytest", "ruff", "black"]
+# Reproduce the NLI benchmark in results/ (mirrors requirements.txt).
+results = ["numpy", "pandas", "scikit-learn", "scipy", "pyarrow", "gensim"]
+# Experimental research prototypes (cortex_v2/, collapse_retrain/). NOT part of
+# the proven core; heavy deps, kept separate on purpose.
+experimental = ["numpy", "torch", "tqdm"]
 
 [tool.setuptools]
 packages = ["livnium_core"]
+
+[tool.black]
+line-length = 100
+target-version = ["py38"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+# Pycodestyle (E), pyflakes (F), and import sorting (I).
+select = ["E", "F", "I"]
+# E741: single-letter names like I (identity matrix) and l are meaningful in the
+#       geometry/math code and are kept intentionally.
+ignore = ["E741"]
+
+[tool.ruff.lint.per-file-ignores]
+# Reproduction / research scripts adjust sys.path before importing the package
+# (E402) and contain long data-bearing strings and result tables (E501) that are
+# clearer left unwrapped.
+"results/*.py" = ["E402", "E501"]
+"collapse_retrain/*.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "cortex_v2"]

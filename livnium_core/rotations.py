@@ -9,21 +9,22 @@ Every rotation is a reversible permutation of the lattice that preserves
 exposure class, class counts, symbolic weight, and the symbol-coordinate
 bijection. Verified in tests/test_rotations.py.
 """
+
 from __future__ import annotations
+
 from typing import List, Tuple
 
 Matrix = Tuple[Tuple[int, int, int], Tuple[int, int, int], Tuple[int, int, int]]
 
 I: Matrix = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
-ROT_X: Matrix = ((1, 0, 0), (0, 0, -1), (0, 1, 0))   # 90 deg about X
-ROT_Y: Matrix = ((0, 0, 1), (0, 1, 0), (-1, 0, 0))   # 90 deg about Y
-ROT_Z: Matrix = ((0, -1, 0), (1, 0, 0), (0, 0, 1))   # 90 deg about Z
+ROT_X: Matrix = ((1, 0, 0), (0, 0, -1), (0, 1, 0))  # 90 deg about X
+ROT_Y: Matrix = ((0, 0, 1), (0, 1, 0), (-1, 0, 0))  # 90 deg about Y
+ROT_Z: Matrix = ((0, -1, 0), (1, 0, 0), (0, 0, 1))  # 90 deg about Z
 
 
 def matmul(a: Matrix, b: Matrix) -> Matrix:
     return tuple(
-        tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3))
-        for i in range(3)
+        tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3)
     )  # type: ignore[return-value]
 
 

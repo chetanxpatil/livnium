@@ -1,8 +1,15 @@
-from livnium_core.rotations import (
-    rotation_group, matpow, ROT_X, ROT_Y, ROT_Z, I, apply,
-)
-from livnium_core.lattice import exposure, SW
 import itertools
+
+from livnium_core.lattice import SW, exposure
+from livnium_core.rotations import (
+    ROT_X,
+    ROT_Y,
+    ROT_Z,
+    I,
+    apply,
+    matpow,
+    rotation_group,
+)
 
 
 def test_group_order_is_24():
@@ -19,7 +26,7 @@ def test_rotations_preserve_exposure_and_weight():
     coords = list(itertools.product((-1, 0, 1), repeat=3))
     for rot in rotation_group():
         images = [apply(rot, c) for c in coords]
-        assert sorted(images) == sorted(coords)          # permutation (reversible)
+        assert sorted(images) == sorted(coords)  # permutation (reversible)
         for c in coords:
             assert exposure(apply(rot, c), 3) == exposure(c, 3)
             assert SW(apply(rot, c), 3) == SW(c, 3)

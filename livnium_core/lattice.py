@@ -18,7 +18,9 @@ Closed forms (verified for N=3,5,7,9 in tests/test_lattice.py):
 These quantities are invariant under the cube rotation group (see rotations.py),
 which is what makes the system a conserved geometric state space.
 """
+
 from __future__ import annotations
+
 import itertools
 from typing import Dict, Tuple
 

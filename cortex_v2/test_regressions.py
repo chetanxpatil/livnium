@@ -11,13 +11,15 @@ Run: python cortex_v2/test_regressions.py
 """
 
 from __future__ import annotations
+
+import json
+import os
 import subprocess
 import sys
 
 import numpy as np
-
-from mps import MPS, ghz
 from lattice import word_to_rotation
+from mps import MPS, ghz
 
 
 def _dense(m: MPS) -> np.ndarray:
@@ -68,11 +70,8 @@ def test_word_to_rotation_cross_process():
         "import sys; sys.path.insert(0,'.'); from lattice import word_to_rotation as w;"
         "import json;print(json.dumps({x:w(x) for x in %r}))" % words
     )
-    out = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, cwd="."
-    )
-    import json
-
+    here_dir = os.path.dirname(os.path.abspath(__file__))
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=here_dir)
     other = json.loads(out.stdout)
     assert other == here, f"mapping differs across processes: {here} vs {other}"
     print("R2 OK  word_to_rotation is deterministic across separate processes")

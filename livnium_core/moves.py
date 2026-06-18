@@ -19,7 +19,9 @@ So even though face turns generate a vast rearrangement space (the Rubik's group
 the core both survive. The shell structure ("the box around the core") fixes each
 node's energy; rearrangement only shuffles which node sits where.
 """
+
 from __future__ import annotations
+
 import itertools
 from typing import Dict, List, Tuple
 
@@ -27,22 +29,30 @@ Cell = Tuple[int, int, int]
 _CELLS: List[Cell] = list(itertools.product((-1, 0, 1), repeat=3))
 
 # face -> (axis, layer level)
-FACES = {"U": ("y", 1), "D": ("y", -1),
-         "R": ("x", 1), "L": ("x", -1),
-         "F": ("z", 1), "B": ("z", -1)}
+FACES = {
+    "U": ("y", 1),
+    "D": ("y", -1),
+    "R": ("x", 1),
+    "L": ("x", -1),
+    "F": ("z", 1),
+    "B": ("z", -1),
+}
 _AXIS_IDX = {"x": 0, "y": 1, "z": 2}
 
 
 def _rot(c: Cell, axis: str) -> Cell:
     x, y, z = c
-    if axis == "x": return (x, -z, y)
-    if axis == "y": return (z, y, -x)
-    return (-y, x, z)            # axis == "z"
+    if axis == "x":
+        return (x, -z, y)
+    if axis == "y":
+        return (z, y, -x)
+    return (-y, x, z)  # axis == "z"
 
 
 def face_permutation(face: str) -> Dict[Cell, Cell]:
     """Return the cell->cell permutation for one 90 degree face turn."""
-    axis, lvl = FACES[face]; idx = _AXIS_IDX[axis]
+    axis, lvl = FACES[face]
+    idx = _AXIS_IDX[axis]
     return {c: (_rot(c, axis) if c[idx] == lvl else c) for c in _CELLS}
 
 

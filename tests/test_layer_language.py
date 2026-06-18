@@ -1,4 +1,4 @@
-from livnium_core.layer_language import parse, evaluate
+from livnium_core.layer_language import evaluate, parse
 
 
 def test_parses_ascii_and_unicode():
@@ -10,7 +10,8 @@ def test_parses_ascii_and_unicode():
 def test_rejects_garbage():
     for bad in ["", "hello", "o^2", "o^2 + *^1", "2 | 3"]:
         try:
-            parse(bad); assert False, bad
+            parse(bad)
+            assert False, bad
         except ValueError:
             pass
 
@@ -24,9 +25,9 @@ def test_distinct_inputs_distinct_outputs():
 
 
 def test_base27_grounding():
-    r = evaluate("o^2 | *^1")          # delta = (+1*1) - (-1*2) = 3
+    r = evaluate("o^2 | *^1")  # delta = (+1*1) - (-1*2) = 3
     assert r["delta"] == 3
-    assert r["base27"] == "c"          # 3 -> 'c' in 0,a,b,c...
+    assert r["base27"] == "c"  # 3 -> 'c' in 0,a,b,c...
     assert r["dir"] == "in->out"
 
 
@@ -38,8 +39,8 @@ def test_layer_is_antisymmetric():
 
 
 def test_relationship_alignment():
-    assert evaluate("*^3 ~ *^1")["aligned"] is True     # same sign
-    assert evaluate("o^2 ~ *^1")["aligned"] is False    # opposite sign
+    assert evaluate("*^3 ~ *^1")["aligned"] is True  # same sign
+    assert evaluate("o^2 ~ *^1")["aligned"] is False  # opposite sign
 
 
 def test_neutral_when_equal():
