@@ -141,7 +141,8 @@ livnium/
 │   ├── REARRANGEMENT.md   ← face turns and the Rubik's group
 │   ├── COMPRESSION_NOTE.md← the one positive result worth chasing
 │   ├── ML_LADDER.md       ← the path forward, learned the hard way
-│   └── COLLAPSE_VISUALIZATION.md ← 2D projection plots of the attractor flow field and grid warping
+│   ├── COLLAPSE_VISUALIZATION.md ← 2D projection plots of the attractor flow field and grid warping
+│   └── COLLAPSE_STRUCTURE_REPORT.md ← formal dynamical analysis of anchors, basins, and Jacobians
 ├── results/
 │   ├── RESULTS.md         ← measured numbers: Livnium vs baselines, with kill-tests
 │   └── *.py               ← the exact, reproducible experiment scripts

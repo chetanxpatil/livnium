@@ -1,0 +1,572 @@
+{
+  "anchor_geometry": {
+    "cos_en": -0.030018292367458344,
+    "cos_ec": -0.2824684679508209,
+    "cos_nc": -0.04061148315668106,
+    "dist_en": 1.435282826423645,
+    "dist_ec": 1.6015419960021973,
+    "dist_nc": 1.4426443576812744
+  },
+  "layer_collapse": [
+    {
+      "layer": 0,
+      "accuracy": 42.72190553745928,
+      "mean_correct_dist": 1.3991734448832487,
+      "mean_incorrect_dist": 1.425333665550386
+    },
+    {
+      "layer": 1,
+      "accuracy": 29.28542345276873,
+      "mean_correct_dist": 1.366192972026644,
+      "mean_incorrect_dist": 1.3256837721240589
+    },
+    {
+      "layer": 2,
+      "accuracy": 30.710504885993483,
+      "mean_correct_dist": 1.3556186498631193,
+      "mean_incorrect_dist": 1.3221775910844389
+    },
+    {
+      "layer": 3,
+      "accuracy": 51.170602605863195,
+      "mean_correct_dist": 1.2762725096110994,
+      "mean_incorrect_dist": 1.3695206413385292
+    },
+    {
+      "layer": 4,
+      "accuracy": 68.87214983713355,
+      "mean_correct_dist": 1.2223595611035145,
+      "mean_incorrect_dist": 1.3943311425823877
+    }
+  ],
+  "basin_sizes": {
+    "E": 0.3948,
+    "N": 0.162,
+    "C": 0.4432
+  },
+  "jacobian_stats": {
+    "Anchor E": {
+      "max": 15.168933868408203,
+      "mean": 0.7997637645130453,
+      "gt_1": 19,
+      "lt_1": 237
+    },
+    "Anchor N": {
+      "max": 13.838861465454102,
+      "mean": 0.6860380742145935,
+      "gt_1": 16,
+      "lt_1": 240
+    },
+    "Anchor C": {
+      "max": 16.205251693725586,
+      "mean": 0.8121580565084514,
+      "gt_1": 19,
+      "lt_1": 237
+    },
+    "Boundary E-C Midpoint": {
+      "max": 12.097928047180176,
+      "mean": 0.5558446750895882,
+      "gt_1": 14,
+      "lt_1": 242
+    },
+    "Boundary N-C Midpoint": {
+      "max": 15.234747886657715,
+      "mean": 0.7057804300848147,
+      "gt_1": 16,
+      "lt_1": 240
+    }
+  },
+  "examples": {
+    "fast_collapse": [],
+    "correction": [
+      {
+        "index": 1,
+        "premise": "this church choir sings to the masses as they sing joyous songs from the book at a church.",
+        "hypothesis": "the church is filled with song.",
+        "gold_label": "entailment",
+        "predicted_label": "entailment",
+        "path_length": 1.0267975479364395,
+        "start_cos": -0.037185266613960266,
+        "final_cos": 0.24470874667167664,
+        "cos_to_all_final": [
+          0.24470874667167664,
+          0.13037310540676117,
+          0.06698012351989746
+        ],
+        "start_dist_correct": 1.4402676820755005,
+        "final_dist_correct": 1.2290576696395874,
+        "confidence": [
+          0.6721134781837463,
+          0.21423448622226715,
+          0.11365199834108353
+        ],
+        "trajectory_2d": [
+          [
+            0.7208356857299805,
+            0.4873952865600586
+          ],
+          [
+            0.6241096258163452,
+            0.6048069000244141
+          ],
+          [
+            0.6195905208587646,
+            0.6433442831039429
+          ],
+          [
+            0.7136753797531128,
+            0.5086358785629272
+          ],
+          [
+            0.7690985798835754,
+            0.4327627420425415
+          ]
+        ]
+      },
+      {
+        "index": 6,
+        "premise": "an old man with a package poses in front of an advertisement.",
+        "hypothesis": "a man poses in front of an ad.",
+        "gold_label": "entailment",
+        "predicted_label": "entailment",
+        "path_length": 1.2613112032413483,
+        "start_cos": 0.1855335235595703,
+        "final_cos": 0.1584504097700119,
+        "cos_to_all_final": [
+          0.1584504097700119,
+          0.04546467214822769,
+          -0.07645519077777863
+        ],
+        "start_dist_correct": 1.276296615600586,
+        "final_dist_correct": 1.297343134880066,
+        "confidence": [
+          0.7049508690834045,
+          0.22775506973266602,
+          0.06729407608509064
+        ],
+        "trajectory_2d": [
+          [
+            0.7431265115737915,
+            0.45908594131469727
+          ],
+          [
+            0.6120303273200989,
+            0.5656711459159851
+          ],
+          [
+            0.5478315353393555,
+            0.687142550945282
+          ],
+          [
+            0.6646358966827393,
+            0.5104613304138184
+          ],
+          [
+            0.7675576210021973,
+            0.40614163875579834
+          ]
+        ]
+      },
+      {
+        "index": 10,
+        "premise": "a statue at a museum that no seems to be looking at.",
+        "hypothesis": "there is a statue that not many people seem to be interested in.",
+        "gold_label": "entailment",
+        "predicted_label": "entailment",
+        "path_length": 1.5904064178466797,
+        "start_cos": 0.13269267976284027,
+        "final_cos": 0.23465530574321747,
+        "cos_to_all_final": [
+          0.23465530574321747,
+          0.13207049667835236,
+          0.08000291138887405
+        ],
+        "start_dist_correct": 1.3170478343963623,
+        "final_dist_correct": 1.2372102737426758,
+        "confidence": [
+          0.6363430619239807,
+          0.22812408208847046,
+          0.13553282618522644
+        ],
+        "trajectory_2d": [
+          [
+            0.6993935108184814,
+            0.42029285430908203
+          ],
+          [
+            0.5931280851364136,
+            0.4543530344963074
+          ],
+          [
+            0.5286120772361755,
+            0.6749478578567505
+          ],
+          [
+            0.658187985420227,
+            0.5357046127319336
+          ],
+          [
+            0.7838239073753357,
+            0.42125624418258667
+          ]
+        ]
+      },
+      {
+        "index": 13,
+        "premise": "a land rover is being driven across a river.",
+        "hypothesis": "a vehicle is crossing a river.",
+        "gold_label": "entailment",
+        "predicted_label": "entailment",
+        "path_length": 1.4762413799762726,
+        "start_cos": -0.0282362662255764,
+        "final_cos": 0.18541666865348816,
+        "cos_to_all_final": [
+          0.18541666865348816,
+          0.007702767848968506,
+          -0.08603691309690475
+        ],
+        "start_dist_correct": 1.4340406656265259,
+        "final_dist_correct": 1.276388168334961,
+        "confidence": [
+          0.8094826340675354,
+          0.13690073788166046,
+          0.05361662432551384
+        ],
+        "trajectory_2d": [
+          [
+            0.6894639730453491,
+            0.49614810943603516
+          ],
+          [
+            0.6147959232330322,
+            0.568965494632721
+          ],
+          [
+            0.6338980197906494,
+            0.5663907527923584
+          ],
+          [
+            0.7400161027908325,
+            0.4851476550102234
+          ],
+          [
+            0.8354992270469666,
+            0.36924076080322266
+          ]
+        ]
+      },
+      {
+        "index": 15,
+        "premise": "a man playing an electric guitar on stage.",
+        "hypothesis": "a man playing banjo on the floor.",
+        "gold_label": "contradiction",
+        "predicted_label": "contradiction",
+        "path_length": 2.187373101711273,
+        "start_cos": 0.1556829810142517,
+        "final_cos": 0.5119031667709351,
+        "cos_to_all_final": [
+          -0.48907989263534546,
+          -0.1036520004272461,
+          0.5119031667709351
+        ],
+        "start_dist_correct": 1.2994744777679443,
+        "final_dist_correct": 0.9880250692367554,
+        "confidence": [
+          4.485862154979259e-05,
+          0.0021170827094465494,
+          0.9978380799293518
+        ],
+        "trajectory_2d": [
+          [
+            0.6494488716125488,
+            0.5501483678817749
+          ],
+          [
+            0.5038724541664124,
+            0.9281584620475769
+          ],
+          [
+            0.6248745918273926,
+            0.6652497053146362
+          ],
+          [
+            0.6261594295501709,
+            0.7286155819892883
+          ],
+          [
+            0.606804609298706,
+            0.7207103967666626
+          ]
+        ]
+      }
+    ],
+    "stuck": [
+      {
+        "index": 8,
+        "premise": "an old man with a package poses in front of an advertisement.",
+        "hypothesis": "a man walks by an ad.",
+        "gold_label": "contradiction",
+        "predicted_label": "contradiction",
+        "path_length": 1.7056237757205963,
+        "start_cos": 0.04544731229543686,
+        "final_cos": 0.06071413308382034,
+        "cos_to_all_final": [
+          0.021360909566283226,
+          -0.018624424934387207,
+          0.06071413308382034
+        ],
+        "start_dist_correct": 1.3817038536071777,
+        "final_dist_correct": 1.370609998703003,
+        "confidence": [
+          0.31719595193862915,
+          0.2126539945602417,
+          0.47015005350112915
+        ],
+        "trajectory_2d": [
+          [
+            0.7619630098342896,
+            0.5162091255187988
+          ],
+          [
+            0.6056556701660156,
+            0.6280391216278076
+          ],
+          [
+            0.5292907953262329,
+            0.7286511659622192
+          ],
+          [
+            0.6023817658424377,
+            0.7008625268936157
+          ],
+          [
+            0.7385854721069336,
+            0.520729124546051
+          ]
+        ]
+      },
+      {
+        "index": 9,
+        "premise": "a statue at a museum that no seems to be looking at.",
+        "hypothesis": "the statue is offensive and people are mad that it is on display.",
+        "gold_label": "neutral",
+        "predicted_label": "neutral",
+        "path_length": 1.179076075553894,
+        "start_cos": 0.31301116943359375,
+        "final_cos": 0.25133052468299866,
+        "cos_to_all_final": [
+          0.12780317664146423,
+          0.25133052468299866,
+          -0.13422036170959473
+        ],
+        "start_dist_correct": 1.1721678972244263,
+        "final_dist_correct": 1.2236579656600952,
+        "confidence": [
+          0.22162599861621857,
+          0.7622427344322205,
+          0.0161312073469162
+        ],
+        "trajectory_2d": [
+          [
+            0.6042041778564453,
+            0.4414154589176178
+          ],
+          [
+            0.48128700256347656,
+            0.5940002202987671
+          ],
+          [
+            0.48026055097579956,
+            0.6120064854621887
+          ],
+          [
+            0.5898976922035217,
+            0.45554929971694946
+          ],
+          [
+            0.679349422454834,
+            0.3718159794807434
+          ]
+        ]
+      },
+      {
+        "index": 12,
+        "premise": "a land rover is being driven across a river.",
+        "hypothesis": "a land rover is splashing water as it crosses a river.",
+        "gold_label": "entailment",
+        "predicted_label": "entailment",
+        "path_length": 1.081170678138733,
+        "start_cos": 0.08722385764122009,
+        "final_cos": 0.14693422615528107,
+        "cos_to_all_final": [
+          0.14693422615528107,
+          0.13876047730445862,
+          0.05095839872956276
+        ],
+        "start_dist_correct": 1.3511300086975098,
+        "final_dist_correct": 1.306189775466919,
+        "confidence": [
+          0.433933824300766,
+          0.3998759388923645,
+          0.16619032621383667
+        ],
+        "trajectory_2d": [
+          [
+            0.7168235778808594,
+            0.4544854164123535
+          ],
+          [
+            0.6179616451263428,
+            0.6237975358963013
+          ],
+          [
+            0.6140874624252319,
+            0.6196932792663574
+          ],
+          [
+            0.6822891235351562,
+            0.4899281859397888
+          ],
+          [
+            0.7211089730262756,
+            0.44313597679138184
+          ]
+        ]
+      },
+      {
+        "index": 14,
+        "premise": "a land rover is being driven across a river.",
+        "hypothesis": "a sedan is stuck in the middle of a river.",
+        "gold_label": "contradiction",
+        "predicted_label": "contradiction",
+        "path_length": 1.3199756145477295,
+        "start_cos": 0.11626961082220078,
+        "final_cos": 0.044574469327926636,
+        "cos_to_all_final": [
+          -0.06207104027271271,
+          0.023340590298175812,
+          0.044574469327926636
+        ],
+        "start_dist_correct": 1.3294588327407837,
+        "final_dist_correct": 1.3823353052139282,
+        "confidence": [
+          0.15988843142986298,
+          0.37562552094459534,
+          0.4644860029220581
+        ],
+        "trajectory_2d": [
+          [
+            0.6786978244781494,
+            0.47513848543167114
+          ],
+          [
+            0.7266409397125244,
+            0.4297667145729065
+          ],
+          [
+            0.7212584018707275,
+            0.4649554193019867
+          ],
+          [
+            0.681851863861084,
+            0.5012732148170471
+          ],
+          [
+            0.6495018005371094,
+            0.5309132933616638
+          ]
+        ]
+      },
+      {
+        "index": 24,
+        "premise": "a young family enjoys feeling ocean waves lap at their feet.",
+        "hypothesis": "a young man and woman take their child to the beach for the first time.",
+        "gold_label": "neutral",
+        "predicted_label": "neutral",
+        "path_length": 1.185316041111946,
+        "start_cos": -0.06902666389942169,
+        "final_cos": -0.023169727995991707,
+        "cos_to_all_final": [
+          -0.05423549562692642,
+          -0.023169727995991707,
+          -0.1819961965084076
+        ],
+        "start_dist_correct": 1.4622083902359009,
+        "final_dist_correct": 1.4305031299591064,
+        "confidence": [
+          0.3783542513847351,
+          0.516197144985199,
+          0.1054486483335495
+        ],
+        "trajectory_2d": [
+          [
+            0.6733096837997437,
+            0.5434989929199219
+          ],
+          [
+            0.5166774988174438,
+            0.7758510112762451
+          ],
+          [
+            0.5247142910957336,
+            0.6919752955436707
+          ],
+          [
+            0.600974977016449,
+            0.6148115396499634
+          ],
+          [
+            0.7082152366638184,
+            0.43667072057724
+          ]
+        ]
+      }
+    ],
+    "failure": [
+      {
+        "index": 7922,
+        "premise": "the man in colorful shorts is barefoot.",
+        "hypothesis": "the man in shorts is not wearing footwear.",
+        "gold_label": "entailment",
+        "predicted_label": "contradiction",
+        "path_length": 2.0156884491443634,
+        "start_cos": 0.4750932455062866,
+        "final_cos": -0.0728321373462677,
+        "cos_to_all_final": [
+          -0.0728321373462677,
+          -0.09869181364774704,
+          0.010502214543521404
+        ],
+        "start_dist_correct": 1.024604082107544,
+        "final_dist_correct": 1.4648085832595825,
+        "confidence": [
+          0.2455112338066101,
+          0.18956764042377472,
+          0.5649211406707764
+        ],
+        "trajectory_2d": [
+          [
+            0.7954710125923157,
+            0.42924395203590393
+          ],
+          [
+            0.8258489966392517,
+            0.17561465501785278
+          ],
+          [
+            0.6431654095649719,
+            0.651840329170227
+          ],
+          [
+            0.6714239120483398,
+            0.6592262983322144
+          ],
+          [
+            0.7333399057388306,
+            0.5494961142539978
+          ]
+        ]
+      }
+    ]
+  }
+}
