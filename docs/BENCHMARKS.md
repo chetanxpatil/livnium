@@ -65,7 +65,8 @@ A later, simpler run made the structural point even clearer (full table in
 - **Word-level** Livnium (each *word* → its own lattice cell): **60%** on SNLI —
   jumps to match bag-of-words, because that is exactly what it has become.
 - **Geometry alone** (the lattice shape, no word identity): **38%** — ≈chance.
-- **ANLI**: all of the above sit at chance (~33%), like every word-counting method.
+- **Supervised Collapse Model (v1)** (learned embeddings + 4-layer attractor collapse): **68.92%** on SNLI — clearing the hypothesis-only baseline by warping word embeddings to learned attractors. The collapse dynamics contribute **+4.86%** over a plain linear projection head (68.92% vs 64.06%), representing features in a geometry-native point-attractor space.
+- **ANLI**: all of the above sit at chance (~33%), like every word-counting method. (The Supervised Collapse model has not been evaluated on ANLI due to adversarial complexity and vocabulary bounds).
 
 The accuracy tracks *word identity*, not the geometry. Confirmed by a shuffled-label
 control that collapses to chance every time.
