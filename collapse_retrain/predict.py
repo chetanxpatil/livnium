@@ -23,7 +23,6 @@ import argparse
 
 import torch
 import torch.nn.functional as F
-
 from eval_nli import LABELS, load_checkpoint, resolve_device
 from train_collapse_embeddings import _anchor_matrix, _meanpool
 
