@@ -72,16 +72,19 @@ second *follows from*, *contradicts*, or is *unrelated to* the first. We measure
 Livnium against boring, dumb baselines on the same data — because nothing counts as
 a win until it beats the dumbest thing that works.
 
-Two ways of feeding text into the cube were tried:
+Two ways of feeding text into the cube were tried, along with a learned vector collapse engine:
 
 | What we tried | How it scored (SNLI) | What it means |
 |---|---|---|
 | **Letters → cube** (each letter is a symbol) | **43%** | Above random (33%), but far below word-counting (~59%). It only sees spelling, not words. |
 | **Words → cube** (each word gets its own cell) | **60%** | Jumps up to match plain word-counting — because now it's *doing* word-counting, dressed in geometry. |
 | The cube's *shape* alone (no words) | **38%** | Basically random. The geometry by itself carries almost no meaning. |
+| **Supervised Collapse Model** (learned embeddings + 4-layer attractor collapse) | **68.9%** | Clears the hypothesis-only artifact (61.5%) and GloVe avg (60.7%). Ablation proves the collapse engine contributes **+4.86%** over a plain linear head. |
 
 And on **ANLI** — a harder benchmark built specifically so you can't cheat with
 word-counting — Livnium scores at chance (~33%), like every word-counting method.
+
+*Note on the Supervised Collapse model:* By training word embeddings end-to-end with a 4-layer vector collapse engine (`VectorCollapseEngine`) that warps difference vectors toward three learned point-attractors (Entailment, Neutral, Contradiction), the model reaches **68.87% test accuracy** on SNLI. An ablation study confirms that the collapse dynamics provide a **+4.86%** gain over a plain linear projection head (68.92% vs 64.06%), representing features in a geometry-native point-attractor space. See [results/RESULTS.md](results/RESULTS.md) for details.
 
 **The lesson, stated once:** the cube is a beautiful, lossless *container*. But
 understanding meaning requires *throwing information away* — keeping what matters,
