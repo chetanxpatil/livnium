@@ -63,3 +63,27 @@ To find and log all test examples classified incorrectly by the model (writes to
 ```bash
 python3 save_failures.py
 ```
+
+---
+
+## 4. Benchmark & Performance Statistics
+
+The model is highly efficient due to its attention-free architecture (linear $O(L)$ pooling and constant $O(1)$ collapse warping). Measured on macOS (Apple Silicon M-series):
+
+### Throughput & Latency
+
+| Batch Size | CPU Latency | CPU Throughput | MPS GPU Latency | MPS GPU Throughput |
+| :---: | :---: | :---: | :---: | :---: |
+| **1** | **0.33 ms** | 3,015 pairs/sec | **1.92 ms** | 521 pairs/sec |
+| **16** | **0.66 ms** | 24,089 pairs/sec | **2.32 ms** | 6,903 pairs/sec |
+| **64** | **1.05 ms** | 61,113 pairs/sec | **2.17 ms** | 29,474 pairs/sec |
+| **256** | **4.38 ms** | 58,503 pairs/sec | **2.32 ms** | 110,595 pairs/sec |
+| **1024** | **8.35 ms** | 122,677 pairs/sec | **4.74 ms** | **215,886 pairs/sec** |
+| **4096** | **48.54 ms** | 84,381 pairs/sec | **19.15 ms** | **213,867 pairs/sec** |
+
+*Note: For single-pair inference, CPU is faster because it avoids GPU memory copying and kernel launch overhead. For large batches, GPU acceleration scales throughput to >215k pairs/sec.*
+
+### Compute Breakdown (Batch Size 256)
+- **Embedding Lookup & Pooling**: ~20-30% of total time
+- **Vector Collapse Warping (4 layers)**: ~70% of total time
+- **Cosine Similarity Classification**: ~1-8% of total time
