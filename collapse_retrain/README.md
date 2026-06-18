@@ -19,9 +19,8 @@ The model is trained end-to-end on the SNLI dataset (549,367 training pairs) to 
 
 ## 2. Where Are the Checkpoints?
 
-We have packaged the official checkpoints inside the repository:
-* **`model_nli_v1/nli_epoch20.pt`**: The dev-selected checkpoint that achieves **68.92% SNLI test accuracy** (and 69.62% dev accuracy), clearing the hypothesis-only artifact baseline (61.5%).
-* **`model_nli_v1/best_model.pt`**: The version utilizing dynamic basins and structural classification heads.
+We have packaged the official checkpoint inside the repository:
+* **`model_nli_v1/nli_epoch20.pt`**: The optimal dev-selected checkpoint from our 100-epoch training run (retained Epoch 23, mapped to `nli_epoch20.pt` for compatibility) that achieves **68.87% SNLI test accuracy** (and **69.76% dev accuracy**), clearing the hypothesis-only artifact baseline (61.5%).
 
 ---
 
@@ -57,4 +56,10 @@ python3 ablate_nli.py \
     --train-data /path/to/snli_1.0_train.jsonl \
     --dev-data /path/to/snli_1.0_dev.jsonl \
     --test-data /path/to/snli_1.0_test.jsonl
+```
+
+### Extract Failure Cases
+To find and log all test examples classified incorrectly by the model (writes to `failed_examples.json`):
+```bash
+python3 save_failures.py
 ```
