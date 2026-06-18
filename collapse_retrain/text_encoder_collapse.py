@@ -22,7 +22,10 @@ class CollapseTextEncoder(nn.Module):
     def __init__(self, ckpt_path: str):
         super().__init__()
 
-        data = torch.load(ckpt_path, map_location="cpu")
+        try:
+            data = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        except TypeError:
+            data = torch.load(ckpt_path, map_location="cpu")
         emb = data["embeddings"]  # [vocab_size, dim]
         vocab = data["vocab"]
         self.idx2word = vocab["idx2word"]

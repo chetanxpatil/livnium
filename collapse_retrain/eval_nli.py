@@ -73,7 +73,10 @@ def vocab_from_checkpoint(ckpt: dict) -> Vocab:
 
 
 def load_checkpoint(path: str, device: torch.device):
-    ckpt = torch.load(path, map_location=device)
+    try:
+        ckpt = torch.load(path, map_location=device, weights_only=False)
+    except TypeError:
+        ckpt = torch.load(path, map_location=device)
     vocab = vocab_from_checkpoint(ckpt)
     dim = ckpt["dim"]
 
@@ -82,13 +85,24 @@ def load_checkpoint(path: str, device: torch.device):
         model.emb.weight.copy_(ckpt["embeddings"])
     model.to(device).eval()
 
-    cfg = ckpt["collapse_config"]
+    if "collapse_config" in ckpt:
+        cfg = ckpt["collapse_config"]
+        num_layers = cfg.get("num_layers", 4)
+        strength_entail = cfg.get("strength_entail", 0.1)
+        strength_contra = cfg.get("strength_contra", 0.1)
+        strength_neutral = cfg.get("strength_neutral", 0.05)
+    else:
+        num_layers = 4
+        strength_entail = 0.1
+        strength_contra = 0.1
+        strength_neutral = 0.05
+
     engine = VectorCollapseEngine(
         dim=dim,
-        num_layers=cfg["num_layers"],
-        strength_entail=cfg["strength_entail"],
-        strength_contra=cfg["strength_contra"],
-        strength_neutral=cfg["strength_neutral"],
+        num_layers=num_layers,
+        strength_entail=strength_entail,
+        strength_contra=strength_contra,
+        strength_neutral=strength_neutral,
     )
     engine.load_state_dict(ckpt["collapse_engine"])
     engine.to(device).eval()
