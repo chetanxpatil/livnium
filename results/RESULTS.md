@@ -143,3 +143,29 @@ neutral      684    1907     628
 
 **Reading:** once Livnium encodes the *word* (one lattice cell per word) instead of the *letter*, it stops being letter-geometry and becomes a lattice-indexed bag-of-words — and it recovers BoW-level accuracy. That is the lesson made concrete: the container (geometry) is fine; the accuracy lives in the units you put in it (words), and at that point you are doing word-counting, not reasoning. ANLI confirms it: no word-counting method, geometric or not, beats the bar there.
 
+---
+
+# Supervised Collapse Model (v1) — The Learned Attractor Benchmark
+
+*Run 2026-06-18. 256-dimensional learned embeddings + 4-layer collapse engine trained end-to-end on SNLI (549,367 examples) with anchor-separation pressure. Checked on dev set periodically, evaluated once on test.*
+
+## SNLI Test Set
+
+| Model | test acc % |
+|---|---|
+| majority | 34.3 |
+| char-level Livnium | 43.2 |
+| GloVe-100 learned | 60.7 |
+| hypothesis-only BoW | 61.5 |
+| **Supervised Collapse (v1)** | **68.92** |
+
+## Verdict & Ablation Path
+The supervised collapse model reaches **68.92%** test accuracy. This significantly clears the hypothesis-only artifact baseline (**61.5%**) by **+7.4 points**, which the earlier static-embedding models could not clear. 
+
+However, since both the embeddings and the collapse engine anchors are optimized during training, it remains unproven whether the **collapse dynamics** or the **supervised embeddings + subtraction feature** (`u - v`) are responsible for the performance gains. To isolate the contribution, the ablation script `collapse_retrain/ablate_nli.py` has been added. It freeze-locks the trained embeddings and evaluates:
+1. **Full Collapse**: Standard model with collapse dynamics (68.92% test accuracy).
+2. **Linear Head Probe**: Standard linear head on top of the frozen trained embeddings.
+3. **MLP Head Probe**: Standard MLP classifier on top of the frozen trained embeddings.
+4. **Random Anchors**: The same model with randomized anchor positions to test if the learned attractor geometry is the causal mechanism.
+
+

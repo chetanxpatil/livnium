@@ -38,6 +38,7 @@ speedup lived in the original simulation code; the math that licenses it is prov
 
 | Finding | Status | What's needed to promote it |
 |---|---|---|
+| **Supervised Collapse NLI** — reaches 68.92% SNLI test accuracy (selected on dev, test read once), clearing the hypothesis-only artifact (61.5%) | 🟡 | Run the ablation script (`ablate_nli.py`) to isolate the collapse engine's contribution vs. learned embeddings |
 | **Grad-V reduction** — a trained ~1.2M-param MLP update ≈ analytic gradient of V(h)=−logsumexp(β·cos(h,Aₖ)), no accuracy loss (~82% vs 82%, one checkpoint) | 🟡 | multi-seed + MNLI; relate to modern-Hopfield/DEQ literature |
 | **Collapse-engine ablation** — contributes +4 to +9 pts over a dummy on SNLI (one ablation, 3 checkpoints) | 🟡 | transformer-vs-carrier test (train head on h₀ only) |
 

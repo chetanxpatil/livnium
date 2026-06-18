@@ -35,6 +35,13 @@ model_full_physics/
 *.pt
 *.npz
 
+# Allow tracking the official published checkpoints:
+!collapse_retrain/model_nli_v1/
+!collapse_retrain/model_nli_v1/nli_epoch20.pt
+!collapse_retrain/model_nli_v1/best_model.pt
+
+
+
 # Datasets (download separately)
 data/
 anli_data/
