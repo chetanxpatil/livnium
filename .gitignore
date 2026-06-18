@@ -26,3 +26,26 @@ results/data/
 # Editor
 .vscode/
 .idea/
+
+# --- Run artifacts (do NOT upload) -------------------------------------------
+# Trained checkpoints / model dumps (large; regenerate via the reproduce command)
+model_nli_v1/
+model_collapse1/
+model_full_physics/
+*.pt
+*.npz
+
+# Datasets (download separately)
+data/
+anli_data/
+
+# Python / OS noise
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.~lock.*#
+
+# Generated wiki (rebuild with: python3 build_wiki.py)
+livnium_wiki.html
+
