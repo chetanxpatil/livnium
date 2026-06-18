@@ -26,7 +26,7 @@ The original PyTorch engine was functionally dead during both training and infer
   frozen at its random initialization for the entire training run (confirmed: `max|Δanchor|`
   and `max|Δmlp.weight|` were both `0.000000` between epoch 1 and the final checkpoint). The
   embeddings were doing 100% of the work.
-* **The Load-Path Disconnect (Inference):** In `text_encoder_quantum.py`, the engine was only
+* **The Load-Path Disconnect (Inference):** In `text_encoder_collapse.py`, the engine was only
   restored if `use_dynamic_basins` was True. For static-collapse checkpoints, the engine was
   silently dropped, and `collapse_sentence` fell back to raw mean-pooled embeddings without
   throwing an error.
@@ -68,7 +68,7 @@ inherently unstable.
 ---
 
 ## 4. The Lattice & MPS Simulator
-The core `cortex_v2` quantum bridge was mostly intact, but required a critical fix for deep
+The core `cortex_v2` state-vector bridge was mostly intact, but required a critical fix for deep
 entanglement scenarios.
 
 * **Norm Collapse in Swap Network:** The MPS SVD `_split` assumed local isometric tensors
@@ -92,8 +92,8 @@ prevent silent regressions.
 **How to run the next training epoch** — always enable the verify flag:
 
 ```bash
-cd quantum_retrain
-python train_quantum_embeddings.py \
+cd collapse_retrain
+python train_collapse_embeddings.py \
     --train-path <wikitext-103 train.txt> \
     --output-dir model_collapse_v2 \
     --collapse-layers 4 \
@@ -143,8 +143,8 @@ interchangeable). A label-supervised path (`--task nli`) was added: the pair vec
 ### Reproduce (do NOT commit the run outputs)
 
 ```bash
-cd quantum_retrain
-python3 train_quantum_embeddings.py \
+cd collapse_retrain
+python3 train_collapse_embeddings.py \
     --task nli \
     --nli-path ../data/snli_1.0_train.jsonl \
     --output-dir model_nli_v1 \
@@ -174,5 +174,5 @@ The offline NumPy verifications (MPS norm, divergence-law fixed point/contractio
 gradient behavior) remain valid and were the predictors of the above.
 
 **Files touched:** `cortex_v2/mps.py`, `cortex_v2/lattice.py`, `cortex_v2/test_regressions.py`
-(new), `quantum_retrain/train_quantum_embeddings.py`, `quantum_retrain/vector_collapse.py`,
-`quantum_retrain/basin_field.py`, `quantum_retrain/text_encoder_quantum.py`.
+(new), `collapse_retrain/train_collapse_embeddings.py`, `collapse_retrain/vector_collapse.py`,
+`collapse_retrain/basin_field.py`, `collapse_retrain/text_encoder_collapse.py`.

@@ -15,6 +15,7 @@ Governor semantics (simplified, documented):
 """
 
 from __future__ import annotations
+
 import numpy as np
 
 _SQ2 = 1.0 / np.sqrt(2.0)
@@ -22,12 +23,12 @@ H = np.array([[_SQ2, _SQ2], [_SQ2, -_SQ2]], dtype=complex)
 X = np.array([[0, 1], [1, 0]], dtype=complex)
 Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
 Z = np.array([[1, 0], [0, -1]], dtype=complex)
-CNOT = np.array(
-    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex
-).reshape(2, 2, 2, 2)
-SWAP = np.array(
-    [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=complex
-).reshape(2, 2, 2, 2)
+CNOT = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex).reshape(
+    2, 2, 2, 2
+)
+SWAP = np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=complex).reshape(
+    2, 2, 2, 2
+)
 
 
 def rx(theta: float) -> np.ndarray:
@@ -36,9 +37,7 @@ def rx(theta: float) -> np.ndarray:
 
 
 def rz(theta: float) -> np.ndarray:
-    return np.array(
-        [[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=complex
-    )
+    return np.array([[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=complex)
 
 
 def entropy(s: np.ndarray) -> float:
@@ -53,14 +52,13 @@ def entropy(s: np.ndarray) -> float:
 
 
 class MPS:
-    """MPS on n qubits. tensors[i]: (chi_l, 2, chi_r). Starts in |0...0>."""
+    """MPS on n two-level sites. tensors[i]: (chi_l, 2, chi_r). Starts in |0...0>."""
 
-    def __init__(self, n: int, max_chi: int = 64,
-                 s_max: float | None = None, alpha: float = 0.5):
+    def __init__(self, n: int, max_chi: int = 64, s_max: float | None = None, alpha: float = 0.5):
         self.n = n
         self.max_chi = max_chi
-        self.s_max = s_max          # None -> no governor, chi cap only
-        self.alpha = alpha          # geometric signal, set per word
+        self.s_max = s_max  # None -> no governor, chi cap only
+        self.alpha = alpha  # geometric signal, set per word
         self.prune_events = 0
         self.trunc_error = 0.0
         self.max_chi_used = 1
@@ -89,11 +87,20 @@ class MPS:
         t = self.tensors[site]
         self.tensors[site] = np.tensordot(U, t, axes=([1], [1])).transpose(1, 0, 2)
 
-    def hadamard(self, s): self.apply_1q(s, H)
-    def pauli_x(self, s): self.apply_1q(s, X)
-    def pauli_z(self, s): self.apply_1q(s, Z)
-    def rx_gate(self, s, th): self.apply_1q(s, rx(th))
-    def rz_gate(self, s, th): self.apply_1q(s, rz(th))
+    def hadamard(self, s):
+        self.apply_1q(s, H)
+
+    def pauli_x(self, s):
+        self.apply_1q(s, X)
+
+    def pauli_z(self, s):
+        self.apply_1q(s, Z)
+
+    def rx_gate(self, s, th):
+        self.apply_1q(s, rx(th))
+
+    def rz_gate(self, s, th):
+        self.apply_1q(s, rz(th))
 
     def _apply_2q_adjacent(self, i: int, G: np.ndarray):
         th = np.tensordot(self.tensors[i], self.tensors[i + 1], axes=([2], [0]))
@@ -165,9 +172,7 @@ class MPS:
         R[self.n] = np.array([[1.0 + 0j]])
         for i in range(self.n - 1, -1, -1):
             t = self.tensors[i]
-            R[i] = sum(
-                t[:, m, :] @ R[i + 1] @ t[:, m, :].conj().T for m in range(2)
-            )
+            R[i] = sum(t[:, m, :] @ R[i + 1] @ t[:, m, :].conj().T for m in range(2))
         rho = np.array([[1.0 + 0j]])
         out = []
         for i in range(self.n):

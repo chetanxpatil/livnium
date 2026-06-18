@@ -1,5 +1,10 @@
 # Livnium
 
+[![CI](https://github.com/chetanxpatil/livnium/actions/workflows/ci.yml/badge.svg)](https://github.com/chetanxpatil/livnium/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: PolyForm NC](https://img.shields.io/badge/license-PolyForm--NC--1.0.0-green.svg)](LICENSE)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 **A small, honest piece of mathematics that began with a Rubik's cube.**
 
 Livnium is a *conserved geometric state space*: a way of placing symbols onto the
@@ -124,6 +129,7 @@ livnium/
 ├── livnium_core/          ← the proven math (pure Python, no dependencies)
 ├── tests/                 ← the test suite (run: pytest)
 ├── docs/
+│   ├── COMPONENTS.md      ← plain-language tour of every file (start here)
 │   ├── ORIGINS.md         ← the real story, from the first day
 │   ├── FINDINGS.md        ← every claim, marked proven / standard / partial / falsified
 │   ├── FORMULAS.md        ← the formal definitions and proofs
@@ -135,14 +141,22 @@ livnium/
 ├── results/
 │   ├── RESULTS.md         ← measured numbers: Livnium vs baselines, with kill-tests
 │   └── *.py               ← the exact, reproducible experiment scripts
+├── cortex_v2/             ← experimental MPS simulator + collapse-engine prototype
+├── collapse_retrain/      ← experimental collapse-based embedding trainer
+├── COLLAPSE_ENGINE_VERDICT.md  ← forensic post-mortem of the cortex_v2 experiment
 └── visualizer/index.html  ← interactive 3D view of the lattice
 ```
+
+> **Heads-up on the experimental folders.** `cortex_v2/` and `collapse_retrain/`
+> are research prototypes, not part of the proven core. They depend on `numpy`
+> and `torch` and are kept for transparency — see `COLLAPSE_ENGINE_VERDICT.md`
+> for an honest account of what worked and what didn't.
 
 ---
 
 ## What Livnium is *not*
 
-Not a quantum computer. Not a replacement for neural networks. Not a new physics.
+Not a replacement for neural networks. Not a new physics. Not magic.
 It is a clean piece of combinatorial geometry with a reversible codec — and an
 unusually honest record of one person's attempt to find out how far an idea could
 go. Some of those answers were "not as far as I hoped," and they're here too.

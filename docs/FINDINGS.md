@@ -30,7 +30,7 @@ speedup lived in the original simulation code; the math that licenses it is prov
 
 | Finding | Status | Note |
 |---|---|---|
-| MPS quantum simulator — GHZ to ~1000 qubits at χ=2 | 🔧 | Correct, but area-law GHZ at χ=2 is textbook MPS behaviour |
+| MPS state simulator — GHZ to ~1000 sites at χ=2 | 🔧 | Correct, but area-law GHZ at χ=2 is textbook MPS behaviour |
 | SU(2) lift + SO(3)→SU(2) homomorphism | 🔧 | Implemented and checked (selftest) |
 | Self-test suite (13/13 invariants), multi-seed harness, forensic logging | 🔧 | Genuine research hygiene |
 
@@ -49,7 +49,7 @@ speedup lived in the original simulation code; the math that licenses it is prov
 | "R(5,5) ≥ 44 via Paley(43)" | ❌ False — 316+1064 monochromatic K₅s; 43≡3 (mod 4) so no Paley graph exists. Re-proven. |
 | ΣSW(7) = 3024 | ❌ Typo; correct value 2646. |
 | Cortex v1 "100% vs 30% retrieval" | ❌ Rigged mock (answer key hard-coded); real geometry 60%, loses to IDF (70–80%). |
-| "Operationally quantum-like" / "500-qubit quantum computer" | ❌ Overstated; a correct classical simulator of small-n QM. |
+| "Operationally exotic" / "500-site computer (new hardware)" | ❌ Overstated; a correct classical simulator of small-n state vectors. |
 | ×3 numerology → R(5,5)=54 | ❌ Falsified (proven R(5,5) ≤ 48). |
 | Ramsey power-law "field geometry" | ❌ Cannot hold; diagonal Ramsey growth is exponential. |
 

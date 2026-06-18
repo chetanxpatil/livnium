@@ -18,7 +18,9 @@ bijection) hold by construction and are verified in selftest.py.
 """
 
 from __future__ import annotations
+
 import hashlib
+
 import numpy as np
 
 # ---------------------------------------------------------------------------
@@ -31,9 +33,9 @@ COORDS = np.array(
 )
 _INDEX = {tuple(c): i for i, c in enumerate(COORDS)}
 
-EXPOSURE = np.abs(COORDS).sum(axis=1).astype(np.int8)        # f in {0,1,2,3}
-SW = 9 * EXPOSURE                                            # symbolic weight
-TOTAL_SW = int(SW.sum())                                     # 486, constant
+EXPOSURE = np.abs(COORDS).sum(axis=1).astype(np.int8)  # f in {0,1,2,3}
+SW = 9 * EXPOSURE  # symbolic weight
+TOTAL_SW = int(SW.sum())  # 486, constant
 CLASS_COUNTS = {f: int((EXPOSURE == f).sum()) for f in range(4)}  # {0:1,1:6,2:12,3:8}
 
 
@@ -57,6 +59,7 @@ _GEN_MATS = {
 # ---------------------------------------------------------------------------
 # BFS over the rotation group: 24 elements, each with perm + 3x3 matrix
 # ---------------------------------------------------------------------------
+
 
 def _build_group():
     gen_perms = {k: _perm(f) for k, f in _GEN_MAPS.items()}
@@ -101,6 +104,7 @@ INVERSE = np.array(
 # Alpha: mean |cos(motion, toward-observer)| over moved cells — 24 constants
 # ---------------------------------------------------------------------------
 
+
 def _alpha_of(perm: np.ndarray) -> float:
     old = COORDS.astype(float)
     new = COORDS[perm].astype(float)
@@ -109,16 +113,14 @@ def _alpha_of(perm: np.ndarray) -> float:
         return 0.0
     m = new[moved] - old[moved]
     o = -old[moved]
-    cos = (m * o).sum(axis=1) / (
-        np.linalg.norm(m, axis=1) * np.linalg.norm(o, axis=1)
-    )
+    cos = (m * o).sum(axis=1) / (np.linalg.norm(m, axis=1) * np.linalg.norm(o, axis=1))
     return float(np.abs(cos).mean())
 
 
 ALPHA = np.array([_alpha_of(PERMS[i]) for i in range(24)])
 
 # ---------------------------------------------------------------------------
-# SU(2) lift (for the quantum bridge) — axis/angle from each 3x3 matrix
+# SU(2) lift (for the state-vector bridge) — axis/angle from each 3x3 matrix
 # ---------------------------------------------------------------------------
 
 _PAULI = np.array(
@@ -160,6 +162,7 @@ SU2 = np.stack([_su2(*_axis_angle(MATS[i])) for i in range(24)])
 # ---------------------------------------------------------------------------
 # Runtime lattice: one integer of state
 # ---------------------------------------------------------------------------
+
 
 class Lattice:
     """Orientation-tracking lattice. apply() returns the alpha signal."""

@@ -1,29 +1,29 @@
 """
-QuantumEmbeddingTextEncoder [M5 Optimized]
+CollapseEmbeddingTextEncoder [M5 Optimized]
 
-Uses a pre-trained Livnium quantum embedding table produced by
-train_quantum_embeddings.py. Drop-in replacement for the legacy
+Uses a pre-trained Livnium collapse embedding table produced by
+train_collapse_embeddings.py. Drop-in replacement for the legacy
 TextEncoder in nova_v3.
 
 Optimized for M-series: ensures custom BasinField moves to the same device as
 the module (so MPS works correctly).
 """
 
-from typing import List, Dict, Any, Optional, Tuple
 import re
+from typing import Dict, List, Optional, Tuple
+
 import torch
 import torch.nn as nn
-
-from vector_collapse import VectorCollapseEngine
 from basin_field import BasinField
+from vector_collapse import VectorCollapseEngine
 
 
-class QuantumTextEncoder(nn.Module):
+class CollapseTextEncoder(nn.Module):
     def __init__(self, ckpt_path: str):
         super().__init__()
 
         data = torch.load(ckpt_path, map_location="cpu")
-        emb = data["embeddings"]          # [vocab_size, dim]
+        emb = data["embeddings"]  # [vocab_size, dim]
         vocab = data["vocab"]
         self.idx2word = vocab["idx2word"]
         self.word2idx: Dict[str, int] = {w: i for i, w in enumerate(self.idx2word)}
@@ -97,11 +97,11 @@ class QuantumTextEncoder(nn.Module):
         if token_ids.dim() == 1:
             masked = emb * mask
             denom = mask.sum(dim=0).clamp(min=1.0)
-            return (masked.sum(dim=0) / denom)
+            return masked.sum(dim=0) / denom
         else:
             masked = emb * mask
             denom = mask.sum(dim=1).clamp(min=1.0)
-            return (masked.sum(dim=1) / denom)
+            return masked.sum(dim=1) / denom
 
     def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
         return self.encode_sentence(token_ids)

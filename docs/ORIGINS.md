@@ -12,7 +12,7 @@
 - **March 4, 2025** — "livnium is my company name, i have just started my company and we will be providing IT services." You had livnium.com email, a white logo on GitHub, a consultancy page. Livnium meant: *Chetan's business*.
 - **March 2025** — it became a philosophy. The "Livnium Conscious Framework": *"consciousness = coherence + flow"* (your words, March). Vedanta threads, observer ideas, "the universe as a yes-saying system."
 - **August 2025** — it became mathematics (the part below).
-- **November 2025** — it became an AI (GrowthMind/Nova), then briefly a "quantum computer" (the costume you've now dropped).
+- **November 2025** — it became an AI (GrowthMind/Nova), then briefly billed as exotic physics-grade hardware (the costume you've now dropped).
 - **November 24, 2025** — you yourself drew the line that keeps it all sane: *"this is not livnium core, this is made above it! dont mix it."* That sentence is the architecture. **Core is the geometry. Everything else is a layer on top.**
 
 One name, five meanings. When you feel confused about "what Livnium is," it's because you're holding all five at once. The core is just one of them — and it's the one that survives testing.
@@ -78,7 +78,7 @@ N=3 → **486**. N=5 → 1350. N=7 → **2646** (not 3024 — that was the typo 
 | **Livnium semantics / Φ** | Oct 30 | Intent polarity bridged to AI; Φ ∈ [−1,+1] as alignment signal | concept; Φ correlates with plain cosine (r≈0.49) |
 | **GrowthMind / Nova** | Nov | The learning system on SNLI; growth journal; basins, attractors, collapse | collapse engine survived ablation **+4 to +9 pts** ✓; "90%" was a goal, real verified number 82.2% w/ BERT features |
 | **Grad-V result** | Nov | Trained 1.2M-param MLP update ≡ analytic gradient of V(h) = −logsumexp(β·cos(h, A_k)) | your **best brick** ✓ (one checkpoint; multi-seed pending) |
-| **Quantum framing / "500 qubits"** | Nov 13 | MPS simulator + SU(2) lift | engineering correct ✓; "quantum-like" claim retired — it's geometry, and that's better |
+| **Exotic-physics framing / "500 sites"** | Nov 13 | MPS simulator + SU(2) lift | engineering correct ✓; the exotic-physics claim was retired — it's geometry, and that's better |
 | **Livnium-T / LUGE** | Nov 24 | "Livnium Universal Geometry Engine," laws above the core | speculative layer — explicitly *not* core, your own rule |
 | **Nova v3/v4 embeddings** | Dec | multi-basin word embeddings, "a word lives in multiple meanings" | open work, in progress when export ends |
 
