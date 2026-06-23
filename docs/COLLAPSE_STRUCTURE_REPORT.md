@@ -132,3 +132,52 @@ By mapping the trajectories of actual sentence pairs, we classified their dynami
 ## Conclusion
 
 The VectorCollapseEngine does not merely scale probabilities; it acts as a structured physical model. Over **51% of all test set predictions are active trajectory corrections**, proving the collapse engine is performing the heavy lifting. With over **92% of dimensions mathematically proven to be contracting**, the system operates as a robust point-attractor classifier regularized by its own topology.
+
+---
+
+## Appendix A: Data Integrity — SNLI Leakage Audit
+
+Because every claim here rests on SNLI accuracy, the train/eval split was audited
+directly at the data level (no model required). All three official files were used
+unmodified; the train file contains exactly **550,152** examples (549,367 usable
+after dropping 785 no-consensus `-` labels), matching the published SNLI counts —
+confirming these are the genuine official splits.
+
+| Overlap with train | dev | test |
+|---|---|---|
+| Exact pair (premise + hypothesis + label) | 1 / 9,842 (0.01%) | 0 / 9,824 (0.00%) |
+| Premise sentence | 16 / 3,319 (0.48%) | 11 / 3,323 (0.33%) |
+| Source image (Flickr30k ID) | 3,059 / 3,059 (100%) | 3,061 / 3,061 (100%) |
+
+**Reading.** Exact-pair and premise-sentence overlap are negligible — the eval
+sets are effectively disjoint at the level that matters, so reported accuracies are
+not inflated by memorized pairs. The 100% **image** overlap is *intrinsic to SNLI*,
+not a flaw in this pipeline: the train set spans ~32,042 unique Flickr30k images —
+essentially the entire corpus (~31.8k) — so every dev/test image is necessarily
+also in train, paired with *different* captions and independently-written
+hypotheses. This is the standard condition under which all published SNLI numbers
+are reported; nobody splits SNLI by image.
+
+The training code reinforces the clean path: it evaluates on the official
+`snli_1.0_dev.jsonl` when present (disjoint premises, leak-free) and explicitly
+warns that its `--dev-frac` train-carved fallback carries "~100% premise overlap →
+inflated dev acc." With the official dev file in place, the numbers are on the
+clean split.
+
+**Reconciled aligned-classifier numbers (confirmed).** Re-running evaluation on
+the official, leak-free SNLI splits (`eval_snli.py`) settles the earlier
+discrepancy:
+
+| Split | Accuracy | entailment | neutral | contradiction |
+|---|---:|---:|---:|---:|
+| official dev (9,842 pairs) | **74.66%** | 73.9% | 69.5% | 80.5% |
+| official test (9,824 pairs) | **74.43%** | 73.6% | 69.1% | 80.7% |
+
+The two figures agree to within 0.2 points, confirming there is **no dev
+overfitting**. This also resolves the two stale numbers: the checkpoint's internal
+**78.1%** was measured on its leaky train-carved slice (inflated, as the code warns),
+and the previously documented **72.7%** was an earlier under-estimate. The honest,
+reproducible headline for `CollapseNLI + alignment` is **74.4% on the official SNLI
+test set** (74.7% dev). Per-class, contradiction is strongest (≈80.7%) and neutral —
+the narrow boundary class — is weakest (≈69%), exactly as the basin-topology
+analysis in §3 predicts.

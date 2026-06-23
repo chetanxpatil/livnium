@@ -62,10 +62,11 @@ it. That limitation is the point, not a bug.
 - Not a general chatbot and has no awareness. Trained only on SNLI captions, it
   can only produce SNLI-shaped sentences. Fluent grammar emerges fast because
   grammar is local/regular — that is not understanding.
-- The classifier sibling (CollapseNLI) reaches 66.1% mean-pool / **72.7%** with
-  cross-sentence alignment on SNLI dev; the same-footing baseline (SNLI-only, no
-  embeddings) is 78.2%. The remaining gap is a *mechanism* limit (cross-sentence
-  word interaction), not a training-time one. See `SNLI_BASELINES.md`.
+- The classifier sibling (CollapseNLI) reaches 66.1% mean-pool / **74.7% dev,
+  74.4% test** with cross-sentence alignment (official leak-free SNLI, no
+  pretrained embeddings); the same-footing baseline (SNLI-only, no embeddings) is
+  78.2%. The remaining gap is a *mechanism* limit (cross-sentence word
+  interaction), not a training-time one. See `SNLI_BASELINES.md`.
 - The speed comes from being tiny. Scaling parameters up makes it compute-bound
   and slow, and needs a GPU — you can't keep "5 ms on CPU" at billions of params.
 

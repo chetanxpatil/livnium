@@ -21,8 +21,8 @@ picks the next word, the collapse executes it.
 BEST-MODEL IDEA — cross-sentence alignment (--align). The baseline above crushes
 the whole hypothesis into ONE static vector z, so every premise word is typed
 without ever looking at individual hypothesis words. On the discriminative task,
-adding Parikh-style word-to-word alignment BEFORE the collapse bought +6.5 dev
-points (66.1% -> 72.7%, see SNLI_BASELINES.md). Here we port the same lever to
+adding Parikh-style word-to-word alignment BEFORE the collapse bought +8.6 dev
+points (66.1% -> 74.7% dev / 74.4% test, see SNLI_BASELINES.md). Here we port the same lever to
 GENERATION: at each step the controller runs a label-conditioned attention over
 the hypothesis WORD wells and feeds the aligned content into the query, so each
 premise word is chosen with per-word hypothesis correspondence in hand:

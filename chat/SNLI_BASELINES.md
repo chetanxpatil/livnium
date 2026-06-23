@@ -76,21 +76,23 @@ Next experiment (the lever, not more data):
 Controlled comparison, full SNLI train, 8 epochs, no pretrained embeddings,
 identical except the cross-sentence alignment step (`--align`):
 
-| variant | dev acc | params |
-|---|---:|---|
-| CollapseNLI (mean-pool, baseline) | 66.1% | 5.25M |
-| CollapseNLI + alignment (before collapse) | **72.7%** | 5.52M |
+| variant | dev acc | test acc | params |
+|---|---:|---:|---|
+| CollapseNLI (mean-pool, baseline) | 66.1% | — | 5.25M |
+| CollapseNLI + alignment (before collapse) | **74.7%** | **74.4%** | 5.52M |
 
-**+6.5 dev points from alignment alone** — the diagnosis confirmed. The aligned
-model also learns far faster (reaches the baseline's *final* 66% in epoch 1, 71.5%
-by epoch 3). Per-class with alignment: entailment 76.2%, contradiction 79.5%,
-neutral 61.8% (neutral still hardest, as expected). The ~260k extra params are
-two small FFNs; the collapse engine is unchanged — alignment just supplies
-per-word correspondence before the pooling instead of after.
+**+8.6 dev points from alignment alone** — the diagnosis confirmed. The aligned
+model also learns far faster (reaches the baseline's *final* 66% in epoch 1). Dev
+and test agree to within 0.2 points (74.66% / 74.43% on the official leak-free
+splits via `eval_snli.py`), so there is no dev overfitting. Per-class (test):
+entailment 73.6%, contradiction 80.7%, neutral 69.1% (neutral still hardest, as
+expected). The ~260k extra params are two small FFNs; the collapse engine is
+unchanged — alignment just supplies per-word correspondence before the pooling
+instead of after.
 
-Placement: 72.7% clears the hypothesis-only floor (~67%) comfortably and sits
-~5 points below the simplest SNLI-only baselines (LSTM 77.6%, lexical features
-78.2%). The dev curve plateaued near 72–73, so closing the last ~5 points likely
+Placement: 74.4% (test) clears the hypothesis-only floor (~67%) comfortably and
+sits ~3.5 points below the simplest SNLI-only baselines (LSTM 77.6%, lexical
+features 78.2%). The dev curve plateaued near 74–75, so closing the last ~3.5 points likely
 needs another ingredient — GloVe warm-start ("world words"), intra-sentence
 attention (Parikh's +0.5), or running the collapse to a true fixed point — not
 just more epochs.
