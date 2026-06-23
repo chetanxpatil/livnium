@@ -35,6 +35,28 @@ ai  > a girl in a pink shirt standing in a doorway.   [neutral]
   CPU wins — the ~9-step decode is launch-bound, not compute-bound, so the GPU's
   per-op overhead costs more than its compute saves. Runs best with no accelerator.
 
+## How small this really is (the constraints)
+
+This is not a model that saw the internet. Everything it can do comes from a
+deliberately tiny, narrow setup:
+
+- **Training data: SNLI only — ~550k sentence pairs**, all image-caption-style
+  ("a man in a black shirt is playing a guitar"). One domain, nothing else. No
+  books, no web text, no dialogue.
+- **Vocabulary: ~20k whole words, learned from scratch (random init).** There
+  are **no pretrained embeddings** — no GloVe, no word2vec, no BERT. The model
+  starts knowing *nothing* about any word and learns word meaning only from those
+  550k captions.
+- **No word generalization / no subwords.** It's a whole-word vocabulary, so any
+  word outside the 20k simply becomes `<unk>`. It cannot sound out or generalize
+  to unseen words the way a subword/BPE model can.
+- **~6M parameters**, trained on a laptop.
+
+So when it produces a coherent, grammatical sentence, that's happening with no
+external knowledge, a 20k random-initialized vocab, and half a million captions —
+which is *why* it's coherent only inside the SNLI domain and falls apart outside
+it. That limitation is the point, not a bug.
+
 ## Honest notes
 
 - Not a general chatbot and has no awareness. Trained only on SNLI captions, it
