@@ -56,3 +56,4 @@ __pycache__/
 # Generated wiki (rebuild with: python3 build_wiki.py)
 livnium_wiki.html
 
+reached/
