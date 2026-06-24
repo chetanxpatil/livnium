@@ -75,17 +75,21 @@ if __name__ == "__main__":
     print(f"strength={strength:.3f}  temp={temp:.3f}\n")
 
     print("=== TEST 1: Lyapunov energy V(h)=1-cos(h,target) under driven collapse ===")
-    viol = tot = conv = 0; N = 300
+    viol = tot = conv = 0; N = 300; dVs = []
     for _ in range(N):
         t = A[rng.integers(1, A.shape[0])]
         h = rng.standard_normal(256); h *= rng.uniform(0.1, 10) / np.linalg.norm(h)
         Vs = [1 - cosv(h, t)]
         for _ in range(40):
             h = collapse(h, t); Vn = 1 - cosv(h, t); tot += 1
+            dVs.append(Vn - Vs[-1])                 # delta V; Lyapunov wants <= 0
             if Vn > Vs[-1] + 1e-9: viol += 1
             Vs.append(Vn)
         if Vs[-1] < 1e-3: conv += 1
-    print(f"  monotone-decreasing steps: {100*(tot-viol)/tot:.2f}%  (Lyapunov: V never increases)")
+    dVs = np.array(dVs)
+    print(f"  monotone non-increasing steps: {100*(tot-viol)/tot:.2f}%  ({tot} steps, V candidate)")
+    print(f"  max dV observed   : {dVs.max():+.3e}   (positive => Lyapunov violation)")
+    print(f"  mean dV observed  : {dVs.mean():+.3e}")
     print(f"  reached attractor (V<1e-3) in 40 steps: {100*conv/N:.1f}% (asymptotic, eases in)\n")
 
     print("=== TEST 2: contraction — singular values of dF/dh ===")
@@ -100,6 +104,16 @@ if __name__ == "__main__":
         t = A[rng.integers(1, A.shape[0])]; s = np.linalg.svd(jac(mk(t), t), compute_uv=False)
         print(f"  {name:15} S<1: {int((s<1).sum())}/256 = {100*(s<1).mean():.1f}%"
               f"   Smax {s.max():.2f}  Smean {s.mean():.2f}")
+    # precision spectral sweep: worst S_max to 6 dp + count of S>1+1e-6 across many samples
+    TOL = 1e-6; worst = 0.0; nexp = 0; nsv = 0; M = 150
+    for _ in range(M):
+        t = A[rng.integers(1, A.shape[0])]
+        h = norm(rng.standard_normal(256)) * rng.uniform(0.2, 8.0)
+        s = np.linalg.svd(jac(h, t), compute_uv=False)
+        worst = max(worst, float(s.max())); nexp += int((s > 1 + TOL).sum()); nsv += s.size
+    print(f"  --- precision sweep over {M} random driven points ---")
+    print(f"  worst sampled S_max : {worst:.6f}")
+    print(f"  singular values > 1+1e-6 : {nexp} / {nsv}")
 
     print("\n=== TEST 3: driven/dynamic vs static (real generation trajectory) ===")
     ids = encode("two men are playing football"); lab = LAB[1]
