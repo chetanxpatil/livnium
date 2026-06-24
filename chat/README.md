@@ -1,8 +1,23 @@
-# Chat demo — the premise generator (attention-free, on-device)
+# Chat demo — the premise generator (on-device)
 
 A tiny (5.98M-param) NLI model trained **only on SNLI**, no pretrained
-embeddings, no attention. You type a hypothesis; it types back a premise under a
-fixed label. Same `generate()` path, made interactive.
+embeddings. You type a hypothesis; it types back a premise under a fixed label.
+Same `generate()` path, made interactive.
+
+> **Note for visitors (from the Reddit writeup).** Two corrections to that post,
+> for accuracy:
+> 1. **"attention-free" is imprecise.** The *collapse engine* uses no transformer
+>    self-attention. But the shipped checkpoint (`premise_from_hyp_align_53.pt`,
+>    `align=True`) adds **one lightweight single-head cross-attention step** for
+>    cross-sentence alignment (`align_context`, a `torch.softmax` over hypothesis
+>    words). Accurate framing: *no full/self-attention; one cross-attention step*.
+>    A truly attention-free generator exists too (`premise_from_hyp.pt`, `align=False`).
+> 2. **Classifier accuracy is 74.7% dev / 74.4% test**, not 72.7% — the 72.7%
+>    figure in the post is a superseded under-estimate. See `SNLI_BASELINES.md`.
+>
+> Verified this session: 5.975M params, generative-classifier accuracy 52.9% on
+> 1,500 SNLI dev pairs, ~4.5 ms/reply on CPU (independent NumPy reimplementation
+> of the trained weights). See `CLAIMS_CHECKPOINT_MAP.md`.
 
 ```bash
 cd chat
