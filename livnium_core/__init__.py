@@ -23,6 +23,24 @@ from .lattice import SW, class_counts, exposure, symbolic_weight_total
 from .layer_language import evaluate as ll_evaluate
 from .layer_language import parse as ll_parse
 from .moves import FACES, apply_sequence, face_permutation, solved_state
+from .ping import (
+    CELLS_26,
+    Match,
+    Ping,
+    Prune,
+    Signature,
+    Step,
+    classify,
+    cos_path,
+    cosine,
+    meaning_match,
+    path_signature,
+    prune,
+    turn_angles,
+    world_direction,
+    world_doorways,
+    world_path,
+)
 from .rotations import ROT_X, ROT_Y, ROT_Z, rotation_group
 
 __version__ = "0.1.0"
@@ -49,4 +67,20 @@ __all__ = [
     "FACES",
     "ll_parse",
     "ll_evaluate",
+    "CELLS_26",
+    "Ping",
+    "Step",
+    "Match",
+    "Prune",
+    "cosine",
+    "world_doorways",
+    "world_direction",
+    "cos_path",
+    "world_path",
+    "turn_angles",
+    "Signature",
+    "path_signature",
+    "classify",
+    "meaning_match",
+    "prune",
 ]
