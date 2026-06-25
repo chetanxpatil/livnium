@@ -57,3 +57,7 @@ __pycache__/
 livnium_wiki.html
 
 reached/
+
+# Ramsey work (hidden)
+ramsey/
+livnium_core/ramsey/
