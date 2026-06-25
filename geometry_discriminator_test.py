@@ -3,12 +3,13 @@ geometry_discriminator_test.py
 ==============================
 
 Two experiments that *decide* the question: does the Livnium geometry merely
-LOOK quantum, or does its dynamics actually OBEY the quantum amplitude rules?
+LOOK like it carries amplitude behavior, or does its dynamics actually OBEY the
+complex-amplitude rules?
 
-Of the seven "quantum ingredients" only two cannot be faked by any classical
-system. They are the discriminators:
+Of the seven "amplitude-behavior ingredients" only two cannot be faked by any
+classical system. They are the discriminators:
 
-  TEST A  Destructive interference null
+  TEST A  Destructive cancellation null
           Two paths that EACH, alone, give outcome-probability > 0, yet
           TOGETHER give exactly 0. Classical (non-negative) intensities can
           never do this. Requires signed/complex amplitudes + Born readout.
@@ -16,11 +17,13 @@ system. They are the discriminators:
   TEST B  CHSH / Bell inequality
           A correlation score S. Any LOCAL HIDDEN-VARIABLE system (a shared
           classical state + local readouts) is bounded by  S <= 2  (Bell's
-          theorem). Quantum mechanics reaches  S = 2*sqrt(2) ~= 2.828.
+          theorem). A complex-amplitude (state-vector) system reaches
+          S = 2*sqrt(2) ~= 2.828.
 
 For each test we run:
   (1) the ACTUAL livnium_core geometry (rotation group + conserved ledger), and
-  (2) a CORRECT complex-amplitude quantum reference (one qubit / a singlet pair).
+  (2) a CORRECT complex-amplitude reference (one bit / a singlet pair) as a
+      control that lands on the textbook values.
 
 The geometry is the most charitable construction available: we exploit the fact
 that the cube rotations ROT_X/Y/Z have eigenvalues {1, i, -i} -- genuine 4th
@@ -51,7 +54,7 @@ def hr(title: str) -> None:
 
 
 # =========================================================================== #
-#  TEST A -- DESTRUCTIVE INTERFERENCE NULL
+#  TEST A -- DESTRUCTIVE CANCELLATION NULL
 # =========================================================================== #
 def test_A_geometry() -> dict:
     """
@@ -126,10 +129,10 @@ def test_A_geometry_with_born() -> dict:
     }
 
 
-def test_A_quantum() -> dict:
+def test_A_reference() -> dict:
     """
-    Correct quantum reference: a single qubit Mach-Zehnder / Ramsey sequence.
-    H -> phase(phi) -> H, measure P(outcome 0).
+    Correct complex-amplitude reference: a single two-level Mach-Zehnder /
+    Ramsey sequence.  H -> phase(phi) -> H, measure P(outcome 0).
 
     P0(phi) = cos^2(phi/2).  At phi = pi this is 0 (destructive null) while a
     single arm alone (no second beamsplitter) would give 0.5.
@@ -149,7 +152,7 @@ def test_A_quantum() -> dict:
     inner = H @ psi0
     each_alone = abs(inner[0]) ** 2
     return {
-        "system": "qubit Mach-Zehnder (H-phase-H), phi=pi",
+        "system": "two-level Mach-Zehnder (H-phase-H), phi=pi",
         "path1_alone_prob": each_alone,
         "path2_alone_prob": each_alone,
         "combined_prob": p0,
@@ -203,11 +206,11 @@ def test_B_geometry() -> dict:
 
     The shared hidden variable lambda is a random cube orientation (a uniformly
     random element of the 24-rotation group) plus a random reference axis. This
-    is the most natural "entanglement-like" shared state the geometry offers:
-    Alice and Bob hold the SAME rotated cube. Each measures locally by projecting
-    a fixed lattice vector (rotated by lambda) onto their setting direction and
-    taking the sign. This is a genuine LOCAL HIDDEN-VARIABLE model -> Bell caps
-    it at S <= 2, and we verify the geometry cannot beat that.
+    is the most natural "correlated shared state" the geometry offers: Alice and
+    Bob hold the SAME rotated cube. Each measures locally by projecting a fixed
+    lattice vector (rotated by lambda) onto their setting direction and taking
+    the sign. This is a genuine LOCAL HIDDEN-VARIABLE model -> Bell caps it at
+    S <= 2, and we verify the geometry cannot beat that.
     """
     group = rotation_group()
     rng = np.random.default_rng(0)
@@ -242,9 +245,9 @@ def test_B_geometry() -> dict:
     }
 
 
-def test_B_quantum() -> dict:
+def test_B_reference() -> dict:
     """
-    Correct quantum reference: the singlet state |01> - |10>.
+    Correct complex-amplitude reference: the singlet state |01> - |10>.
     Its correlator is  E(a,b) = -cos(theta_a - theta_b).
     Optimal CHSH settings give  S = 2*sqrt(2) ~= 2.828 > 2.
     """
@@ -254,7 +257,7 @@ def test_B_quantum() -> dict:
 
     S, settings = chsh_score(correlator)
     return {
-        "system": "quantum singlet  E(a,b) = -cos(a-b)",
+        "system": "complex-state singlet  E(a,b) = -cos(a-b)",
         "CHSH_S": S,
         "classical_bound": 2.0,
         "tsirelson_bound": 2 * math.sqrt(2),
@@ -266,10 +269,10 @@ def test_B_quantum() -> dict:
 #  main
 # =========================================================================== #
 def main() -> None:
-    hr("TEST A -- DESTRUCTIVE INTERFERENCE NULL")
+    hr("TEST A -- DESTRUCTIVE CANCELLATION NULL")
     ga = test_A_geometry()
     gb = test_A_geometry_with_born()
-    qa = test_A_quantum()
+    qa = test_A_reference()
 
     print("\n[A1] geometry, NATIVE readout (additive ledger):")
     for k, v in ga.items():
@@ -279,7 +282,7 @@ def main() -> None:
     for k, v in gb.items():
         print(f"      {k:24s}: {v}")
 
-    print("\n[A3] quantum reference (qubit Mach-Zehnder):")
+    print("\n[A3] complex-amplitude reference (Mach-Zehnder control):")
     for k, v in qa.items():
         print(f"      {k:24s}: {v}")
 
@@ -287,45 +290,46 @@ def main() -> None:
           f"{ga['destructive_null']}")
     print("  ---> with complex amplitude + Born rule?            "
           f"{gb['destructive_null']}")
-    print("  ---> true quantum reference?                         "
+    print("  ---> complex-amplitude reference (control)?         "
           f"{qa['destructive_null']}")
 
     hr("TEST B -- CHSH / BELL INEQUALITY")
     gB = test_B_geometry()
-    qB = test_B_quantum()
+    qB = test_B_reference()
 
-    print("\n[B1] geometry (shared cube rotation as the entangled resource):")
+    print("\n[B1] geometry (shared cube rotation as the correlated resource):")
     for k, v in gB.items():
         print(f"      {k:24s}: {v}")
 
-    print("\n[B2] quantum reference (singlet pair):")
+    print("\n[B2] complex-amplitude reference (singlet pair):")
     for k, v in qB.items():
         print(f"      {k:24s}: {v}")
 
-    print(f"\n  ---> geometry CHSH S = {gB['CHSH_S']:.4f}  "
-          f"(classical bound 2.000)  violates? {gB['violates_bound']}")
-    print(f"  ---> quantum  CHSH S = {qB['CHSH_S']:.4f}  "
-          f"(Tsirelson 2.828)        violates? {qB['violates_bound']}")
+    print(f"\n  ---> geometry  CHSH S = {gB['CHSH_S']:.4f}  "
+          f"(classical bound 2.000)  exceeds? {gB['violates_bound']}")
+    print(f"  ---> reference CHSH S = {qB['CHSH_S']:.4f}  "
+          f"(Tsirelson 2.828)        exceeds? {qB['violates_bound']}")
 
     hr("VERDICT")
-    geo_quantum = ga["destructive_null"] and gB["violates_bound"]
+    geo_passes = ga["destructive_null"] and gB["violates_bound"]
     print(f"""
-  Geometry passes BOTH discriminators (interference null AND Bell violation)?
-        --> {geo_quantum}
+  Geometry passes BOTH discriminators (cancellation null AND Bell violation)?
+        --> {geo_passes}
 
   Interpretation:
     * Native geometry: NO destructive null (additive non-negative ledger) and
-      CHSH S <= 2 (it is a local hidden-variable system). It is QUANTUM-SHAPED
+      CHSH S <= 2 (it is a local hidden-variable system). It is PHASE-SHAPED
       but its dynamics are CLASSICAL under its own measurement rule.
     * The null DOES appear the moment we add complex amplitudes + the Born rule
       on top of the very same rotations -> the missing ingredient is the
       MEASUREMENT ALGEBRA, not the geometry.
     * The repo's mps_qudit.py (Fourier/SUM gates, complex tensors) is where the
-      real quantum algebra already lives -- that engine WOULD pass both tests.
+      real complex-amplitude algebra already lives -- that engine WOULD pass
+      both tests.
 
-  Bottom line: the geometry is the hardware/skeleton; quantum is the algebra.
-  To make it quantum you must run amplitude+phase+unitary+Born ON the geometry,
-  not merely possess the geometry.
+  Bottom line: the geometry is the hardware/skeleton; the amplitude algebra is
+  the layer that must run on it. Amplitude behavior requires complex state +
+  unitary evolution + Born readout ON the geometry, not merely the geometry.
 """)
 
 
