@@ -3,7 +3,7 @@ validate_negative_energy.py — "why can't the energy go negative? maybe that's 
 
 You're onto something real. A NON-NEGATIVE conserved quantity behaves like classical
 probability: things can only pile up, never cancel. A SIGNED (or complex) quantity can
-CANCEL — and cancellation (interference) is the whole reason quantum beats classical.
+CANCEL — and cancellation (interference) is the whole reason amplitude-like beats classical.
 
 So negativity IS essential to capture amplitudes. BUT: the MPS already uses signed/
 complex amplitudes. Negativity is necessary, not sufficient — it does not remove the

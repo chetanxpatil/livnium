@@ -11,7 +11,7 @@ in this folder, not asserted. Run any of them from the repo root with
 
 The "500-site computer" claim conflated two different things:
 
-- **Faithful entangled quantum sites** — limited by *entanglement*, not hardware.
+- **Faithful entangled amplitude-like sites** — limited by *entanglement*, not hardware.
 - **Addressable / structured sites** — limited only by memory.
 
 Separating them resolves everything:
@@ -28,7 +28,7 @@ Separating them resolves everything:
 **Bottom line:** 500 faithful sites is trivially reachable for *structured* states
 (we hit a million). It is impossible only for *fully random* states (wall at 13) —
 and that limit is fundamental, not an engineering gap. Random data is incompressible
-for everyone, classical or quantum.
+for everyone, classical or amplitude-like.
 
 ---
 
@@ -53,7 +53,7 @@ for everyone, classical or quantum.
 - `validate_representation.py` — you can change basis freely, but entanglement
   (Schmidt rank) is basis-invariant: no representation shrinks a truly entangled state.
 - `validate_sites_via_nesting.py` — address sites via nesting are effectively unlimited
-  (10^143); faithful quantum sites stay ~13. Nesting does not raise the entangled count.
+  (10^143); faithful amplitude-like sites stay ~13. Nesting does not raise the entangled count.
 - `validate_energy_sites.py` — feeding shrinking/dividing energy into the governor does
   NOT raise the 13 ceiling; tighter energy only prunes more (fewer faithful sites).
 - `validate_negative_energy.py` — negativity (signed amplitudes) is REQUIRED for
@@ -83,10 +83,10 @@ for everyone, classical or quantum.
 
 ## The one idea under all of it
 
-Computation — classical or quantum — is the **search for and exploitation of
+Computation — classical or amplitude-like — is the **search for and exploitation of
 structure**, reshaping a conserved budget it can never inflate.
 
-- Compression, distribution, and quantum speedup all work *exactly when structure
+- Compression, distribution, and amplitude-like speedup all work *exactly when structure
   exists*, and all die on pure randomness.
 - The bond dimension is simultaneously the memory cost, the cross-machine
   communication cost, and the entanglement — they are the same number.

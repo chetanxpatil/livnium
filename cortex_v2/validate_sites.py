@@ -32,7 +32,7 @@ print("="*70)
 print("TEST 2: HIGH-entanglement random circuit — is a generic 'computation' faithful?")
 print("="*70)
 print("max_chi caps the bond dimension. If trunc_error > 0, the simulator is")
-print("DISCARDING quantum information -> NOT a faithful n-site computer.")
+print("DISCARDING amplitude-like information -> NOT a faithful n-site computer.")
 print()
 rng = np.random.default_rng(1)
 for n in [12, 20, 30, 50]:

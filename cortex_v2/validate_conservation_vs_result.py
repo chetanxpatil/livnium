@@ -3,7 +3,7 @@ validate_conservation_vs_result.py — the key question:
 "if the system is conserved, can we just trust the result without looking inside?"
 
 Answer: NO. Conservation (cube ΣSW) is a checksum on the GEOMETRY. It is preserved
-even when the COMPUTATIONAL RESULT (the quantum amplitudes) is corrupted by
+even when the COMPUTATIONAL RESULT (the amplitude-like amplitudes) is corrupted by
 truncation. We prove it: same conserved ledger, different result.
 
 Run from repo root:  python cortex_v2/validate_conservation_vs_result.py
@@ -57,5 +57,5 @@ print()
 print("CONCLUSION: the conserved quantity did NOT move, yet the result is wrong")
 print("(fidelity < 1). Conservation is necessary bookkeeping, not proof of result.")
 print("You can trust 'don't look inside' ONLY for the pure geometry/address layer,")
-print("where the conserved permutation IS the result. For the quantum register the")
+print("where the conserved permutation IS the result. For the amplitude-like register the")
 print("result lives in the amplitudes, which conservation does not pin down.")

@@ -1,6 +1,6 @@
 """
 validate_energy_sites.py — does the split-&-decrease ENERGY change the faithful
-quantum-site ceiling?
+amplitude-like-site ceiling?
 
 Hypothesis: if energy shrinks/divides as we go down, maybe it limits entanglement
 and lets more sites stay faithful. We test it directly: drive the cube MPS while
@@ -43,7 +43,7 @@ def wall(label, **kw):
     return last_ok
 
 print("=" * 78)
-print("Does shrinking/dividing ENERGY raise the faithful quantum-site ceiling?")
+print("Does shrinking/dividing ENERGY raise the faithful amplitude-like-site ceiling?")
 print("=" * 78)
 b0 = wall("baseline: no governor (chi=64 only)")
 b1 = wall("energy governor, ceiling=2.0 (loose)", s_max=2.0)
@@ -62,6 +62,6 @@ if max(b1, b2, b3, b4) <= b0:
 else:
     print("  => energy shrinking RAISED the ceiling (unexpected — investigate).")
 print()
-print("WHY: entanglement entropy lives in the quantum amplitudes. The energy ledger")
+print("WHY: entanglement entropy lives in the amplitude-like amplitudes. The energy ledger")
 print("is conserved bookkeeping over GEOMETRY. Shrinking it cannot lower the Schmidt")
 print("rank the true state needs, so the ~13-site wall is unmoved.")

@@ -88,10 +88,10 @@ for its own geometry.* (`recursive_sumtree_bench.py`, `FINDINGS.md`)
 
 ## 4. What was pruned (overclaims dropped, with the reason)
 
-- **"quantum computer / 500 qubits"** → the simulator is correct quantum math
+- **"amplitude-like computer / 500 qubits"** → the simulator is correct amplitude-like math
   (unitary gates, real entanglement, Born rule) but full state-vector, capped at
   ~25–30 qubits by memory; 500 qubits needs ~5×10¹⁵¹ bytes (≈10⁷¹× the atoms in
-  the universe). Kept: a correct small-scale quantum simulator. Dropped: the scale
+  the universe). Kept: a correct small-scale amplitude-like simulator. Dropped: the scale
   and the "advantage" claim.
 - **"universal geometry engine"** → kept the measured sum-tree niche; dropped
   "universal."

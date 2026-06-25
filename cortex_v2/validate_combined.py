@@ -2,7 +2,7 @@
 validate_combined.py — SMALL test combining both mechanisms:
 
   (A) the nested cube hierarchy  -> conserved, inward-growing ADDRESS capacity
-  (B) the cube-driven MPS        -> a quantum register over a SLICE of those cells
+  (B) the cube-driven MPS        -> a amplitude-like register over a SLICE of those cells
 
 The hierarchy decides how many addressable cells exist (cheap, conserved). We then
 try to realize a slice of them as an entangled MPS register, driven by the cube's
