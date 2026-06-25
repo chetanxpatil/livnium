@@ -44,6 +44,19 @@ standard structures (`recursive_sumtree_bench.py`, n = 27⁴ = 531,441):
 **Verified capability:** O(1) global and *aligned-regional* conserved queries,
 O(depth) updates, ~27/26 ≈ 1.038× memory overhead (measured 0.0385×).
 
+Update performance is *measured*, not just complexity-labelled:
+
+| | point update (µs) | mixed 5000×(update + aligned query) |
+|---|---|---|
+| prefix-sum | 435 (O(n)) | 218 ms |
+| Fenwick/BIT | 2.4 (O(log n)) | 18.7 ms |
+| **recursive 27-tree** | **1.2 (O(depth))** | **9.9 ms** |
+
+On the update-heavy + aligned-region workload the 27-tree wins: ~2× over Fenwick
+(no log factor — a depth-4 path, aligned region = one stored node) and ~22× over
+prefix-sum (which can't update cheaply). `flat+cached` updates faster (0.15µs) but
+cannot answer aligned-region queries cheaply, so it is not a competitor here.
+
 **Honest scope:** this is the segment-tree / quadtree / Fenwick capability,
 enabled by conservation (`node = Σ children`). Its genuine niche is
 **update-heavy, hierarchically-aligned, conserved multiscale aggregation** — there
