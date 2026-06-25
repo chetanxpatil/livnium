@@ -66,6 +66,18 @@ arbitrary non-aligned regions. A real data-structural niche matched to the cube'
 aligned geometry — **not a universal engine**, but the right engine for its own
 query pattern.
 
+## Verdict
+
+The recursive layer is **not a universal accelerator**. It is an exact conserved
+sum-tree matched to a 27-ary nested geometry. Its real niche is update-heavy,
+hierarchically aligned, conserved multiscale aggregation: O(1) global/aligned-region
+queries, O(depth) updates, and ~3.8% memory overhead. It loses to prefix-sum on
+arbitrary regions and ties a cached scalar on bare totals, but it wins where the
+cube geometry naturally asks aligned questions.
+
+The recursion did not create magic. It created **native addressability for its own
+geometry**. That is the claim worth keeping.
+
 ## Reproduce
 
 ```bash
