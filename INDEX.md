@@ -173,14 +173,24 @@ Audited & patched per `COLLAPSE_ENGINE_VERDICT.md`. Strong validation coverage.
 
 `RESULTS.md` (A — honest SNLI verdict), `README.md` (B), `rung2_lib.py`, `rung2_livnium.py`, `rung2_livnium_word.py` (B — benchmark ladder).
 
-### Other root experiment scripts
+### `experiments/` — standalone experiment scripts *(moved from root 2026-07-02)*
 
 | File | Grade | Notes |
 |---|---|---|
-| `livnium.py` | B– | 43 KB Ramsey stress-test monolith; honest but large/standalone. |
-| `geometry_discriminator_test.py` | B | Backs the geometry verdict (reproducible). |
-| `char_typer_symbols.py` + `char_typer_symbols.pt` | B | Pure-geometry whole-symbol typer. |
+| `experiments/livnium.py` | B– | 43 KB Ramsey stress-test monolith; honest but large/standalone. |
+| `experiments/geometry_discriminator_test.py` | B | Backs the geometry verdict (reproducible). |
+| `experiments/char_typer_symbols.py` + `.pt` | B | Pure-geometry whole-symbol typer. |
+| `experiments/ledger.py`, `experiments/container_stream.py` | B | Ledger geometry + container stream (container_stream imports ledger — run from `experiments/`). |
+| `experiments/qwen_probe.py` | B | Qwen probe experiment. |
 | `visualizer/index.html` | B | Standalone visualizer. |
+
+### `rule30/` — Rule-30 investigation *(moved from root 2026-07-02)*
+
+`collapse_engine_rule30.py`, `honest_rule30_test.py`, `genuine_prediction_rule30.py`,
+`light_cone_rule30.py`, `funnel_rule30.py`, `scaffolding_rule30.py`,
+`extract_formula_rule30.py`, `final_answer_rule30.py`, `new_scale_rule30.py`,
+`select_from_flips.py` + the two `Rule30_*.docx` memos — the complete Rule-30
+prediction investigation, self-contained. **B**.
 
 ---
 

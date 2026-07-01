@@ -18,7 +18,7 @@ layer.
 
 ## Measured results
 
-*Reproduce:* `python3 geometry_discriminator_test.py`
+*Reproduce:* `python3 experiments/geometry_discriminator_test.py`
 
 A complex-amplitude reference is run alongside the core as a control. It lands on
 the textbook values (null = 0, CHSH = 2√2 ≈ 2.8284), which confirms the core's
