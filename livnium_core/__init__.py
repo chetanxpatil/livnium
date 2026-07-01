@@ -19,7 +19,24 @@ from .base27 import (
     int_to_base27,
 )
 from .hierarchy import capacity, global_ledger, wreath_group_order
-from .lattice import SW, class_counts, exposure, symbolic_weight_total
+from .lattice import (
+    SW,
+    Field,
+    MultipoleSignature,
+    class_counts,
+    dipole,
+    exposure,
+    mat_det,
+    mat_frobenius,
+    mat_trace,
+    monopole,
+    multipole_signature,
+    quadrupole,
+    rotate_field,
+    sw_field,
+    symbolic_weight_total,
+    vec_norm,
+)
 from .layer_language import evaluate as ll_evaluate
 from .layer_language import parse as ll_parse
 from .moves import FACES, apply_sequence, face_permutation, solved_state
@@ -54,6 +71,18 @@ __all__ = [
     "symbolic_weight_total",
     "exposure",
     "SW",
+    "Field",
+    "sw_field",
+    "monopole",
+    "dipole",
+    "quadrupole",
+    "vec_norm",
+    "mat_trace",
+    "mat_frobenius",
+    "mat_det",
+    "rotate_field",
+    "MultipoleSignature",
+    "multipole_signature",
     "rotation_group",
     "ROT_X",
     "ROT_Y",

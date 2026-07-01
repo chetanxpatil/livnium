@@ -1,5 +1,22 @@
 # Claim → checkpoint map (verification notes)
 
+## Chat-brain checkpoints (added 2026-07-02)
+
+| checkpoint | run | measured | status |
+|---|---|---|---|
+| `model/chat_typer.pt` | word typer, 20k vocab, 6k steps MPS | held-out per-word 98.0%, exact 86.4%, **clean OOV-free 100.0%** (from the run log) | ✅ verified; **superseded soon** — full-vocab (`--max-vocab 0`, ~67k wells) retrain pending |
+| `model/chat_reply.pt` | reasoning v1, 8 epochs @ lr 3e-4 | dev reply-nll/word 7.98 (uniform = 9.9); unigram-stage generations | ⚠️ under-trained by design of the run, superseded by the 60-epoch run |
+| `model/char_typer_all.pt` | char rung, raw canonical lines, batch 1024 | CE ~0.002 by step 1500 (in training at time of writing) | ⏳ first converged run was flatten-sourced; canonical rerun in progress |
+
+Mechanism verifications (numpy replicas on real data, no torch): reader
+order-sensitivity (reorder → meanpool cos 1.000000 vs collapse cos 0.072),
+self-attend memory retrievability (typed-word key rank 1), minting isolation
+(new-word wells max-cos 0.54 from all trained wells).
+
+---
+
+## SNLI premise-generator claims (original)
+
 Which checkpoint backs each public claim, what's verified, and what needs fixing.
 All checkpoints inspected directly (config + weight tensors read from the `.pt`
 files; param counts from storage sizes). PyTorch was not run — speed numbers are

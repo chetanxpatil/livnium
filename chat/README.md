@@ -1,4 +1,98 @@
-# Chat demo — the premise generator (on-device)
+# chat/ — the chat-brain + the SNLI premise demo
+
+Two projects live in this folder:
+
+1. **The chat-brain** (2026-07-02, active): a personal model ladder — char →
+   word → sentence → context → reasoning — trained entirely on one person's
+   ChatGPT export, every rung the same vector-collapse engine.
+2. **The SNLI premise generator** (the original on-device demo, unchanged,
+   documented in the second half of this file).
+
+---
+
+# Part 1 — The chat-brain
+
+## Data rule (single source of truth)
+
+Everything trains from the RAW ChatGPT export `conversations.json`, walked by
+the **canonical path** (`current_node` → parent chain — exactly the thread
+ChatGPT displays; edited/abandoned branches skipped). The old
+`flattened_conversations.json` is retired: it lost session boundaries, turn
+order, and ~half the raw text (616k lines vs 1.19M on the canonical walk).
+
+- Walk implementation: `prep_chat_context.canonical_turns()` — imported by every
+  rung that reads raw data. Fix once, fixed everywhere.
+- Kept: `user`/`assistant` roles, `text` + `multimodal_text` (image-question
+  text recovered). Dropped: system/tool payloads, `thoughts`, `reasoning_recap`,
+  `code` tool-calls.
+
+## The ladder
+
+| rung | file | what it learns | checkpoint |
+|---|---|---|---|
+| CHAR | `char_typer_all.py` | type raw lines back char-by-char; ALL ~2,000 chars get wells, ENTER included; code/markdown/emoji intact | `model/char_typer_all.pt` |
+| WORD | `chat_typer.py` | type cleaned sentences back word-by-word; `--max-vocab 0` = a well for every word (~67k) | `model/chat_typer.pt` |
+| minting bridge | `chat_typer_live.py` + `char_fingerprint.py` | unseen word at inference → well minted from spelling (no retraining) | grows `chat_typer.pt` |
+| SENTENCE (read) | `chat_reply.py :: read()` | context read as a collapse **trajectory** — order-aware; `state_i` = conversation up to word i | inside `chat_reply.pt` |
+| CONTEXT (data) | `prep_chat_context.py` | session-aware examples: last 3 turns tagged `<you>`/`<me>` → next reply; sessions never bleed; tail-truncated at 48 words | `data/chat_context.tsv` |
+| REASONING | `chat_reply.py` | per typed word: attend over context trajectory **+ its own typed words** (growing memory), pick nearest well, collapse; `--chat` = multi-turn REPL with `thinking` traces | `model/chat_reply.pt` |
+
+One engine everywhere: `h ← h − strength·(1−cos(h,W))·norm(h−W)`. The neural
+parts (attention, brain MLP) only pick the next well; collapse executes it.
+
+## Commands
+
+```bash
+# char rung (raw export, canonical walk)
+python3 char_typer_all.py --batch 1024
+
+# word rung — full vocabulary
+python3 chat_typer.py --max-vocab 0
+
+# minting demo (type anything, unseen words are minted live)
+python3 chat_typer_live.py
+
+# reasoning data + training + talk
+python3 prep_chat_context.py
+python3 chat_reply.py --lr 1e-3 --epochs 60 --neg-samples 512
+python3 chat_reply.py --chat
+```
+
+## Results so far (2026-07-02)
+
+- **Word typer (20k vocab run):** held-out per-word 98.0%, exact-sentence 86.4%,
+  **clean OOV-free 100.0%**. The entire exact-sentence gap was OOV words —
+  motivated the full-vocab retrain (pending below).
+- **Char typer:** CE 6.4 → ~0.002 by step 1500 on 1.19M canonical raw lines,
+  1,978 char wells. (First converged run was flatten-sourced; canonical rerun
+  in progress at time of writing.)
+- **Reasoning v1 (8 epochs @ lr 3e-4):** reached the unigram stage (function-word
+  loops) — expected: ~1,000 steps is 30× under-dosed vs the typer. Superseded by
+  the 60-epoch run.
+- Verified mechanisms (numpy replicas on real data): order-sensitivity of the
+  collapse reader (reordered words: meanpool cos 1.000000 vs collapse cos 0.072),
+  growing self-attend memory (typed words uniquely retrievable, rank 1), minting
+  (unseen-word wells max-cos 0.54 from trained wells — no collisions).
+
+## Pending / known-stale (kept honest)
+
+1. **Word typer full-vocab retrain not done** — `model/chat_typer.pt` is still
+   the 20k run. Rerun `python3 chat_typer.py --max-vocab 0`, then retrain
+   `chat_reply.py` (26% of reply targets contained `<unk>` under 20k).
+2. **`prep_chat_sentences.py` still reads the flatten** — the word corpus
+   `data/chat_sentences.txt` predates the single-source rule. Should switch to
+   `canonical_turns()` and regenerate before the next word-typer run.
+3. **`prep_chat_pairs.py` + `data/chat_pairs.tsv` are deprecated** (flatten-based,
+   context-free) — superseded by `prep_chat_context.py`; safe to delete.
+4. **Minting still uses the hash fingerprint** — once `char_typer_all.pt` exists,
+   swap `char_fingerprint.py`'s deterministic hash for the *trained* char wells
+   (collapse the spelling through them to birth the new word's well).
+5. Session awareness = hard walls + 3-turn window only. Rung 6 candidate: collapse
+   the whole conversation-so-far into a session-state vector fed beside `z`.
+
+---
+
+# Part 2 — Chat demo — the premise generator (on-device)
 
 A tiny (5.98M-param) NLI model trained **only on SNLI**, no pretrained
 embeddings. You type a hypothesis; it types back a premise under a fixed label.
@@ -87,7 +181,12 @@ it. That limitation is the point, not a bug.
 
 ## Files
 
-`chat_premise.py` (interactive) · `chat_bench.py` (benchmark) ·
+**Chat-brain:** `char_typer_all.py` · `chat_typer.py` · `chat_typer_live.py` ·
+`char_fingerprint.py` · `prep_chat_context.py` · `chat_reply.py` ·
+`data/chat_context.tsv`, `data/chat_sentences.txt` ·
+`model/chat_typer.pt`, `model/chat_reply.pt`, `model/char_typer_all.pt`
+
+**SNLI demo:** `chat_premise.py` (interactive) · `chat_bench.py` (benchmark) ·
 `premise_from_hyp.py` (model) · `sentence_typer.py`, `char_collapse_pure.py`
 (encoders) · `model/premise_from_hyp_align_53.pt` (weights) ·
 `SNLI_BASELINES.md` (the honest leaderboard comparison).
