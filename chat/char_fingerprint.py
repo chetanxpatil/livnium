@@ -48,7 +48,10 @@ def char_fingerprint(word, A, dim=None):
     stride = max(1, dim // MAX_WORD)
     ids = [LETTERS.index(c) for c in word.lower() if c in LETTERS][:MAX_WORD]
     if not ids:
-        g = torch.Generator().manual_seed(hash(word) & 0xffffffff)
+        # deterministic hash: python's hash() is salted per process, which
+        # would give "75" a different well every session. crc32 never moves.
+        import zlib
+        g = torch.Generator().manual_seed(zlib.crc32(word.encode("utf-8")))
         return F.normalize(torch.randn(dim, generator=g), dim=-1).to(A.device)
     v = torch.zeros(dim, device=A.device)
     for i, ci in enumerate(ids):

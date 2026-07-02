@@ -107,6 +107,7 @@ class ChatTyper(nn.Module):
         self.start = nn.Parameter(torch.randn(dim) * 0.05)
         self.log_strength = nn.Parameter(torch.tensor(0.0))
         self.log_temp = nn.Parameter(torch.tensor(0.0))
+        self.neg_samples = 0    # >0 => sampled-softmax CE in TRAINING (eval stays full-vocab)
 
     @property
     def strength(self):
@@ -146,6 +147,25 @@ class ChatTyper(nn.Module):
 
     def loss(self, word_ids):
         states, _ = self.encode(word_ids)
+        if self.training and self.neg_samples > 0:
+            # sampled softmax: score the TRUE word + K random negatives instead of
+            # all n_words. Kills the dominant (B*L) x n_words matmul + its backward
+            # (which otherwise pushes gradients into every well every step).
+            anchors = F.normalize(self.word_anchors, dim=-1)
+            sn = F.normalize(states, dim=-1)                       # (B, L, dim)
+            B, L, D = sn.shape
+            tgt = word_ids.reshape(-1)                             # (B*L,)
+            snf = sn.reshape(-1, D)                                # (B*L, dim)
+            pos = (snf * anchors[tgt]).sum(-1, keepdim=True) / self.temp     # (B*L, 1)
+            neg_ids = torch.randint(1, self.n_words, (self.neg_samples,),
+                                    device=word_ids.device)        # skip PAD(0)
+            neg = (snf @ anchors[neg_ids].t()) / self.temp         # (B*L, K)
+            cand = torch.cat([pos, neg], dim=1)                    # true word = col 0
+            ll = F.cross_entropy(cand, torch.zeros(cand.size(0), dtype=torch.long,
+                                                   device=word_ids.device),
+                                 reduction="none")
+            mask = (tgt != PAD).float()
+            return (ll * mask).sum() / mask.sum().clamp(min=1.0)
         logits = self.logits(states)
         ce = F.cross_entropy(
             logits.reshape(-1, self.n_words), word_ids.reshape(-1), ignore_index=PAD
@@ -161,6 +181,12 @@ def main():
     ap.add_argument("--batch", type=int, default=BATCH)
     ap.add_argument("--max-vocab", type=int, default=MAX_VOCAB,
                     help="0 = keep every word in the corpus (full vocabulary)")
+    ap.add_argument("--neg-samples", type=int, default=0,
+                    help="sampled-softmax: true word + K random negatives in training "
+                         "(eval/decode stay full-vocab). Try 512 for big vocabs. 0=off")
+    ap.add_argument("--stop-ce", type=float, default=0.0,
+                    help="early stop: end training once avg ce over a 250-step window "
+                         "drops below this (e.g. 0.001). 0 = run all steps")
     ap.add_argument("--lr", type=float, default=LR)
     ap.add_argument("--out", default=CKPT_OUT)
     ap.add_argument("--device", default="auto", choices=["auto", "mps", "cuda", "cpu"])
@@ -189,23 +215,34 @@ def main():
     print(f"dim {DIM}   steps/word {STEPS_PER_WORD}   lr {args.lr}   device {device}   (MLP: NONE, GRU: NONE, CHAR: NONE)\n")
 
     model = ChatTyper(n_words).to(device)
+    model.neg_samples = args.neg_samples
+    if args.neg_samples > 0:
+        print(f"sampled-softmax: {args.neg_samples} negatives (training only)\n")
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     train_ids = encode_batch(train_sents, stoi, unk, eos).to(device)
 
     model.train()
     t0 = time.time(); t_mark = t0
+    win = torch.zeros((), device=device); nwin = 0     # on-device window avg (no sync)
     for step in range(1, args.steps + 1):
         idx = torch.randint(0, len(train_sents), (args.batch,), device=device)
         loss = model.loss(train_ids[idx])
         opt.zero_grad(); loss.backward(); opt.step()
+        win += loss.detach(); nwin += 1
         if step % 250 == 0 or step == 1:
             now = time.time()
             sps = 250 / (now - t_mark) if step > 1 else float("nan")
             eta = (args.steps - step) / sps / 60 if sps == sps else float("nan")
             t_mark = now
+            avg = (win / max(nwin, 1)).item()
             print(f"step {step:5d}  ce {loss.item():.4f}  "
                   f"strength {model.strength.item():.3f}  temp {model.temp.item():.3f}  "
                   f"| {sps:5.1f} steps/s  eta {eta:4.1f} min", flush=True)
+            if args.stop_ce > 0 and step > 250 and avg < args.stop_ce:
+                print(f"\n[early stop] avg ce {avg:.5f} < {args.stop_ce} — learned. "
+                      f"({step} steps, saved {(args.steps-step)/sps/60:.0f} min)", flush=True)
+                break
+            win.zero_(); nwin = 0
     total = time.time() - t0
     print(f"\ntrained {args.steps} steps in {total/60:.1f} min "
           f"({args.steps/total:.1f} steps/s) on {device}\n", flush=True)

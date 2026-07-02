@@ -24,19 +24,8 @@ import re
 DEFAULT_IN = ("/Users/chetanpatil/Desktop/test/lab/infected/projects/"
               "chat_crystal/build/unit_test_assets/assets/conversations.json")
 
-# split on sentence-ish boundaries: . ! ? or a newline
-_SPLIT = re.compile(r"[.!?]+|\n+")
-# keep letters, digits, apostrophes and basic punctuation-as-space
-_CLEAN = re.compile(r"[^a-z0-9' ]+")
-
-
-def to_sentences(text):
-    for chunk in _SPLIT.split(text or ""):
-        s = chunk.lower()
-        s = _CLEAN.sub(" ", s)          # drop markdown/symbols, keep words
-        s = re.sub(r"\s+", " ", s).strip()
-        if s:
-            yield s
+# ONE cleaning source: prep_chat_context owns tokenization (punctuation = tokens)
+from prep_chat_context import to_sentences  # noqa: E402
 
 
 def main():

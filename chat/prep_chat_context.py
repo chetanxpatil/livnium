@@ -23,26 +23,55 @@ Usage:
 import argparse
 import json
 import os
-import re
 
 DEFAULT_IN = ("/Users/chetanpatil/Desktop/test/lab/infected/projects/"
               "chat_crystal/build/unit_test_assets/assets/conversations.json")
 
 YOU, ME = "<you>", "<me>"          # speaker wells — trainable tokens, not text
-_CLEAN = re.compile(r"[^a-z0-9' ]+")
-_SPLIT = re.compile(r"[.!?]+|\n+")
+# punctuation are TOKENS, not noise: . , ! ? ; : each gets its own well.
+# the full stop is the strongest end-of-thought signal in the data.
+_ENDERS = {".", "!", "?"}
+_KEEP = set(".,!?;:")              # peeled punctuation worth a well of its own
+# curly -> straight so "that's" and "that's" are ONE word, not two wells
+_UNI = str.maketrans({"’": "'", "‘": "'", "ʼ": "'", "`": "'", "´": "'",
+                      "…": "."})
 
 
 def clean(text):
-    s = _CLEAN.sub(" ", (text or "").lower())
-    return re.sub(r"\s+", " ", s).strip()
+    """SIMPLE: split on spaces, peel symbols off each word's EDGES only.
+    The inside of a word is never touched — that's, e-mail, 128d stay whole.
+    Peeled . , ! ? ; : become standalone tokens; other symbols just drop."""
+    out = []
+    for w in (text or "").lower().translate(_UNI).split():
+        head, tail = [], []
+        while w and not w[0].isalnum():                # peel front symbols
+            head.append(w[0]); w = w[1:]
+        while w and not w[-1].isalnum():               # peel back symbols
+            tail.append(w[-1]); w = w[:-1]
+        for p in head:
+            if p in _KEEP and not (out and out[-1] == p):
+                out.append(p)
+        if w:
+            out.append(w)
+        for p in reversed(tail):
+            if p in _KEEP and not (out and out[-1] == p):
+                out.append(p)
+    return " ".join(out)
 
 
 def to_sentences(text):
-    for chunk in _SPLIT.split(text or ""):
-        s = clean(chunk)
-        if s:
-            yield s
+    """Newline-first, then break AFTER sentence-enders — which stay as tokens.
+    'the bug is on line 3.' -> 'the bug is on line 3 .'"""
+    for line in (text or "").split("\n"):
+        toks = clean(line).split()
+        cur = []
+        for t in toks:
+            cur.append(t)
+            if t in _ENDERS:
+                yield " ".join(cur)
+                cur = []
+        if cur:
+            yield " ".join(cur)
 
 
 def node_text(node):
@@ -111,8 +140,9 @@ def main():
     ap.add_argument("--out", default="data/chat_context.tsv")
     ap.add_argument("--ctx-turns", type=int, default=3,
                     help="how many turns of history feed each prediction")
-    ap.add_argument("--ctx-words", type=int, default=48,
-                    help="context word budget (oldest words drop first)")
+    ap.add_argument("--ctx-words", type=int, default=256,
+                    help="context word budget (oldest words drop first; big "
+                         "enough that a whole question survives intact)")
     ap.add_argument("--reply-words", type=int, default=32)
     ap.add_argument("--min-words", type=int, default=2)
     args = ap.parse_args()

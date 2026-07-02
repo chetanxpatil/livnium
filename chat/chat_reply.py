@@ -1,75 +1,83 @@
 """
-chat_reply.py — the GENERATOR: your message -> TYPE the reply, on the typer's wells.
+chat_reply.py — the GENERATOR: (your last turns) -> TYPE the reply.
 
-This is premise_from_hyp.py ported to your chats, with the same simplifications
-that worked for the typer:
-  * NO labels. NLI had (hypothesis + label) -> premise; chat has just
-    (your message) -> reply. label_emb, the margin loss, and the generative
-    classifier are gone.
-  * NO char stage. Word wells warm-start from model/chat_typer.pt — the wells
-    that already type your chats at ~100% clean — and keep training.
-  * ALIGN is ON by default. On SNLI, per-step attention over the input words was
-    the best model (+8.6 points). Here it is the 'reasoning': every reply word is
-    picked while looking at a specific word of YOUR message, and the trace of
-    what it looked at is printed as 'thinking'. --no-align for the baseline.
+One mechanism, used three times on the same word wells:
+    READ    collapse through the context words -> a trajectory of states.
+    THINK   z = linear(final state); the writing state h starts at z.
+    WRITE   step t: attend over [trajectory + own typed words], build a
+            query, cos(query, wells)/temp picks the next word. Punish with
+            per-word CE vs the true reply; collapse h onto the word walked.
 
-Mechanism (unchanged collapse engine):
-    z      = think(meanpool(message word wells))            # the thought
-    h0     = z
-    step t : ctx   = attend(h -> message words)             # what it's looking at
-             query = brain([h ; z ; ctx]) -> cos(query, wells)/temp -> next word
-             punish with CE vs the true reply word
-             h <- collapse(h, well[true reply word])        # teacher forcing
+Everything else is a training lever — all default-ON, each with an off switch:
+    fast reader      distilled 8-tap conv = the sequential read   --no-fast-reader
+    vocab cut        wells only for words seen >=2x in train      --min-freq 1
+    char wells       OOV words READ through minted char wells     --no-char-wells
+    meaning weights  rare (content) words punish harder           --meaning-w 0
+    pos scaffold     "where am I in the reply", annealed to 0     --pos-anneal 0
+    sched sampling   sometimes walk on own picks, ramped up       --sched-sample 0
+    sampled softmax  512 negatives instead of the full vocab      --neg-samples 0
+    early stop       patience on dev NLL                          --patience N
 
-Context (v2, session-aware): trains on data/chat_context.tsv from
-prep_chat_context.py — each example is the last K turns of a real conversation,
-speaker-tagged <you>/<me> (fresh trainable wells), tail-truncated so the newest
-words always survive. --chat is multi-turn: it feeds the live conversation back
-as context, the same shape it trained on.
+The char layer (char_fingerprint.py) is READ-side only: an unseen word gets a
+stable well minted from its letters so the reader never collapses through
+<unk> mush — but the writer's vocabulary stays trained-words-only. Spelling
+earns a word the right to be HEARD; only training earns the right to be SAID.
+
+Data: data/chat_context.tsv from prep_chat_context.py — the last K turns of a
+real conversation, speaker-tagged <you>/<me>, tail-truncated (newest words
+survive). --chat feeds the live conversation back in the same shape.
 
 Usage:
-    python3 prep_chat_context.py                   # once: raw export -> data/chat_context.tsv
-    python3 chat_reply.py                          # train (align on, warm wells)
-    python3 chat_reply.py --chat                   # talk to it (multi-turn)
-    python3 chat_reply.py --no-align               # baseline: pooled thought only
+    python3 prep_chat_context.py     # once: raw export -> data/chat_context.tsv
+    python3 chat_reply.py            # train
+    python3 chat_reply.py --chat     # talk to it (multi-turn)
 """
 
 import argparse
 import os
 import random
+import time
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from chat_typer import encode_batch, MAXLEN, PAD, SEED
+from char_fingerprint import letter_anchors, char_fingerprint
 
 TYPER_CKPT = "model/chat_typer.pt"
+FAST_CKPT = "model/fast_reader.pt"
 CKPT_OUT = "model/chat_reply.pt"
-SPECIALS = ["<you>", "<me>"]      # speaker wells: minted fresh, trained like any word
-CTX_WORDS = 48                    # context budget (oldest words drop first)
+SPECIALS = ["<you>", "<me>"]      # speaker wells: minted fresh, trained like words
+CTX_WORDS = 256                   # context budget (oldest words drop first —
+                                  # big enough that whole questions go in)
 
+
+# ---------------------------------------------------------------- the model
 
 class ReplyBrain(nn.Module):
-    """Generates a reply from your message via collapse-typing. No labels, no char.
+    """(context ids) -> type the reply, word by word, on the shared wells."""
 
-    READER (v3): the context is read the same way sentences are written — by
-    COLLAPSING through it word by word (the typer's encode). The trajectory of
-    states is the sentence-aware memory: state_i = 'the conversation up to word
-    i'. z = think(final state), and alignment attends over the trajectory, not
-    over static word wells. reader='meanpool' keeps the old bag-of-words."""
-
-    def __init__(self, n_words, dim, eos, warm=None, hidden=512, align=True,
-                 reader="collapse", warm_start=None, warm_strength=None):
+    def __init__(self, n_words, dim, eos, warm=None, hidden=512, pos=False,
+                 warm_start=None, warm_strength=None):
         super().__init__()
         self.eos, self.dim, self.n_words = eos, dim, n_words
-        self.align = align
-        self.reader = reader
-        self.word_anchors = nn.Parameter(torch.randn(n_words, dim) * (1.0 / dim ** 0.5))
+        self.pos = pos
+        # training levers, set from outside (see main):
+        self.pos_w = 0.0          # positional scaffold weight, annealed 1 -> 0
+        self.sample_p = 0.0       # scheduled sampling: prob of walking on own pick
+        self.neg_samples = 0      # sampled-softmax negatives (0 = full vocab CE)
+        self.word_w = None        # per-word loss weights (meaning weighting)
+        self.fast_alpha = None    # distilled reader taps (None = exact walk)
+        self.oov_wells = None     # frozen char wells for OOV words (READ only)
+
+        # the wells: one vector per word, warm-started from the typer
+        self.word_anchors = nn.Parameter(torch.randn(n_words, dim) / dim ** 0.5)
         if warm is not None:
             with torch.no_grad():
                 self.word_anchors.copy_(warm); self.word_anchors[PAD].zero_()
-        # reader params: the typer's start vector + its learned collapse strength
+
+        # reader: the typer's start vector + its learned collapse strength
         self.start = nn.Parameter(torch.randn(dim) * 0.05)
         if warm_start is not None:
             with torch.no_grad():
@@ -77,16 +85,18 @@ class ReplyBrain(nn.Module):
         s0 = 2.2 if warm_strength is None else float(
             torch.logit(torch.tensor(min(max(warm_strength, 1e-3), 1 - 1e-3))))
         self.log_strength_read = nn.Parameter(torch.tensor(s0))
-        self.think = nn.Linear(dim, dim)                 # read state -> thought
-        n_parts = 2 + (1 if align else 0)                # [h ; z] (+ aligned ctx)
+
+        # writer: thought + attention + brain + write-collapse
+        self.think = nn.Linear(dim, dim)
+        if pos:
+            self.pos_emb = nn.Parameter(torch.randn(MAXLEN + 2, dim) * 0.05)
+        n_parts = 3 + (1 if pos else 0)               # [h ; z ; ctx] (+pos)
         self.brain = nn.Sequential(nn.Linear(n_parts * dim, hidden), nn.Tanh(),
                                    nn.Linear(hidden, dim))
-        if align:
-            self.att_key = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
-            self.att_query = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
+        self.att_key = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
+        self.att_query = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
         self.log_strength = nn.Parameter(torch.tensor(0.0))
         self.log_temp = nn.Parameter(torch.tensor(0.0))
-        self.neg_samples = 0        # >0 => sampled-softmax CE in TRAINING only
 
     @property
     def strength(self):
@@ -100,20 +110,18 @@ class ReplyBrain(nn.Module):
     def strength_read(self):
         return torch.sigmoid(self.log_strength_read)
 
-    def meanpool(self, ids, A):
-        m = (ids != PAD).float().unsqueeze(-1)
-        return (A[ids] * m).sum(1) / m.sum(1).clamp(min=1.0)
+    # -- reading ------------------------------------------------------------
 
-    def read(self, msg_ids, A):
-        """Read the context by collapsing through it (the typer's encode).
-        Returns (normalized trajectory states, mask, final state)."""
-        B, L = msg_ids.shape
-        mask = (msg_ids != PAD)
+    def read(self, ids, A):
+        """EXACT reader: collapse through the context sequentially.
+        Returns (normalized trajectory, mask, final state)."""
+        B, L = ids.shape
+        mask = (ids != PAD)
         h = self.start.expand(B, -1).contiguous()
         s = self.strength_read
         states = []
         for i in range(L):
-            target = A[msg_ids[:, i]]
+            target = A[ids[:, i]]
             m = mask[:, i].float().unsqueeze(-1)
             align = (F.normalize(h, dim=-1) * target).sum(-1)
             away = F.normalize(h - target, dim=-1)
@@ -121,17 +129,36 @@ class ReplyBrain(nn.Module):
             n = h.norm(dim=-1, keepdim=True)
             h = torch.where(n > 10.0, h * (10.0 / (n + 1e-8)), h)
             states.append(h)
-        S = torch.stack(states, dim=1)                 # (B, L, dim) the trajectory
+        S = torch.stack(states, dim=1)
         return F.normalize(S, dim=-1), mask, h
 
-    def read_context(self, msg_ids, A):
-        """Both readers behind one door: returns (memory, mask, thought-input).
-        collapse: memory = trajectory states (order-aware)
-        meanpool: memory = static word wells   (bag-of-words baseline)"""
-        if self.reader == "collapse":
-            S, mask, hT = self.read(msg_ids, A)
-            return S, mask, hT
-        return A[msg_ids], (msg_ids != PAD), self.meanpool(msg_ids, A)
+    def read_fast(self, ids, A):
+        """DISTILLED reader (fast_reader.py): the same trajectory as a causal
+        K-tap conv over the wells — one parallel op, no sequential walk."""
+        mask = (ids != PAD)
+        wells = A[ids] * mask.unsqueeze(-1)               # PAD contributes zero
+        B, L, D = wells.shape
+        K = self.fast_alpha.numel()
+        x = F.pad(wells.transpose(1, 2), (K - 1, 0))      # causal left-pad
+        w = self.fast_alpha.flip(0).view(1, 1, K).expand(D, 1, K)
+        S = F.conv1d(x, w, groups=D).transpose(1, 2)
+        lens = mask.sum(1).clamp(min=1) - 1
+        hT = S[torch.arange(B, device=ids.device), lens]  # last real state
+        return F.normalize(S + 1e-8, dim=-1), mask, hT
+
+    def read_context(self, ids, A):
+        if self.fast_alpha is not None:
+            return self.read_fast(ids, A)
+        return self.read(ids, A)
+
+    def read_table(self, A):
+        """READING sees [trained wells | frozen char wells]. WRITING sees A
+        only — context ids may point past n_words, reply targets never do."""
+        if self.oov_wells is None or self.oov_wells.numel() == 0:
+            return A
+        return torch.cat([A, self.oov_wells], dim=0)
+
+    # -- writing ------------------------------------------------------------
 
     def collapse_step(self, h, target):
         align = (F.normalize(h, dim=-1) * target).sum(-1)
@@ -141,32 +168,31 @@ class ReplyBrain(nn.Module):
         return torch.where(n > 10.0, h * (10.0 / (n + 1e-8)), h)
 
     def reply_nll(self, msg_ids, rep_ids, reduce_mean=True):
-        """Teacher-forced NLL of the reply. This is the punishment.
-        SELF-ATTEND: each typed word's collapse state joins the memory, so the
-        writer can look back at its own words, not just the context."""
+        """Teacher-forced NLL of the reply — the punishment.
+        The memory GROWS: each typed word's state joins it (self-attend).
+        (Growth uses torch.cat, not in-place writes: autograd needs the old
+        memory intact for backward. generate() preallocates instead.)"""
         A = F.normalize(self.word_anchors, dim=-1)
-        EM, mmask, hread = self.read_context(msg_ids, A)   # memory = trajectory (or wells)
+        mem, vmask, hread = self.read_context(msg_ids, self.read_table(A))
+        kmem = self.att_key(mem)
         z = self.think(hread)
         h = z
-        if self.align:
-            K = self.att_key(EM)
-            mem, kmem, vmask = EM, K, mmask                # growing memory
         B, L = rep_ids.shape
         tok_nll = torch.zeros(B, device=rep_ids.device)
         tok_cnt = torch.zeros(B, device=rep_ids.device)
         sampled = self.training and self.neg_samples > 0
         for t in range(L):
             hn = F.normalize(h, dim=-1)
-            parts = [hn, z]
-            if self.align:
-                q = self.att_query(hn).unsqueeze(1)                        # (B,1,dim)
-                scores = torch.bmm(q, kmem.transpose(1, 2)).squeeze(1)
-                scores = scores.masked_fill(~vmask, -1e9)
-                attn = torch.softmax(scores, dim=-1).unsqueeze(1)
-                parts.append(torch.bmm(attn, mem).squeeze(1))              # aligned ctx
+            q = self.att_query(hn).unsqueeze(1)
+            scores = torch.bmm(q, kmem.transpose(1, 2)).squeeze(1)
+            attn = torch.softmax(scores.masked_fill(~vmask, -1e9), dim=-1)
+            ctx = torch.bmm(attn.unsqueeze(1), mem).squeeze(1)
+            parts = [hn, z, ctx]
+            if self.pos:                                  # annealed scaffold
+                parts.append(self.pos_w * self.pos_emb[t].unsqueeze(0).expand(B, -1))
             query = F.normalize(self.brain(torch.cat(parts, dim=-1)), dim=-1)
             tgt = rep_ids[:, t]
-            if sampled:
+            if sampled:                                   # 1 pos + K random negs
                 pos = (query * A[tgt]).sum(-1, keepdim=True) / self.temp
                 neg_ids = torch.randint(1, self.n_words, (self.neg_samples,),
                                         device=rep_ids.device)
@@ -175,66 +201,88 @@ class ReplyBrain(nn.Module):
                 ll = F.cross_entropy(cand, torch.zeros(cand.size(0), dtype=torch.long,
                                                        device=rep_ids.device),
                                      reduction="none")
-            else:
-                logits = (query @ A.t()) / self.temp
-                ll = F.cross_entropy(logits, tgt, reduction="none")
+            else:                                         # full-vocab CE
+                ll = F.cross_entropy((query @ A.t()) / self.temp, tgt,
+                                     reduction="none")
             mask = (tgt != PAD).float()
+            if self.training and self.word_w is not None:
+                # meaning weighting: "the" is cheap, "scaffold" is expensive —
+                # the reply must earn its content words, not just its skeleton
+                mask = mask * self.word_w[tgt]
             tok_nll += ll * mask; tok_cnt += mask
-            h = self.collapse_step(h, A[tgt])                              # teacher forcing
-            if self.align:                                 # the word just typed becomes
-                hs = F.normalize(h, dim=-1).unsqueeze(1)   # part of the memory
-                mem = torch.cat([mem, hs], dim=1)
-                kmem = torch.cat([kmem, self.att_key(hs)], dim=1)
-                vmask = torch.cat([vmask, (tgt != PAD).unsqueeze(1)], dim=1)
+            walk = tgt                                    # teacher forcing
+            if self.training and self.sample_p > 0:
+                # scheduled sampling: with prob p walk on the model's own pick.
+                # full-vocab argmax only for the rows that flipped heads.
+                coin = (torch.rand(B, device=rep_ids.device) < self.sample_p) & (tgt != PAD)
+                if bool(coin.any()):
+                    with torch.no_grad():
+                        lg = query[coin] @ A.t()
+                        lg[:, PAD] = float("-inf")
+                        walk = tgt.clone()
+                        walk[coin] = lg.argmax(-1)
+            h = self.collapse_step(h, A[walk])
+            hs = F.normalize(h, dim=-1).unsqueeze(1)      # typed word joins memory
+            mem = torch.cat([mem, hs], dim=1)
+            kmem = torch.cat([kmem, self.att_key(hs)], dim=1)
+            vmask = torch.cat([vmask, (tgt != PAD).unsqueeze(1)], dim=1)
         if reduce_mean:
             return (tok_nll / tok_cnt.clamp(min=1)).mean()
         return tok_nll, tok_cnt
 
     @torch.no_grad()
     def generate(self, msg_ids, max_len, unk=None, ban=()):
-        """Free-running greedy decode: the model types its own reply, feeding each
-        choice back into the collapse. Returns token ids and, with align, the
-        message-word index it leaned on at each step (the 'thinking')."""
+        """Free-running greedy decode. Returns token ids and, per step, the
+        memory index it attended to (the 'thinking' trace)."""
         A = F.normalize(self.word_anchors, dim=-1)
-        EM, mmask, hread = self.read_context(msg_ids, A)   # memory = trajectory (or wells)
+        traj, tmask, hread = self.read_context(msg_ids, self.read_table(A))
         z = self.think(hread)
         h = z
-        if self.align:
-            mem, kmem, vmask = EM, self.att_key(EM), mmask
-        B = msg_ids.size(0)
+        B, Lm = msg_ids.size(0), traj.size(1)
+        # preallocated memory (no_grad => in-place writes are safe here)
+        mem = traj.new_zeros(B, Lm + max_len, self.dim); mem[:, :Lm] = traj
+        kmem = traj.new_zeros(B, Lm + max_len, self.dim); kmem[:, :Lm] = self.att_key(traj)
+        vmask = torch.zeros(B, Lm + max_len, dtype=torch.bool, device=msg_ids.device)
+        vmask[:, :Lm] = tmask
+        mlen = Lm
         toks, attn = [], []
         done = torch.zeros(B, dtype=torch.bool, device=msg_ids.device)
-        for _ in range(max_len):
+        prev = None                                   # repeat-killer: last word
+        for t in range(max_len):
             hn = F.normalize(h, dim=-1)
-            parts = [hn, z]
-            if self.align:
-                q = self.att_query(hn).unsqueeze(1)
-                scores = torch.bmm(q, kmem.transpose(1, 2)).squeeze(1).masked_fill(~vmask, -1e9)
-                a = torch.softmax(scores, dim=-1)
-                attn.append(a.argmax(-1))
-                parts.append(torch.bmm(a.unsqueeze(1), mem).squeeze(1))
+            q = self.att_query(hn).unsqueeze(1)
+            scores = torch.bmm(q, kmem[:, :mlen].transpose(1, 2)).squeeze(1)
+            a = torch.softmax(scores.masked_fill(~vmask[:, :mlen], -1e9), dim=-1)
+            attn.append(a.argmax(-1))
+            ctx = torch.bmm(a.unsqueeze(1), mem[:, :mlen]).squeeze(1)
+            parts = [hn, z, ctx]
+            if self.pos:
+                parts.append(self.pos_w * self.pos_emb[t].unsqueeze(0).expand(B, -1))
             query = self.brain(torch.cat(parts, dim=-1))
             logits = (F.normalize(query, dim=-1) @ A.t()) / self.temp
             logits[:, PAD] = float("-inf")
             if unk is not None:
                 logits[:, unk] = float("-inf")
-            for b in ban:                      # e.g. never type <you>/<me>
+            for b in ban:                             # e.g. never type <you>/<me>
                 logits[:, b] = float("-inf")
+            if prev is not None:                      # no same word twice in a row
+                logits[torch.arange(B, device=logits.device), prev] = float("-inf")
             nxt = logits.argmax(-1)
+            prev = nxt
             toks.append(nxt)
             h = self.collapse_step(h, A[nxt])
-            if self.align:                                 # own words join the memory
-                hs = F.normalize(h, dim=-1).unsqueeze(1)
-                mem = torch.cat([mem, hs], dim=1)
-                kmem = torch.cat([kmem, self.att_key(hs)], dim=1)
-                vmask = torch.cat([vmask, (~done).unsqueeze(1)], dim=1)
+            mem[:, mlen] = F.normalize(h, dim=-1)     # own word joins the memory
+            kmem[:, mlen] = self.att_key(mem[:, mlen])
+            vmask[:, mlen] = ~done
+            mlen += 1
             done = done | (nxt == self.eos)
             if bool(done.all()):
                 break
         T = torch.stack(toks, dim=1)
-        att = torch.stack(attn, dim=1) if (self.align and attn) else None
-        return T, att
+        return T, (torch.stack(attn, dim=1) if attn else None)
 
+
+# ---------------------------------------------------------------- data
 
 def load_wells(device, path=TYPER_CKPT):
     """Typer wells + fresh wells for the speaker tokens (<you>, <me>)."""
@@ -249,13 +297,89 @@ def load_wells(device, path=TYPER_CKPT):
     return warm, stoi, itos, ck["unk"], ck["eos"], n_words, dim, extras
 
 
-def encode_ctx(sents, stoi, unk, eos, ctx_words=CTX_WORDS):
-    """Context encoder: keep the LAST ctx_words tokens (newest survive), + EOS."""
+def shrink_vocab(train_pairs, warm, stoi, itos, unk, eos, min_freq):
+    """Cut the wells to words seen >= min_freq times in TRAIN. 100k wells on
+    ~18k pairs dilutes the negatives with words that can never be targets.
+    Kept typer words keep their warm wells. Frequent words the typer NEVER
+    saw (punctuation, merged contractions, new-corpus words) get a fresh
+    TRAINABLE well, char-fingerprint initialized — they earn their place in
+    training instead of drowning as <unk>. Rare words still fall to <unk>.
+    Layout preserved: PAD(0), words, unk, eos, specials."""
+    from collections import Counter
+    cnt = Counter()
+    for m, r in train_pairs:
+        cnt.update(m.split()); cnt.update(r.split())
+    keep = sorted((w for w, c in cnt.items()
+                   if c >= min_freq and w not in SPECIALS),
+                  key=lambda w: (-cnt[w], w))
+    anchors = letter_anchors(warm.size(1), device="cpu")       # mint on CPU
+    rows, minted = [warm[PAD]], 0
+    for w in keep:
+        if w in stoi:
+            rows.append(warm[stoi[w]])
+        else:
+            rows.append(char_fingerprint(w, anchors).to(warm.device))
+            minted += 1
+    rows += [warm[unk], warm[eos]]
+    new_stoi = {w: i + 1 for i, w in enumerate(keep)}          # 0 stays PAD
+    new_unk, new_eos = len(keep) + 1, len(keep) + 2
+    new_itos = {i + 1: w for i, w in enumerate(keep)}
+    new_itos[new_unk] = "<unk>"; new_itos[new_eos] = "<eos>"
+    n = new_eos + 1
+    for tok in SPECIALS:
+        new_stoi[tok] = n; new_itos[n] = tok
+        rows.append(warm[stoi[tok]]); n += 1
+    return torch.stack(rows), new_stoi, new_itos, new_unk, new_eos, n, minted
+
+
+def meaning_weights(train_rep, n_words, alpha):
+    """Rarity = meaning, no POS tagger needed: function words are frequent,
+    content words are rare. weight = surprisal^alpha, occurrence-mean 1 so
+    the loss scale (and lr) stays put. Returns (weights, most-common id)."""
+    ids_u, cnts = torch.unique(train_rep, return_counts=True)
+    seen = ids_u != PAD
+    ids_u, cnts = ids_u[seen], cnts[seen].float()
+    W = torch.ones(n_words)
+    W[ids_u] = torch.log1p(cnts.sum() / cnts) ** alpha
+    W[ids_u] = W[ids_u] / ((W[ids_u] * cnts).sum() / cnts.sum())
+    return W, int(ids_u[cnts.argmax()])
+
+
+class CharMinter:
+    """The char layer's door into the reply model: OOV word -> stable well
+    minted from its LETTERS (char_fingerprint), id past the trained vocab.
+    Deterministic — same word, same well, every run. Read-side only."""
+
+    def __init__(self, dim, n_words, device):
+        # mint on CPU: fingerprinting is thousands of tiny ops per word —
+        # on MPS that queues a million micro-kernels and looks like a hang.
+        # the finished table moves to the device ONCE in table().
+        self.anchors = letter_anchors(dim, device="cpu")
+        self.base, self.device = n_words, device
+        self.ids, self.rows = {}, []
+
+    def id_for(self, word):
+        if word not in self.ids:
+            self.ids[word] = self.base + len(self.rows)
+            self.rows.append(char_fingerprint(word, self.anchors))
+        return self.ids[word]
+
+    def table(self):
+        if not self.rows:
+            return torch.zeros(0, self.anchors.size(1), device=self.device)
+        return torch.stack(self.rows).to(self.device)
+
+
+def encode_ctx(sents, stoi, unk, eos, ctx_words=CTX_WORDS, minter=None):
+    """Keep the LAST ctx_words tokens (newest survive), + EOS, padded.
+    With a minter, OOV words get char-well ids instead of <unk>."""
     maxlen = ctx_words + 2
     out = []
     for s in sents:
-        ids = [stoi.get(t, unk) for t in s.split()][-ctx_words:] + [eos]
-        ids += [PAD] * (maxlen - len(ids))
+        toks = s.split()[-ctx_words:]
+        ids = [stoi[t] if t in stoi else
+               (minter.id_for(t) if minter is not None else unk) for t in toks]
+        ids += [eos] + [PAD] * (maxlen - len(ids) - 1)
         out.append(ids)
     return torch.tensor(out, dtype=torch.long)
 
@@ -272,9 +396,17 @@ def read_pairs(path, max_lines=0):
     return out
 
 
+def decode(ids, itos, eos):
+    out = []
+    for t in ids.tolist():
+        if t == eos or t == PAD:
+            break
+        out.append(itos.get(t, "?"))
+    return " ".join(out) if out else "(empty)"
+
+
 def trace_str(reply_words, att_row, ctx_words, Lm):
-    """The thinking trace. Each typed word shows what it looked at:
-    a context word, <eos>, or ~word = a word the model itself already typed."""
+    """The thinking trace: word<-what it looked at. ~word = its own typed word."""
     out = []
     for j, w in enumerate(reply_words):
         hi = int(att_row[j])
@@ -289,42 +421,38 @@ def trace_str(reply_words, att_row, ctx_words, Lm):
     return " ".join(out)
 
 
-def decode(ids, itos, eos):
-    out = []
-    for t in ids.tolist():
-        if t == eos or t == PAD:
-            break
-        out.append(itos.get(t, "?"))
-    return " ".join(out) if out else "(empty)"
-
+# ---------------------------------------------------------------- chat
 
 def chat_loop(args, device):
-    """--chat: talk to the trained generator, MULTI-TURN. The conversation so far
-    is fed back as <you>/<me>-tagged context — the same shape it trained on."""
+    """--chat: multi-turn. The conversation so far is fed back as
+    <you>/<me>-tagged context — the same shape it trained on."""
     ck = torch.load(args.ckpt, map_location=device)
-    cfg = ck["config"]
-    stoi, itos, unk, eos = ck["stoi"], ck["itos"], ck["unk"], ck["eos"]
+    cfg, stoi, itos = ck["config"], ck["stoi"], ck["itos"]
+    unk, eos = ck["unk"], ck["eos"]
     ctx_words = cfg.get("ctx_words", CTX_WORDS)
-    model = ReplyBrain(cfg["n_words"], cfg["dim"], eos, align=cfg["align"],
-                       reader=cfg.get("reader", "meanpool")).to(device)
+    model = ReplyBrain(cfg["n_words"], cfg["dim"], eos,
+                       pos=cfg.get("pos", False)).to(device)
     model.load_state_dict(ck["state_dict"])
+    model.pos_w = ck.get("pos_w", 0.0)
+    if ck.get("fast_alpha") is not None:
+        model.fast_alpha = ck["fast_alpha"].to(device)
     model.eval()
     ban = [stoi[t] for t in SPECIALS if t in stoi]
-    print(f"loaded {args.ckpt}   align={cfg['align']}   ctx {ctx_words} words   device {device}")
+    minter = CharMinter(cfg["dim"], cfg["n_words"], device)   # char layer, live
+    print(f"loaded {args.ckpt}   ctx {ctx_words} words   device {device}")
     print("multi-turn: it remembers this conversation. :reset to wipe, :q to quit\n")
-    import re
-    clean = re.compile(r"[^a-z0-9' ]+")
-    history = []                                   # [(tag, text), ...] this session
+    from prep_chat_context import clean as clean_text   # same tokenizer as training
+    history = []
     while True:
         try:
-            line = input("you   > ").strip().lower()
+            line = input("you   > ").strip()
         except (EOFError, KeyboardInterrupt):
             break
         if not line or line == ":q":
             break
         if line == ":reset":
             history = []; print("  (context wiped)\n"); continue
-        line = re.sub(r"\s+", " ", clean.sub(" ", line)).strip()
+        line = clean_text(line)
         if not line:
             continue
         history.append(("<you>", line))
@@ -332,7 +460,8 @@ def chat_loop(args, device):
         for tag, text in history:
             toks.append(tag); toks += text.split()
         ctx = " ".join(toks[-ctx_words:])
-        ids = encode_ctx([ctx], stoi, unk, eos, ctx_words).to(device)
+        ids = encode_ctx([ctx], stoi, unk, eos, ctx_words, minter=minter).to(device)
+        model.oov_wells = minter.table()          # new words -> new read-wells
         gen, att = model.generate(ids, MAXLEN, unk=unk, ban=ban)
         reply = decode(gen[0], itos, eos)
         history.append(("<me>", reply))
@@ -342,66 +471,135 @@ def chat_loop(args, device):
         print()
 
 
+# ---------------------------------------------------------------- training
+
 def main():
     ap = argparse.ArgumentParser()
+    # data
     ap.add_argument("--data", default="data/chat_context.tsv")
     ap.add_argument("--ctx-words", type=int, default=CTX_WORDS,
-                    help="context budget; must match prep_chat_context.py --ctx-words")
-    ap.add_argument("--epochs", type=int, default=10)
-    ap.add_argument("--batch-size", type=int, default=128)
-    ap.add_argument("--lr", type=float, default=3e-4)
+                    help="context budget; must match prep_chat_context.py")
     ap.add_argument("--max-lines", type=int, default=0)
     ap.add_argument("--dev-frac", type=float, default=0.05)
-    ap.add_argument("--no-align", action="store_true",
-                    help="baseline: pooled thought only, no per-step attention")
-    ap.add_argument("--meanpool", action="store_true",
-                    help="baseline reader: bag-of-words meanpool instead of the "
-                         "order-aware collapse trajectory")
-    ap.add_argument("--neg-samples", type=int, default=0,
-                    help="sampled-softmax negatives in training (0=off, full vocab)")
+    # optimization
+    ap.add_argument("--epochs", type=int, default=100)
+    ap.add_argument("--batch-size", type=int, default=256,
+                    help="256 fits the 256-word context in memory; the growing "
+                         "attention memory is held for backward at every reply "
+                         "step, so batch x ctx is the real memory knob")
+    ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--patience", type=int, default=6,
+                    help="early stop after this many epochs without dev improvement")
+    # levers (all default-on; 0 / --no-* turns each off)
+    ap.add_argument("--min-freq", type=int, default=2,
+                    help="cut vocab to words seen >= this often in train (1 = keep all)")
+    ap.add_argument("--meaning-w", type=float, default=1.0,
+                    help="rare-word loss boost = surprisal^this (0 = uniform CE; "
+                         "dev NLL stays unweighted either way)")
+    ap.add_argument("--neg-samples", type=int, default=512,
+                    help="sampled-softmax negatives in training (0 = full vocab)")
+    ap.add_argument("--pos-anneal", type=int, default=20,
+                    help="'where am I in the reply' scaffold, faded over this "
+                         "many epochs (0 = off)")
+    ap.add_argument("--sched-sample", type=float, default=0.25,
+                    help="max prob of walking on own picks instead of the truth")
+    ap.add_argument("--sched-anneal", type=int, default=10,
+                    help="epochs to ramp scheduled sampling from 0 up to max")
+    ap.add_argument("--no-fast-reader", action="store_true",
+                    help="use the exact sequential read (fast reader is on "
+                         "whenever model/fast_reader.pt exists)")
+    ap.add_argument("--no-char-wells", action="store_true",
+                    help="OOV context words become <unk> instead of reading "
+                         "through char-fingerprint wells")
+    # two-stage: general pretrain -> personal fine-tune (see prep_dailydialog.py)
+    ap.add_argument("--extra-vocab", default=None,
+                    help="second tsv whose words also count in the vocab cut, "
+                         "so a later --resume fine-tune shares this vocab")
+    ap.add_argument("--resume", default=None,
+                    help="continue training from this reply checkpoint — keeps "
+                         "its vocab and wells")
+    # io
     ap.add_argument("--ckpt", default=CKPT_OUT)
     ap.add_argument("--chat", action="store_true", help="talk to the trained model")
     ap.add_argument("--device", default="auto", choices=["auto", "mps", "cuda", "cpu"])
     args = ap.parse_args()
-    align = not args.no_align
 
-    if args.device == "auto":
-        device = torch.device("mps" if torch.backends.mps.is_available()
-                              else "cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(args.device)
+    device = (torch.device("mps" if torch.backends.mps.is_available()
+                           else "cuda" if torch.cuda.is_available() else "cpu")
+              if args.device == "auto" else torch.device(args.device))
     random.seed(SEED); torch.manual_seed(SEED)
 
     if args.chat:
         chat_loop(args, device)
         return
 
-    reader = "meanpool" if args.meanpool else "collapse"
-    print("loading typer wells ...", flush=True)
-    warm, stoi, itos, unk, eos, n_words, dim, extras = load_wells(device)
-    model = ReplyBrain(n_words, dim, eos, warm=warm, align=align, reader=reader,
-                       warm_start=extras["start"].to(device) if extras["start"] is not None else None,
-                       warm_strength=extras["strength"]).to(device)
-    model.neg_samples = args.neg_samples
-    n_par = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"dim {dim}   device {device}   vocab {n_words}   params {n_par:,}")
-    print(f"mode: {'ALIGNED (per-step attention over your message = the reasoning)' if align else 'BASELINE (pooled thought)'}")
-    print(f"reader: {'COLLAPSE trajectory (order-aware, warm-started from the typer)' if reader == 'collapse' else 'MEANPOOL (bag-of-words baseline)'}")
-    print(f"task: (your message) -> TYPE the reply   |   punish: per-word cross-entropy\n", flush=True)
-
+    # -- data
     data = read_pairs(args.data, args.max_lines)
     random.shuffle(data)
     n_dev = max(1, int(len(data) * args.dev_frac))
     dev, train = data[:n_dev], data[n_dev:]
-    print(f"train {len(train)}   dev {len(dev)}\n", flush=True)
+
+    # -- model: resumed from a reply ckpt (its vocab + wells), or fresh
+    if args.resume:
+        ck = torch.load(args.resume, map_location=device)
+        cfg = ck["config"]
+        stoi, itos, unk, eos = ck["stoi"], ck["itos"], ck["unk"], ck["eos"]
+        n_words, dim = cfg["n_words"], cfg["dim"]
+        model = ReplyBrain(n_words, dim, eos, pos=cfg.get("pos", False)).to(device)
+        model.load_state_dict(ck["state_dict"])
+        print(f"resumed {args.resume} (epoch {ck['best']['epoch']}, "
+              f"nll {ck['best']['nll']:.4f}) — vocab + wells carried over")
+    else:
+        print("loading typer wells ...", flush=True)
+        warm, stoi, itos, unk, eos, n_words, dim, extras = load_wells(device)
+        if args.min_freq > 1:
+            vocab_src = train + (read_pairs(args.extra_vocab)
+                                 if args.extra_vocab else [])
+            full = n_words
+            warm, stoi, itos, unk, eos, n_words, minted = shrink_vocab(
+                vocab_src, warm, stoi, itos, unk, eos, args.min_freq)
+            note = f" + {args.extra_vocab}" if args.extra_vocab else ""
+            print(f"vocab cut: {full:,} -> {n_words:,} wells "
+                  f"(min-freq {args.min_freq}{note}; {minted:,} fresh wells "
+                  f"for words the typer never saw)")
+        model = ReplyBrain(n_words, dim, eos, warm=warm, pos=args.pos_anneal > 0,
+                           warm_start=(extras["start"].to(device)
+                                       if extras["start"] is not None else None),
+                           warm_strength=extras["strength"]).to(device)
+    model.neg_samples = args.neg_samples
+    use_fast = not args.no_fast_reader and os.path.exists(FAST_CKPT)
+    if use_fast:
+        fr = torch.load(FAST_CKPT, map_location=device)
+        model.fast_alpha = fr["alpha"].to(device)
+    n_par = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"dim {dim}   device {device}   vocab {n_words:,}   params {n_par:,}")
+    rd = (f"FAST ADDITIVE (distilled {model.fast_alpha.numel()} taps)"
+          if use_fast else "EXACT collapse walk")
+    print(f"reader: {rd}")
+    print(f"scaffolds: pos-anneal {args.pos_anneal}   sched-sample {args.sched_sample} "
+          f"over {args.sched_anneal} ep   neg-samples {args.neg_samples}", flush=True)
+
+    # -- tensors (context reads through char wells for OOV; replies stay <unk>)
+    minter = None if args.no_char_wells else CharMinter(dim, n_words, device)
 
     def pre_encode(chunk):
-        msg = encode_ctx([m for m, r in chunk], stoi, unk, eos, args.ctx_words)
+        msg = encode_ctx([m for m, r in chunk], stoi, unk, eos, args.ctx_words,
+                         minter=minter)
         rep = encode_batch([r for m, r in chunk], stoi, unk, eos)
         return msg, rep
 
     train_msg, train_rep = pre_encode(train)
     dev_msg, dev_rep = pre_encode(dev)
+    if minter is not None:
+        model.oov_wells = minter.table()
+        print(f"char wells: minted {len(minter.rows):,} read-wells for OOV context words")
+    print(f"train {len(train)}   dev {len(dev)}\n", flush=True)
+
+    if args.meaning_w > 0:
+        W, top = meaning_weights(train_rep, n_words, args.meaning_w)
+        model.word_w = W.to(device)
+        print(f"meaning weights: '{itos[top]}' x{W[top]:.2f}  vs rarest "
+              f"x{W.max():.2f}  (alpha {args.meaning_w})")
 
     def batches(msg_t, rep_t, shuffle=False):
         n = msg_t.size(0)
@@ -412,13 +610,14 @@ def main():
             lm = int((m != 0).sum(1).max()); lr_ = int((r != 0).sum(1).max())
             yield m[:, :max(lm, 1)].to(device), r[:, :max(lr_, 1)].to(device)
 
+    # -- eval helpers
     show = dev[:3]
-
     ban = [stoi[t] for t in SPECIALS]
 
     def show_samples():
         model.eval()
-        msg = encode_ctx([m for m, r in show], stoi, unk, eos, args.ctx_words).to(device)
+        msg = encode_ctx([m for m, r in show], stoi, unk, eos, args.ctx_words,
+                         minter=minter).to(device)
         gen, att = model.generate(msg, MAXLEN, unk=unk, ban=ban)
         print("  --- 3 dev examples ---")
         for k, (m, r) in enumerate(show):
@@ -438,40 +637,52 @@ def main():
                 tot_nll += tn.sum().item(); tot_cnt += tc.sum().item()
         return tot_nll / max(tot_cnt, 1)
 
+    # -- the loop
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     best_nll, best_epoch = float("inf"), 0
-
-    import time
     for ep in range(1, args.epochs + 1):
-        model.train(); nb = 0
-        run_t = torch.zeros((), device=device)
-        t_mark = time.time()
+        model.pos_w = (max(0.0, 1.0 - (ep - 1) / args.pos_anneal)
+                       if args.pos_anneal > 0 else 0.0)
+        model.sample_p = args.sched_sample * min(1.0, (ep - 1) / max(args.sched_anneal, 1))
+        model.train()
+        run_t = torch.zeros((), device=device); nb = 0
+        n_batches = (train_msg.size(0) + args.batch_size - 1) // args.batch_size
+        t_mark = t_hb = time.time()
         for msg, rep in batches(train_msg, train_rep, shuffle=True):
             loss = model.reply_nll(msg, rep)
             opt.zero_grad(); loss.backward(); opt.step()
             run_t += loss.detach(); nb += 1
-            if nb % 100 == 0:
-                now = time.time(); sps = 100 / (now - t_mark); t_mark = now
-                print(f"  ep{ep} step {nb:4d}  loss {(run_t/nb).item():.4f}  "
-                      f"strength {model.strength.item():.3f}  temp {model.temp.item():.3f}  "
-                      f"| {sps:4.1f} steps/s", flush=True)
+            if nb % 50 == 0:                      # heartbeat: never look stuck
+                now = time.time()
+                print(f"  ep{ep} {nb}/{n_batches}  loss {(run_t / nb).item():.4f}"
+                      f"  | {50 / (now - t_hb):.1f} steps/s", flush=True)
+                t_hb = now
         nll = evaluate()
-        print(f"epoch {ep}: dev reply-nll/word {nll:.4f}", flush=True)
+        print(f"epoch {ep}: dev reply-nll/word {nll:.4f}   "
+              f"[train {(run_t / nb).item():.4f}  pos_w {model.pos_w:.2f}  "
+              f"sample_p {model.sample_p:.2f}  {time.time() - t_mark:.0f}s]", flush=True)
         show_samples()
         if nll < best_nll:
             best_nll, best_epoch = nll, ep
             os.makedirs(os.path.dirname(args.ckpt) or ".", exist_ok=True)
             torch.save({"state_dict": model.state_dict(), "stoi": stoi, "itos": itos,
                         "unk": unk, "eos": eos,
-                        "config": {"dim": dim, "n_words": n_words, "align": align,
-                                   "ctx_words": args.ctx_words, "reader": reader},
+                        "fast_alpha": (model.fast_alpha.cpu()
+                                       if model.fast_alpha is not None else None),
+                        "config": {"dim": dim, "n_words": n_words,
+                                   "ctx_words": args.ctx_words,
+                                   "pos": model.pos},
+                        "pos_w": model.pos_w,
                         "best": {"epoch": ep, "nll": nll}}, args.ckpt)
-            print(f"  [BEST so far (nll {nll:.4f}) -> saved {args.ckpt}]", flush=True)
+            print(f"  [BEST (nll {nll:.4f}) -> saved {args.ckpt}]", flush=True)
         else:
             print(f"  [no improvement -> kept epoch {best_epoch} (nll {best_nll:.4f})]", flush=True)
+        if ep - best_epoch >= args.patience:
+            print(f"  [early stop: {args.patience} epochs without improvement]", flush=True)
+            break
 
     print(f"\nbest model = epoch {best_epoch} (nll {best_nll:.4f})  ->  {args.ckpt}")
-    print(f"talk to it:  python3 chat_reply.py --chat")
+    print("talk to it:  python3 chat_reply.py --chat")
 
 
 if __name__ == "__main__":
