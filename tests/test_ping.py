@@ -5,9 +5,9 @@ from livnium_core.ping import (
     Ping,
     Step,
     accumulated_frames,
+    classify,
     cos_path,
     cosine,
-    classify,
     meaning_match,
     norm,
     path_signature,
@@ -17,7 +17,7 @@ from livnium_core.ping import (
     world_doorways,
     world_path,
 )
-from livnium_core.rotations import I, ROT_X, ROT_Y, rotation_group
+from livnium_core.rotations import ROT_X, ROT_Y, I, rotation_group
 
 
 def test_26_doorways_exclude_core():
@@ -149,7 +149,7 @@ def test_classify_point_for_empty():
 
 def test_prune_collapses_branching_space():
     pr = prune(query=(1, 1, 1), depth=4, threshold=0.9)
-    assert pr.full_space == 26 ** 4
+    assert pr.full_space == 26**4
     assert 0 < pr.survivors < pr.full_space
     assert all(len(path) == 4 for path in pr.paths)
 

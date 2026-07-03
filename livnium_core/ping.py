@@ -61,7 +61,7 @@ import itertools
 import math
 import statistics
 from dataclasses import dataclass, field
-from typing import List, Sequence, Tuple
+from typing import List, Tuple
 
 from .rotations import I, Matrix, apply, matmul
 
@@ -275,10 +275,10 @@ def classify(
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class Match:
-    prefix_agreement: int       # leading levels with identical (cell, frame)
-    shared_depth: int           # min(depth_p, depth_q)
+    prefix_agreement: int  # leading levels with identical (cell, frame)
+    shared_depth: int  # min(depth_p, depth_q)
     cos_levels: Tuple[float, ...]  # cos(p.w_i, q.w_i) over shared depth
-    score: float                # mean alignment over shared depth (1.0 if both empty)
+    score: float  # mean alignment over shared depth (1.0 if both empty)
 
 
 def meaning_match(p: Ping, q: Ping) -> Match:
@@ -305,8 +305,8 @@ def meaning_match(p: Ping, q: Ping) -> Match:
 class Prune:
     depth: int
     threshold: float
-    full_space: int          # 26 ** depth — never actually built
-    survivors: int           # aligned paths that remain
+    full_space: int  # 26 ** depth — never actually built
+    survivors: int  # aligned paths that remain
     paths: Tuple[Tuple[Vec, ...], ...]  # the surviving doorway sequences
 
 
@@ -329,7 +329,7 @@ def prune(query: Vec, depth: int, threshold: float) -> Prune:
     return Prune(
         depth=depth,
         threshold=threshold,
-        full_space=26 ** depth,
+        full_space=26**depth,
         survivors=len(paths),
         paths=tuple(paths),
     )
@@ -344,12 +344,15 @@ def _selfcheck() -> None:
     assert len(CELLS_26) == 26
 
     # 1) Conservation: the descent preserves magnitude however deep it goes.
-    deep = Ping(steps=tuple(Step(cell=c, frame=r)
-                            for c, r in zip(CELLS_26[:6], rotation_group()[:6])),
-                d_local=(1, 0, 0))
+    deep = Ping(
+        steps=tuple(Step(cell=c, frame=r) for c, r in zip(CELLS_26[:6], rotation_group()[:6])),
+        d_local=(1, 0, 0),
+    )
     assert math.isclose(norm(world_direction(deep)), norm(deep.d_local), rel_tol=1e-9)
-    print(f"1. conservation: |d_local|={norm(deep.d_local):.3f} == "
-          f"|world_dir|={norm(world_direction(deep)):.3f}  (depth {deep.depth})")
+    print(
+        f"1. conservation: |d_local|={norm(deep.d_local):.3f} == "
+        f"|world_dir|={norm(world_direction(deep)):.3f}  (depth {deep.depth})"
+    )
 
     # 2) same pattern, different direction: identical doorways/local, one frame turned.
     base = Ping(steps=(Step((1, 0, 0)),), d_local=(1, 0, 0))
@@ -363,15 +366,19 @@ def _selfcheck() -> None:
     q = Ping(steps=(Step((1, 0, 0)), Step((0, 1, 0)), Step((-1, 0, 0))))
     m = meaning_match(p, q)
     assert m.prefix_agreement == 2 and m.shared_depth == 3
-    print(f"3. meaning match: prefix_agreement={m.prefix_agreement}/{m.shared_depth}, "
-          f"score={m.score:+.3f}")
+    print(
+        f"3. meaning match: prefix_agreement={m.prefix_agreement}/{m.shared_depth}, "
+        f"score={m.score:+.3f}"
+    )
 
     # 4) pruning: 26^depth illusion space collapses to its aligned spine.
     pr = prune(query=(1, 1, 1), depth=4, threshold=0.9)
     ratio = pr.survivors / pr.full_space
     assert pr.survivors < pr.full_space
-    print(f"4. pruning: full={pr.full_space:,}  survivors={pr.survivors:,}  "
-          f"kept={ratio:.2e}  (threshold {pr.threshold})")
+    print(
+        f"4. pruning: full={pr.full_space:,}  survivors={pr.survivors:,}  "
+        f"kept={ratio:.2e}  (threshold {pr.threshold})"
+    )
 
     # 5) locally straight, globally curved: SAME local program ("always go (1,0,0)
     #    inward"), two frame choices. Identity frames -> straight; rotating frames
@@ -383,7 +390,7 @@ def _selfcheck() -> None:
     ts, tc = turn_angles(straight), turn_angles(curved)
     assert all(abs(a) < 1e-9 for a in ts)
     assert all(a > 1e-6 for a in tc)
-    print(f"5. straight vs curved (identical local doorways):")
+    print("5. straight vs curved (identical local doorways):")
     print(f"     straight path = {world_path(straight)}  turns={[round(a,3) for a in ts]}")
     print(f"     curved   path = {world_path(curved)}  turns={[round(a,3) for a in tc]}")
 
@@ -399,8 +406,10 @@ def _selfcheck() -> None:
         got = classify(png)
         assert got == expected, f"{expected!r} misclassified as {got!r}"
         sig = path_signature(png)
-        print(f"     {got:8s}  closure={sig.closure_error:.2f}  "
-              f"net/path={sig.net_over_path:.2f}  turn_spread={sig.turn_spread:.3f}")
+        print(
+            f"     {got:8s}  closure={sig.closure_error:.2f}  "
+            f"net/path={sig.net_over_path:.2f}  turn_spread={sig.turn_spread:.3f}"
+        )
 
     print("all ping self-checks passed.")
 
