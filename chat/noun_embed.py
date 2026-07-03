@@ -93,7 +93,13 @@ def wiki_lines(path):
     Skips non-article namespaces and redirects; yields cleaned text lines."""
     in_text, ns_ok, buf = False, True, []
     with bz2.open(path, "rt", encoding="utf-8", errors="ignore") as f:
-        for raw in f:
+        def _safe(src):
+            try:
+                yield from src
+            except (EOFError, OSError):        # truncated/partial dump: use
+                print("  [dump ends early (partial file) — stopping cleanly]",
+                      flush=True)              # what we got, stop cleanly
+        for raw in _safe(f):
             s = raw.strip()
             if "<ns>" in s:
                 ns_ok = "<ns>0</ns>" in s        # articles only
