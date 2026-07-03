@@ -22,16 +22,27 @@ Usage:
     pip3 install numpy scipy nltk
     python3 -c "import nltk; nltk.download('wordnet')"
 
+    # plain text
     python3 noun_embed.py --data ~/Desktop/test/wiki.txt
-    python3 noun_embed.py --data ~/Desktop/test/       # every .txt inside
+    # a raw Wikipedia dump, streamed straight from the .bz2 (no decompression
+    # to disk). START WITH A SLICE — the full dump is 2 passes x hours:
+    python3 noun_embed.py \
+        --data ~/Desktop/test/data-bank/enwiki-latest-pages-articles-multistream.xml.bz2 \
+        --max-lines 20000000
     python3 noun_embed.py --probe cat physics india    # after training
+
+Memory: pair counts are pruned whenever the table passes --max-pairs
+(count-1 pairs dropped first) — bounded RAM at a small bias against the
+rarest pairs, which PPMI would mostly zero out anyway.
 
 Output: model/noun_embed.npz  { vectors, nouns, counts }
 """
 
 import argparse
+import bz2
 import glob
 import os
+import re
 import sys
 from collections import Counter
 
@@ -55,19 +66,77 @@ def noun_set():
         sys.exit("needs nltk:  pip3 install nltk")
 
 
+# --- wiki markup stripping (rough on purpose: co-occurrence counting only
+# needs readable prose, not a perfect render) -------------------------------
+_RE_DROP = re.compile(
+    r"\{\{[^{}]*\}\}"            # templates {{...}} (innermost; loop below)
+    r"|\{\|.*?\|\}"              # tables
+    r"|<ref[^>]*/>|<ref.*?</ref>"  # references
+    r"|<[^>]+>"                  # any remaining tags
+    r"|\[\[(?:File|Image|Category):[^\[\]]*\]\]", re.DOTALL)
+_RE_LINK = re.compile(r"\[\[(?:[^|\[\]]*\|)?([^|\[\]]*)\]\]")   # [[a|b]] -> b
+_RE_URL = re.compile(r"https?://\S+|'{2,}")
+
+
+def strip_wiki(text):
+    for _ in range(3):                       # nested templates, a few levels
+        new = _RE_DROP.sub(" ", text)
+        if new == text:
+            break
+        text = new
+    text = _RE_LINK.sub(r"\1", text)
+    return _RE_URL.sub(" ", text)
+
+
+def wiki_lines(path):
+    """Stream article prose straight out of a pages-articles .xml.bz2.
+    Skips non-article namespaces and redirects; yields cleaned text lines."""
+    in_text, ns_ok, buf = False, True, []
+    with bz2.open(path, "rt", encoding="utf-8", errors="ignore") as f:
+        for raw in f:
+            s = raw.strip()
+            if "<ns>" in s:
+                ns_ok = "<ns>0</ns>" in s        # articles only
+            if "<redirect" in s:
+                ns_ok = False
+            if not in_text and "<text" in s:
+                if not ns_ok:
+                    continue
+                in_text = True
+                s = s[s.index("<text"):]         # drop anything before the tag
+                s = s.split(">", 1)[1] if ">" in s else ""
+                if s.lstrip().lower().startswith("#redirect"):
+                    in_text, buf = False, []
+                    continue
+            if in_text:
+                if "</text>" in s:
+                    buf.append(s.split("</text>")[0])
+                    for line in strip_wiki("\n".join(buf)).split("\n"):
+                        if len(line) > 40:       # skip headings/leftover markup
+                            yield line
+                    in_text, buf = False, []
+                else:
+                    buf.append(s)
+
+
 def iter_lines(path, max_lines=0):
-    files = sorted(glob.glob(os.path.join(path, "**/*.txt"), recursive=True)) \
-        if os.path.isdir(path) else [path]
-    if not files:
-        sys.exit(f"no .txt files under {path}")
-    n = 0
-    for fp in files:
-        with open(fp, encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                yield line
-                n += 1
-                if max_lines and n >= max_lines:
-                    return
+    if path.endswith(".bz2"):
+        src = wiki_lines(path)
+    else:
+        files = sorted(glob.glob(os.path.join(path, "**/*.txt"), recursive=True)) \
+            if os.path.isdir(path) else [path]
+        if not files:
+            sys.exit(f"no .txt files under {path}")
+
+        def _txt():
+            for fp in files:
+                with open(fp, encoding="utf-8", errors="ignore") as f:
+                    yield from f
+        src = _txt()
+    for n, line in enumerate(src, 1):
+        yield line
+        if max_lines and n >= max_lines:
+            return
 
 
 def count_cooc(args, nouns):
@@ -85,20 +154,28 @@ def count_cooc(args, nouns):
           f"   (min-count {args.min_count})", flush=True)
 
     print("pass 2/2: co-occurrence counts ...", flush=True)
-    pair = Counter()          # (noun_row, ctx_col) -> weighted count
+    pair = Counter()          # int key: noun_row * n_ctx + ctx_col (RAM-lean)
+    n_ctx = len(keep_c)
     W = args.window
+    pruned = 0
     for k, line in enumerate(iter_lines(args.data, args.max_lines)):
         toks = clean(line).split()
         ids = [(n_id.get(t), c_id.get(t)) for t in toks]
         for i, (ni, _) in enumerate(ids):
             if ni is None:
                 continue
+            base = ni * n_ctx
             for j in range(max(0, i - W), min(len(ids), i + W + 1)):
                 if j == i:
                     continue
                 cj = ids[j][1]
                 if cj is not None:
-                    pair[(ni, cj)] += 1.0 / abs(i - j)   # closer words count more
+                    pair[base + cj] += 1.0 / abs(i - j)  # closer words count more
+        if len(pair) > args.max_pairs:                   # bounded memory:
+            cut = 1.0 + pruned * 0.5                     # raise the bar each time
+            pair = Counter({p: v for p, v in pair.items() if v > cut})
+            pruned += 1
+            print(f"  [pruned pairs <= {cut:.1f}  ->  {len(pair):,} kept]", flush=True)
         if k % 200000 == 0 and k:
             print(f"  {k:,} lines   {len(pair):,} pairs", flush=True)
     return keep_n, keep_c, pair, freq
@@ -107,7 +184,8 @@ def count_cooc(args, nouns):
 def ppmi_svd(keep_n, keep_c, pair, dim, alpha):
     from scipy.sparse import csr_matrix
     from scipy.sparse.linalg import svds
-    rows, cols, vals = zip(*((r, c, v) for (r, c), v in pair.items()))
+    n_ctx = len(keep_c)
+    rows, cols, vals = zip(*((p // n_ctx, p % n_ctx, v) for p, v in pair.items()))
     M = csr_matrix((vals, (rows, cols)), shape=(len(keep_n), len(keep_c)))
     total = M.sum()
     pn = np.asarray(M.sum(1)).ravel() / total            # p(noun)
@@ -119,7 +197,10 @@ def ppmi_svd(keep_n, keep_c, pair, dim, alpha):
     M = csr_matrix((pmi[keep], (M.row[keep], M.col[keep])),
                    shape=(len(keep_n), len(keep_c)))
     print(f"PPMI matrix: {M.shape[0]:,} x {M.shape[1]:,}   nnz {M.nnz:,}", flush=True)
-    U, S, _ = svds(M, k=dim)
+    k = min(dim, min(M.shape) - 1)           # svds needs k < min(shape)
+    if k < dim:
+        print(f"  [corpus too small for dim {dim} -> using {k}]", flush=True)
+    U, S, _ = svds(M, k=k)
     order = np.argsort(-S)
     X = U[:, order] * np.sqrt(S[order])                  # sqrt(Σ) weighting
     return X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-8)
@@ -150,6 +231,9 @@ def main():
     ap.add_argument("--max-nouns", type=int, default=50000)
     ap.add_argument("--ctx-vocab", type=int, default=100000)
     ap.add_argument("--max-lines", type=int, default=0, help="0 = whole corpus")
+    ap.add_argument("--max-pairs", type=int, default=30_000_000,
+                    help="prune the pair table past this size (~3GB RAM); "
+                         "count-1 pairs go first")
     ap.add_argument("--probe", nargs="*", default=None,
                     help="skip training; show neighbors from a saved model")
     args = ap.parse_args()
