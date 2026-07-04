@@ -53,6 +53,13 @@ python3 chat_reply.py --chat
 
 ## 4. The mechanism: vector collapse
 
+> Livnium treats language as motion through a learned geometric landscape. A
+> word never changes the rules — the update law is global. Each word is a well
+> that softly bends the state passing through it; no single word overwrites the
+> path, so the final state is a compromise shaped by the whole sequence.
+> Inference is motion through fixed geometry; learning is geometry being carved
+> by where motion missed.
+
 One update rule runs everything. A hidden state `h` is pulled toward a target vector `W` — a "well," one learned vector per word:
 
 ```

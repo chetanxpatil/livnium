@@ -86,6 +86,29 @@ word-counting — Livnium scores at chance (~33%), like every word-counting meth
 
 *Note on the Supervised Collapse model:* By training word embeddings end-to-end with a 4-layer vector collapse engine (`VectorCollapseEngine`) that warps difference vectors toward three learned point-attractors (Entailment, Neutral, Contradiction), the model reaches **68.87% test accuracy** on SNLI. An ablation study confirms that the collapse dynamics provide a **+4.86%** gain over a plain linear projection head (68.92% vs 64.06%), representing features in a geometry-native point-attractor space. It is highly efficient, processing single-pair inference in **0.33 ms** on CPU and scaling to over **215,000 pairs/sec** throughput on Apple Silicon GPU (MPS) thanks to its $O(L)$ linear embedding pooling and $O(1)$ constant-time collapse mechanics. See [results/RESULTS.md](results/RESULTS.md) and [docs/COLLAPSE_VISUALIZATION.md](docs/COLLAPSE_VISUALIZATION.md) for details.
 
+## The collapse engine, stated once
+
+> Livnium treats language as **motion through a learned geometric landscape**.
+> A word never changes the rules — the update law is global, one force law for
+> everything. Each word is a well that softly bends the state passing through
+> it; the pull strength is learned and weak, so no single word overwrites the
+> path, and the final state is a compromise shaped by the whole sequence.
+> (Measured: reordering a sentence's words moves the endpoint to cosine 0.07
+> between the two readings, where plain averaging gives 1.00 — order is
+> physically encoded in the path.) Inference is motion through fixed geometry;
+> **learning is geometry being carved by where motion missed.**
+
+One update rule runs every model in this repo, from letters to conversations:
+
+```
+h ← h − strength · (1 − cos(h, W)) · norm(h − W)
+```
+
+For the full mechanics, reading order, and how to run it in two minutes, see
+[`docs/START_HERE.md`](docs/START_HERE.md).
+
+---
+
 **The lesson, stated once:** the cube is a beautiful, lossless *container*. But
 understanding meaning requires *throwing information away* — keeping what matters,
 discarding spelling and surface noise. A system that can never forget can never
