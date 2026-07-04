@@ -4,6 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: PolyForm NC](https://img.shields.io/badge/license-PolyForm--NC--1.0.0-green.svg)](LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![HF Model](https://img.shields.io/badge/%F0%9F%A4%97%20model-noun--collapse-yellow.svg)](https://huggingface.co/chetanxpatil/noun-collapse)
 
 **A small, honest piece of mathematics that began with a Rubik's cube.**
 
@@ -106,6 +107,14 @@ h ← h − strength · (1 − cos(h, W)) · norm(h − W)
 
 For the full mechanics, reading order, and how to run it in two minutes, see
 [`docs/START_HERE.md`](docs/START_HERE.md).
+
+**Latest result — word embeddings from pure collapse.** The same engine, pointed
+at Wikipedia (94.75M noun occurrences, ~7.5% of the corpus), learns real word
+meaning with *no MLP, no attention, no output layer* — just one well per word and
+two scalars. It scores **SimLex-999 ρ = 0.362**, inside the word2vec/GloVe band
+(~0.37–0.44) on a fraction of the data, and embeds at 0.23 ms/context on CPU. The
+model is live on the Hub: [🤗 chetanxpatil/noun-collapse](https://huggingface.co/chetanxpatil/noun-collapse).
+Details in [`chat/README.md`](chat/README.md).
 
 ---
 
