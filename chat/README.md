@@ -69,8 +69,8 @@ full steps in [`hf_noun_upload/UPLOAD.md`](hf_noun_upload/UPLOAD.md):
 
 ```bash
 cp model/noun_collapse_pure.pt hf_noun_upload/
-pip install -U huggingface_hub && huggingface-cli login
-huggingface-cli upload chetanxpatil/noun-collapse ./hf_noun_upload . --repo-type=model
+pip install -U huggingface_hub && hf auth login
+hf upload chetanxpatil/noun-collapse ./hf_noun_upload . --repo-type=model
 ```
 
 Then anyone can load it with only torch — no framework, no config wiring:

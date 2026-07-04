@@ -71,7 +71,7 @@ Within the word2vec/GloVe band on a fraction of the data, with no neural network
 
 ```bash
 pip install torch huggingface_hub
-huggingface-cli download chetanxpatil/noun-collapse --local-dir noun-collapse
+hf download chetanxpatil/noun-collapse --local-dir noun-collapse
 cd noun-collapse
 ```
 

@@ -23,8 +23,10 @@ cp model/noun_collapse_pure.pt hf_noun_upload/
 
 ```bash
 pip install -U huggingface_hub
-huggingface-cli login    # token (write scope) from https://huggingface.co/settings/tokens
+hf auth login    # token (write scope) from https://huggingface.co/settings/tokens
 ```
+
+(The old `huggingface-cli` command is deprecated — the CLI is now `hf`.)
 
 ## 3. Upload
 
@@ -32,7 +34,7 @@ CLI (simplest):
 
 ```bash
 # creates the repo if needed, then pushes the whole folder
-huggingface-cli upload chetanxpatil/noun-collapse ./hf_noun_upload . --repo-type=model
+hf upload chetanxpatil/noun-collapse ./hf_noun_upload . --repo-type=model
 ```
 
 Or Python:
@@ -49,7 +51,7 @@ HfApi().upload_folder(folder_path="hf_noun_upload", repo_id=repo_id,
 ## 4. Verify
 
 ```bash
-huggingface-cli download chetanxpatil/noun-collapse --local-dir /tmp/nc
+hf download chetanxpatil/noun-collapse --local-dir /tmp/nc
 cd /tmp/nc && python3 modeling_noun_collapse.py noun_collapse_pure.pt
 # should print the cat/physics/war/india neighbors
 ```
