@@ -88,18 +88,12 @@ def strip_wiki(text):
     return _RE_URL.sub(" ", text)
 
 
-def wiki_lines(path):
-    """Stream article prose straight out of a pages-articles .xml.bz2.
-    Skips non-article namespaces and redirects; yields cleaned text lines."""
+def _parse_pages(line_iter):
+    """Article prose out of dump XML lines: skips non-article namespaces and
+    redirects, strips markup, yields cleaned text lines."""
     in_text, ns_ok, buf = False, True, []
-    with bz2.open(path, "rt", encoding="utf-8", errors="ignore") as f:
-        def _safe(src):
-            try:
-                yield from src
-            except (EOFError, OSError):        # truncated/partial dump: use
-                print("  [dump ends early (partial file) — stopping cleanly]",
-                      flush=True)              # what we got, stop cleanly
-        for raw in _safe(f):
+    if True:
+        for raw in line_iter:
             s = raw.strip()
             if "<ns>" in s:
                 ns_ok = "<ns>0</ns>" in s        # articles only
@@ -125,9 +119,65 @@ def wiki_lines(path):
                     buf.append(s)
 
 
-def iter_lines(path, max_lines=0):
+def wiki_lines(path):
+    """Stream the whole dump front-to-back (article-ID order)."""
+    with bz2.open(path, "rt", encoding="utf-8", errors="ignore") as f:
+        def _safe(src):
+            try:
+                yield from src
+            except (EOFError, OSError):        # truncated/partial dump: use
+                print("  [dump ends early (partial file) — stopping cleanly]",
+                      flush=True)              # what we got, stop cleanly
+        yield from _parse_pages(_safe(f))
+
+
+_BZ_MAGIC = b"BZh9\x31\x41\x59\x26\x53\x59"    # start of an independent stream
+
+
+def wiki_lines_sampled(path, parts=2000, seed=0):
+    """MULTISTREAM random access: the dump is thousands of independent bz2
+    blocks (~100 articles each). Probe `parts` evenly spaced offsets in
+    RANDOM order, decompress one block at each — uniform domain coverage
+    instead of article-ID order. Reproducible for a given seed, so pass 1
+    (vocab) and pass 2 (training) see the same sample."""
+    import random as _rnd
+    size = os.path.getsize(path)
+    order = list(range(parts))
+    _rnd.Random(seed).shuffle(order)
+    with open(path, "rb") as f:
+        for k in order:
+            f.seek(k * size // parts)
+            # scan forward for the next stream boundary (up to 4MB)
+            buf, base = b"", f.tell()
+            hit = -1
+            for _ in range(4):
+                chunk = f.read(1 << 20)
+                if not chunk:
+                    break
+                buf += chunk
+                hit = buf.find(_BZ_MAGIC)
+                if hit >= 0:
+                    break
+            if hit < 0:
+                continue
+            f.seek(base + hit)
+            dec = bz2.BZ2Decompressor()
+            out = b""
+            try:
+                while not dec.eof:
+                    raw = f.read(1 << 20)
+                    if not raw:
+                        break
+                    out += dec.decompress(raw)
+            except OSError:
+                continue                        # false-positive magic: skip probe
+            yield from _parse_pages(iter(out.decode("utf-8", "ignore").splitlines()))
+
+
+def iter_lines(path, max_lines=0, sample_parts=0, seed=0):
     if path.endswith(".bz2"):
-        src = wiki_lines(path)
+        src = (wiki_lines_sampled(path, sample_parts, seed) if sample_parts
+               else wiki_lines(path))
     else:
         files = sorted(glob.glob(os.path.join(path, "**/*.txt"), recursive=True)) \
             if os.path.isdir(path) else [path]

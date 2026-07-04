@@ -52,7 +52,7 @@ PAD = 0
 def build_vocab(args, nouns):
     print("pass 1/2: word frequencies ...", flush=True)
     freq = Counter()
-    for line in iter_lines(args.data, args.max_lines):
+    for line in iter_lines(args.data, args.max_lines, args.sample_parts):
         freq.update(clean(line).split())
     keep = [w for w, c in freq.most_common(args.vocab) if c >= args.min_count]
     stoi = {w: i + 1 for i, w in enumerate(keep)}              # 0 = PAD
@@ -69,7 +69,7 @@ def windows(args, stoi, is_noun, slot=0):
     ctx = W words each side, in order, target replaced by the SLOT well
     (slot=0 disables: old behaviour, hole unmarked)."""
     W = args.window
-    for line in iter_lines(args.data, args.max_lines):
+    for line in iter_lines(args.data, args.max_lines, args.sample_parts):
         ids = [stoi.get(t, 0) for t in clean(line).split()]    # OOV -> PAD (skipped)
         for i, t in enumerate(ids):
             if not is_noun(t):
@@ -97,6 +97,13 @@ def main():
                     help="a noun needs this many occurrences to earn a target slot")
     ap.add_argument("--min-ctx", type=int, default=3)
     ap.add_argument("--max-lines", type=int, default=0)
+    ap.add_argument("--sample-parts", type=int, default=0,
+                    help="random-access sampling: probe this many evenly "
+                         "spaced multistream blocks in random order (0 = "
+                         "front-to-back). Uniform domain coverage.")
+    ap.add_argument("--max-occ", type=int, default=0,
+                    help="stop training after this many noun occurrences "
+                         "(e.g. 100000000 = the 100M budget)")
     ap.add_argument("--batch", type=int, default=1024)
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--neg", type=int, default=512,
@@ -238,6 +245,9 @@ def main():
         if args.save_every and step % args.save_every == 0:
             save()
             print(f"  [checkpoint -> {args.out}]", flush=True)
+        if args.max_occ and seen >= args.max_occ:
+            print(f"  [occurrence budget {args.max_occ:,} reached]", flush=True)
+            break
     print(f"done: {seen:,} noun occurrences, {step:,} steps", flush=True)
     save()
     print(f"saved -> {args.out}")
