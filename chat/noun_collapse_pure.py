@@ -102,7 +102,12 @@ def main():
     ap.add_argument("--neg", type=int, default=512,
                     help="sampled-softmax noun negatives (0 = all nouns)")
     ap.add_argument("--log-every", type=int, default=200)
+    ap.add_argument("--save-every", type=int, default=5000,
+                    help="checkpoint every N steps (0 = only at the end)")
     ap.add_argument("--probe", nargs="*", default=None)
+    ap.add_argument("--resume", default=None,
+                    help="continue training this checkpoint: keeps its vocab, "
+                         "wells, start, strength, temp — skips pass 1")
     ap.add_argument("--device", default="auto", choices=["auto", "mps", "cuda", "cpu"])
     args = ap.parse_args()
 
@@ -135,9 +140,15 @@ def main():
     if not args.data:
         sys.exit("need --data (or --probe)")
 
-    # -- vocab + noun targets
-    nouns = noun_set()
-    stoi, noun_ids, freq = build_vocab(args, nouns)
+    # -- vocab + noun targets (resume: reuse the checkpoint's, skip pass 1)
+    if args.resume:
+        ck = torch.load(args.resume, map_location=device)
+        stoi, noun_ids = ck["stoi"], ck["noun_ids"]
+        print(f"resumed vocab from {args.resume}: {len(stoi):,} words, "
+              f"{len(noun_ids):,} nouns", flush=True)
+    else:
+        nouns = noun_set()
+        stoi, noun_ids, freq = build_vocab(args, nouns)
     SLOT = len(stoi) + 1          # the hole gets its own learned well
     V = len(stoi) + 2
     noun_ids_t = torch.tensor(noun_ids, device=device)
@@ -152,6 +163,15 @@ def main():
     start = torch.nn.Parameter(torch.randn(args.dim, device=device) * 0.05)
     log_strength = torch.nn.Parameter(torch.tensor(0.0, device=device))
     log_temp = torch.nn.Parameter(torch.tensor(0.0, device=device))
+    if args.resume:
+        with torch.no_grad():
+            W_old = ck["wells"].to(device)
+            wells[:W_old.size(0)].copy_(W_old)   # old run may lack the SLOT row
+            start.copy_(ck["start"].to(device))
+            s = min(max(ck["strength"], 1e-3), 1 - 1e-3)
+            log_strength.copy_(torch.logit(torch.tensor(s, device=device)))
+            log_temp.copy_(torch.log(torch.expm1(torch.tensor(
+                max(ck["temp"] - 1e-3, 1e-4), device=device))))
     params = [wells, start, log_strength, log_temp]
     print(f"pure model: wells {V:,} x {args.dim}  + start + strength + temp   "
           f"({sum(p.numel() for p in params):,} numbers)   device {device}", flush=True)
@@ -187,6 +207,15 @@ def main():
         return F.cross_entropy(logits, noun_slot[tgt_ids])
 
     # -- streaming train: one pass, chunk by chunk
+    def save():
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        torch.save({"wells": wells.detach().cpu(), "stoi": stoi, "noun_ids": noun_ids,
+                    "start": start.detach().cpu(),
+                    "strength": torch.sigmoid(log_strength).item(),
+                    "temp": (F.softplus(log_temp) + 1e-3).item(),
+                    "config": {"dim": args.dim, "window": args.window,
+                               "slot": SLOT}}, args.out)
+
     opt = torch.optim.Adam(params, lr=args.lr)
     is_noun = lambda t: noun_mask[t]  # noqa: E731
     cbuf, tbuf, step, seen = [], [], 0, 0
@@ -206,15 +235,11 @@ def main():
             print(f"step {step:6d}  loss {loss.item():.4f}  "
                   f"strength {torch.sigmoid(log_strength).item():.3f}  "
                   f"occurrences {seen:,}  | {time.time() - t0:.0f}s", flush=True)
+        if args.save_every and step % args.save_every == 0:
+            save()
+            print(f"  [checkpoint -> {args.out}]", flush=True)
     print(f"done: {seen:,} noun occurrences, {step:,} steps", flush=True)
-
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    import torch as T
-    T.save({"wells": wells.detach().cpu(), "stoi": stoi, "noun_ids": noun_ids,
-            "start": start.detach().cpu(),
-            "strength": torch.sigmoid(log_strength).item(),
-            "temp": (F.softplus(log_temp) + 1e-3).item(),
-            "config": {"dim": args.dim, "window": args.window, "slot": SLOT}}, args.out)
+    save()
     print(f"saved -> {args.out}")
     print("probe it:  python3 noun_collapse_pure.py --probe cat physics war india")
 
