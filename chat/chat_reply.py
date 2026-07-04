@@ -231,9 +231,18 @@ class ReplyBrain(nn.Module):
         return tok_nll, tok_cnt
 
     @torch.no_grad()
-    def generate(self, msg_ids, max_len, unk=None, ban=()):
-        """Free-running greedy decode. Returns token ids and, per step, the
-        memory index it attended to (the 'thinking' trace)."""
+    def generate(self, msg_ids, max_len, unk=None, ban=(),
+                 rep_penalty=1.0, no_repeat_bigram=False, temperature=0.0):
+        """Free-running decode. Returns token ids and, per step, the memory
+        index it attended to (the 'thinking' trace).
+
+        Anti-loop levers (all off by default = plain greedy):
+          rep_penalty >1     : divide the logit of any already-said word (calms
+                               'do you do you' by making repeats progressively
+                               costlier). 1.1-1.3 is gentle, 1.5+ is firm.
+          no_repeat_bigram   : hard-block any (prev, next) pair already produced
+                               — kills 2-word cycles outright.
+          temperature >0     : sample instead of argmax (adds variety; 0 = greedy)."""
         A = F.normalize(self.word_anchors, dim=-1)
         traj, tmask, hread = self.read_context(msg_ids, self.read_table(A))
         z = self.think(hread)
@@ -248,6 +257,8 @@ class ReplyBrain(nn.Module):
         toks, attn = [], []
         done = torch.zeros(B, dtype=torch.bool, device=msg_ids.device)
         prev = None                                   # repeat-killer: last word
+        seen_bigrams = [set() for _ in range(B)]      # (prev, next) already made
+        ar = torch.arange(B, device=msg_ids.device)
         for t in range(max_len):
             hn = F.normalize(h, dim=-1)
             q = self.att_query(hn).unsqueeze(1)
@@ -260,14 +271,31 @@ class ReplyBrain(nn.Module):
                 parts.append(self.pos_w * self.pos_emb[t].unsqueeze(0).expand(B, -1))
             query = self.brain(torch.cat(parts, dim=-1))
             logits = (F.normalize(query, dim=-1) @ A.t()) / self.temp
+            if rep_penalty != 1.0 and toks:           # penalize everything said
+                hist = torch.stack(toks, dim=1)       # (B, t)
+                g = torch.gather(logits, 1, hist)
+                g = torch.where(g > 0, g / rep_penalty, g * rep_penalty)
+                logits.scatter_(1, hist, g)
             logits[:, PAD] = float("-inf")
             if unk is not None:
                 logits[:, unk] = float("-inf")
             for b in ban:                             # e.g. never type <you>/<me>
                 logits[:, b] = float("-inf")
             if prev is not None:                      # no same word twice in a row
-                logits[torch.arange(B, device=logits.device), prev] = float("-inf")
-            nxt = logits.argmax(-1)
+                logits[ar, prev] = float("-inf")
+            if no_repeat_bigram and prev is not None:  # block (prev, y) reuse
+                for b in range(B):
+                    for (p, y) in seen_bigrams[b]:
+                        if p == int(prev[b]):
+                            logits[b, y] = float("-inf")
+            if temperature > 0:                       # sample, calmer variety
+                probs = torch.softmax(logits / temperature, dim=-1)
+                nxt = torch.multinomial(probs, 1).squeeze(1)
+            else:
+                nxt = logits.argmax(-1)
+            if prev is not None:
+                for b in range(B):
+                    seen_bigrams[b].add((int(prev[b]), int(nxt[b])))
             prev = nxt
             toks.append(nxt)
             h = self.collapse_step(h, A[nxt])
@@ -479,7 +507,10 @@ def chat_loop(args, device):
         ctx = " ".join(toks[-ctx_words:])
         ids = encode_ctx([ctx], stoi, unk, eos, ctx_words, minter=minter).to(device)
         model.oov_wells = minter.table()          # new words -> new read-wells
-        gen, att = model.generate(ids, MAXLEN, unk=unk, ban=ban)
+        gen, att = model.generate(ids, MAXLEN, unk=unk, ban=ban,
+                                  rep_penalty=args.rep_penalty,
+                                  no_repeat_bigram=args.no_repeat_bigram,
+                                  temperature=args.temperature)
         reply = decode(gen[0], itos, eos)
         history.append(("<me>", reply))
         print(f"model > {reply}")
@@ -541,6 +572,17 @@ def main():
     # io
     ap.add_argument("--ckpt", default=CKPT_OUT)
     ap.add_argument("--chat", action="store_true", help="talk to the trained model")
+    # anti-loop decode levers (chat only; defaults = plain greedy)
+    ap.add_argument("--rep-penalty", type=float, default=1.3,
+                    help="divide the logit of any already-said word (calms "
+                         "loops; 1.0 = off, 1.1-1.3 gentle, 1.5+ firm)")
+    ap.add_argument("--no-repeat-bigram", action="store_true", default=True,
+                    help="hard-block any 2-word pair from repeating (kills "
+                         "'do you do you'); --no-no-repeat-bigram to disable")
+    ap.add_argument("--no-no-repeat-bigram", dest="no_repeat_bigram",
+                    action="store_false")
+    ap.add_argument("--temperature", type=float, default=0.0,
+                    help="sample instead of argmax (0 = greedy; 0.7-1.0 varied)")
     ap.add_argument("--device", default="auto", choices=["auto", "mps", "cuda", "cpu"])
     args = ap.parse_args()
 
