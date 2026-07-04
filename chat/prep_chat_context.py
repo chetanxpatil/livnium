@@ -23,6 +23,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 
 DEFAULT_IN = ("/Users/chetanpatil/Desktop/test/lab/infected/projects/"
               "chat_crystal/build/unit_test_assets/assets/conversations.json")
@@ -35,14 +36,24 @@ _KEEP = set(".,!?;:")              # peeled punctuation worth a well of its own
 # curly -> straight so "that's" and "that's" are ONE word, not two wells
 _UNI = str.maketrans({"’": "'", "‘": "'", "ʼ": "'", "`": "'", "´": "'",
                       "…": "."})
+# DailyDialog (and PTB-style corpora) split contractions apart: "didn ' t",
+# "did n't", "i ' m". Left alone, clean() peels the standalone apostrophe and
+# the negation stem "didn"/"doesn"/"isn" survives as a meaningless token —
+# and "didn't" (negation!) collapses to "didn". Rejoin them before splitting.
+_CONTRACT_APOS = re.compile(r"\s*'\s*(t|s|re|ve|ll|d|m)\b")   # "didn ' t" -> "didn't"
+_CONTRACT_NT = re.compile(r"(\w)\s+n't\b")                    # "did n't"  -> "didn't"
 
 
 def clean(text):
     """SIMPLE: split on spaces, peel symbols off each word's EDGES only.
     The inside of a word is never touched — that's, e-mail, 128d stay whole.
-    Peeled . , ! ? ; : become standalone tokens; other symbols just drop."""
+    Peeled . , ! ? ; : become standalone tokens; other symbols just drop.
+    Space-separated contractions are rejoined first so negations survive."""
+    s = (text or "").lower().translate(_UNI)
+    s = _CONTRACT_NT.sub(r"\1n't", s)
+    s = _CONTRACT_APOS.sub(r"'\1", s)
     out = []
-    for w in (text or "").lower().translate(_UNI).split():
+    for w in s.split():
         head, tail = [], []
         while w and not w[0].isalnum():                # peel front symbols
             head.append(w[0]); w = w[1:]
