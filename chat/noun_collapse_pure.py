@@ -64,19 +64,22 @@ def build_vocab(args, nouns):
     return stoi, noun_ids, freq
 
 
-def windows(args, stoi, is_noun):
+def windows(args, stoi, is_noun, slot=0):
     """Stream (ctx_ids, target_noun_id) for every noun occurrence.
-    ctx = the W words on each side, in order, target excluded, PAD-filled."""
+    ctx = W words each side, in order, target replaced by the SLOT well
+    (slot=0 disables: old behaviour, hole unmarked)."""
     W = args.window
     for line in iter_lines(args.data, args.max_lines):
         ids = [stoi.get(t, 0) for t in clean(line).split()]    # OOV -> PAD (skipped)
         for i, t in enumerate(ids):
             if not is_noun(t):
                 continue
-            ctx = [c for c in ids[max(0, i - W):i] + ids[i + 1:i + W + 1] if c != PAD]
-            if len(ctx) < args.min_ctx:
+            left = [c for c in ids[max(0, i - W):i] if c != PAD]
+            right = [c for c in ids[i + 1:i + W + 1] if c != PAD]
+            if len(left) + len(right) < args.min_ctx:
                 continue
-            yield ctx + [PAD] * (2 * W - len(ctx)), t
+            ctx = left + ([slot] if slot else []) + right
+            yield ctx + [PAD] * (2 * W + 1 - len(ctx)), t
 
 
 # ------------------------------------------------------------ the model
@@ -135,7 +138,8 @@ def main():
     # -- vocab + noun targets
     nouns = noun_set()
     stoi, noun_ids, freq = build_vocab(args, nouns)
-    V = len(stoi) + 1
+    SLOT = len(stoi) + 1          # the hole gets its own learned well
+    V = len(stoi) + 2
     noun_ids_t = torch.tensor(noun_ids, device=device)
     noun_slot = torch.full((V,), -1, dtype=torch.long, device=device)
     noun_slot[noun_ids_t] = torch.arange(len(noun_ids), device=device)
@@ -188,7 +192,7 @@ def main():
     cbuf, tbuf, step, seen = [], [], 0, 0
     import time
     t0 = time.time()
-    for ctx, tgt in windows(args, stoi, is_noun):
+    for ctx, tgt in windows(args, stoi, is_noun, slot=SLOT):
         cbuf.append(ctx); tbuf.append(tgt); seen += 1
         if len(cbuf) < args.batch:
             continue
@@ -210,7 +214,7 @@ def main():
             "start": start.detach().cpu(),
             "strength": torch.sigmoid(log_strength).item(),
             "temp": (F.softplus(log_temp) + 1e-3).item(),
-            "config": {"dim": args.dim, "window": args.window}}, args.out)
+            "config": {"dim": args.dim, "window": args.window, "slot": SLOT}}, args.out)
     print(f"saved -> {args.out}")
     print("probe it:  python3 noun_collapse_pure.py --probe cat physics war india")
 
