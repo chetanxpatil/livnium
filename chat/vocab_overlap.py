@@ -26,22 +26,54 @@ def load_stoi(path):
     return dict(ck["config"].get("stoi", {}))          # fallback
 
 
+def data_vocab(path):
+    """The ACTUAL word set of a ctx<TAB>reply tsv — what a run trains on,
+    before --extra-vocab pollutes the model's vocab table."""
+    from collections import Counter
+    c = Counter()
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            for part in line.rstrip("\n").split("\t"):
+                c.update(part.split())
+    return c
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--noun", default="model/noun_collapse_pure.pt")
     ap.add_argument("--chat", default="model/chat_reply_general.pt")
+    ap.add_argument("--data", default=None,
+                    help="measure coverage of THIS tsv's real vocab (e.g. "
+                         "data/dd_context.tsv) instead of the model's table")
     args = ap.parse_args()
 
     noun = set(load_stoi(args.noun))
-    chat_stoi = load_stoi(args.chat)
-    chat = set(chat_stoi)
+
+    if args.data:
+        freq = data_vocab(args.data)
+        chat = set(freq)
+        chat_stoi = {w: -c for w, c in freq.items()}     # sort by freq desc
+        title = f"{args.data} real vocab"
+        # token-weighted coverage: what FRACTION OF ACTUAL TEXT is covered
+        tot = sum(freq.values())
+        cov = sum(c for w, c in freq.items() if w in noun)
+        tok_line = (f"token coverage: {100*cov/tot:.1f}% of all word tokens "
+                    f"in the corpus are in the noun model")
+    else:
+        chat_stoi = load_stoi(args.chat)
+        chat = set(chat_stoi)
+        title = "chat model vocab (includes --extra-vocab personal words)"
+        tok_line = None
+
     matched = chat & noun
     missed = chat - noun
-
     print(f"noun vocab : {len(noun):,}")
-    print(f"chat vocab : {len(chat):,}")
-    print(f"matched    : {len(matched):,}  ({100*len(matched)/len(chat):.1f}% of chat)")
-    print(f"missed     : {len(missed):,}\n")
+    print(f"{title}: {len(chat):,}")
+    print(f"matched    : {len(matched):,}  ({100*len(matched)/len(chat):.1f}% of types)")
+    print(f"missed     : {len(missed):,}")
+    if tok_line:
+        print(tok_line)
+    print()
 
     # the diagnostic: are COMMON words missing?  chat ids are assigned by
     # frequency (lower id = more frequent) in most of these builders, so the
