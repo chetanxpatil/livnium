@@ -110,9 +110,15 @@ def main():
     print(f"  intrinsic dimension: {d_twonn:.2f}  "
           f"(on {len(idx):,} sampled nouns)")
 
-    print(f"\nverdict: stored in {D}d, but the noun manifold's intrinsic "
-          f"dimension is ~{d_twonn:.1f} — the meaning rides on a thin, "
-          f"curved sheet inside the {D}d box.")
+    # local (TwoNN) vs global (PR) is the honest story: their GAP is curvature.
+    # a flat k-d subspace has local == global; a curved k-d manifold folded
+    # through the box has local << global (Swiss-roll: 2-d sheet, needs 3 axes).
+    print(f"\nverdict: the noun manifold is intrinsically ~{d_twonn:.0f}-d "
+          f"(local, TwoNN) but nonlinearly embedded — curved through ~{pr:.0f} "
+          f"of the {D} stored axes (global, participation ratio).")
+    print(f"         the gap ({d_twonn:.0f} vs {pr:.0f}) IS the curvature the "
+          f"collapse dynamics carved; a linear method (PPMI+SVD) would have "
+          f"local == global.")
 
 
 if __name__ == "__main__":

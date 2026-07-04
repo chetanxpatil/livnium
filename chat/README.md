@@ -44,6 +44,27 @@ prediction pressure alone, nothing told it what a noun means.
 Within the word2vec/GloVe band on a fraction of the data, with no neural
 network. Reproduce: `python3 embed_eval.py --model model/noun_collapse_pure.pt`.
 
+## Geometry — a curved ~20-d manifold, not a flat subspace
+
+`intrinsic_dim.py` measures how many dimensions the wells *actually* use. The
+answer depends on scale, and the gap is the interesting part:
+
+| measure | value | reading |
+|---|---:|---|
+| TwoNN intrinsic dim (local) | **~20** | around any noun, its neighbors live on a ~20-d patch — in the normal word-embedding range (word2vec/GloVe ≈ 10–30) |
+| participation ratio (global) | ~135 | variance spreads across ~135 effective axes of 256 |
+| PCA components for 90% variance | 195 | nearly full linear rank |
+
+Local ~20 but global ~135 means the manifold is **not** a flat 20-d subspace
+(that would give local == global) — it's a ~20-d sheet **heavily curved and
+folded** through ~135 of the 256 stored axes, the way a 2-d Swiss roll needs 3.
+That gap *is* the nonlinear warping the collapse dynamics carve (the same
+warping the flow-field plots in `docs/COLLAPSE_VISUALIZATION.md` show) — a linear
+method like PPMI+SVD would give a flat subspace with local == global. Measured
+on the unit-normalized wells, so the dimension is of the spherical manifold.
+
+Reproduce: `python3 intrinsic_dim.py`.
+
 ## Speed (`noun_bench.py`, M-series MacBook; **training was running during the
 measurement, so these are pessimistic**)
 
