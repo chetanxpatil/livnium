@@ -332,6 +332,23 @@ def shrink_vocab(train_pairs, warm, stoi, itos, unk, eos, min_freq):
     return torch.stack(rows), new_stoi, new_itos, new_unk, new_eos, n, minted
 
 
+def semantic_init(model, stoi, path, device):
+    """Semantic initialization layer: overwrite wells with Wikipedia-trained
+    collapse geometry (noun_collapse_pure.pt) for every shared word. Warm
+    start only — training still moves them; dialogue usage wins over
+    encyclopedia usage wherever they disagree."""
+    ck = torch.load(path, map_location=device)
+    wells = F.normalize(ck["wells"].to(device), dim=-1)
+    sstoi = ck["stoi"]
+    n = 0
+    with torch.no_grad():
+        for w, i in stoi.items():
+            j = sstoi.get(w)
+            if j is not None:
+                model.word_anchors[i].copy_(wells[j]); n += 1
+    print(f"semantic init: {n:,}/{len(stoi):,} wells <- {path}")
+
+
 def meaning_weights(train_rep, n_words, alpha):
     """Rarity = meaning, no POS tagger needed: function words are frequent,
     content words are rare. weight = surprisal^alpha, occurrence-mean 1 so
@@ -518,6 +535,9 @@ def main():
     ap.add_argument("--resume", default=None,
                     help="continue training from this reply checkpoint — keeps "
                          "its vocab and wells")
+    ap.add_argument("--semantic-init", default=None,
+                    help="warm shared wells from a Wikipedia collapse model "
+                         "(model/noun_collapse_pure.pt) before training")
     # io
     ap.add_argument("--ckpt", default=CKPT_OUT)
     ap.add_argument("--chat", action="store_true", help="talk to the trained model")
@@ -566,6 +586,8 @@ def main():
                            warm_start=(extras["start"].to(device)
                                        if extras["start"] is not None else None),
                            warm_strength=extras["strength"]).to(device)
+    if args.semantic_init:
+        semantic_init(model, stoi, args.semantic_init, device)
     model.neg_samples = args.neg_samples
     use_fast = not args.no_fast_reader and os.path.exists(FAST_CKPT)
     if use_fast:
