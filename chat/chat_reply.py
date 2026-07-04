@@ -59,10 +59,11 @@ class ReplyBrain(nn.Module):
     """(context ids) -> type the reply, word by word, on the shared wells."""
 
     def __init__(self, n_words, dim, eos, warm=None, hidden=512, pos=False,
-                 warm_start=None, warm_strength=None):
+                 warm_start=None, warm_strength=None, pure=False):
         super().__init__()
         self.eos, self.dim, self.n_words = eos, dim, n_words
         self.pos = pos
+        self.pure = pure          # pure collapse writer: no attention/MLP/memory
         # training levers, set from outside (see main):
         self.pos_w = 0.0          # positional scaffold weight, annealed 1 -> 0
         self.sample_p = 0.0       # scheduled sampling: prob of walking on own pick
@@ -169,12 +170,21 @@ class ReplyBrain(nn.Module):
 
     def reply_nll(self, msg_ids, rep_ids, reduce_mean=True):
         """Teacher-forced NLL of the reply — the punishment.
-        The memory GROWS: each typed word's state joins it (self-attend).
-        (Growth uses torch.cat, not in-place writes: autograd needs the old
-        memory intact for backward. generate() preallocates instead.)"""
+
+        PURE mode (self.pure): no attention, no MLP, no growing memory. The
+        writer is just collapse — h starts at the thought z, each step picks
+        the nearest well to (h+z) and collapses onto it. O(L), fast, same
+        mechanism as the noun/char models.
+
+        FULL mode: cross-attention over a memory that GROWS each step (each
+        typed word joins it). More expressive, but O(L^2) and slow — growth
+        uses torch.cat so autograd keeps the old memory for backward."""
         A = F.normalize(self.word_anchors, dim=-1)
-        mem, vmask, hread = self.read_context(msg_ids, self.read_table(A))
-        kmem = self.att_key(mem)
+        if self.pure:
+            _, _, hread = self.read_context(msg_ids, self.read_table(A))
+        else:
+            mem, vmask, hread = self.read_context(msg_ids, self.read_table(A))
+            kmem = self.att_key(mem)
         z = self.think(hread)
         h = z
         B, L = rep_ids.shape
@@ -183,14 +193,17 @@ class ReplyBrain(nn.Module):
         sampled = self.training and self.neg_samples > 0
         for t in range(L):
             hn = F.normalize(h, dim=-1)
-            q = self.att_query(hn).unsqueeze(1)
-            scores = torch.bmm(q, kmem.transpose(1, 2)).squeeze(1)
-            attn = torch.softmax(scores.masked_fill(~vmask, -1e9), dim=-1)
-            ctx = torch.bmm(attn.unsqueeze(1), mem).squeeze(1)
-            parts = [hn, z, ctx]
-            if self.pos:                                  # annealed scaffold
-                parts.append(self.pos_w * self.pos_emb[t].unsqueeze(0).expand(B, -1))
-            query = F.normalize(self.brain(torch.cat(parts, dim=-1)), dim=-1)
+            if self.pure:                                 # state + thought, pure geometry
+                query = F.normalize(hn + z, dim=-1)
+            else:
+                q = self.att_query(hn).unsqueeze(1)
+                scores = torch.bmm(q, kmem.transpose(1, 2)).squeeze(1)
+                attn = torch.softmax(scores.masked_fill(~vmask, -1e9), dim=-1)
+                ctx = torch.bmm(attn.unsqueeze(1), mem).squeeze(1)
+                parts = [hn, z, ctx]
+                if self.pos:                              # annealed scaffold
+                    parts.append(self.pos_w * self.pos_emb[t].unsqueeze(0).expand(B, -1))
+                query = F.normalize(self.brain(torch.cat(parts, dim=-1)), dim=-1)
             tgt = rep_ids[:, t]
             if sampled:                                   # 1 pos + K random negs
                 pos = (query * A[tgt]).sum(-1, keepdim=True) / self.temp
@@ -222,10 +235,11 @@ class ReplyBrain(nn.Module):
                         walk = tgt.clone()
                         walk[coin] = lg.argmax(-1)
             h = self.collapse_step(h, A[walk])
-            hs = F.normalize(h, dim=-1).unsqueeze(1)      # typed word joins memory
-            mem = torch.cat([mem, hs], dim=1)
-            kmem = torch.cat([kmem, self.att_key(hs)], dim=1)
-            vmask = torch.cat([vmask, (tgt != PAD).unsqueeze(1)], dim=1)
+            if not self.pure:                             # grow the self-attend memory
+                hs = F.normalize(h, dim=-1).unsqueeze(1)  # typed word joins memory
+                mem = torch.cat([mem, hs], dim=1)
+                kmem = torch.cat([kmem, self.att_key(hs)], dim=1)
+                vmask = torch.cat([vmask, (tgt != PAD).unsqueeze(1)], dim=1)
         if reduce_mean:
             return (tok_nll / tok_cnt.clamp(min=1)).mean()
         return tok_nll, tok_cnt
@@ -248,12 +262,13 @@ class ReplyBrain(nn.Module):
         z = self.think(hread)
         h = z
         B, Lm = msg_ids.size(0), traj.size(1)
-        # preallocated memory (no_grad => in-place writes are safe here)
-        mem = traj.new_zeros(B, Lm + max_len, self.dim); mem[:, :Lm] = traj
-        kmem = traj.new_zeros(B, Lm + max_len, self.dim); kmem[:, :Lm] = self.att_key(traj)
-        vmask = torch.zeros(B, Lm + max_len, dtype=torch.bool, device=msg_ids.device)
-        vmask[:, :Lm] = tmask
-        mlen = Lm
+        if not self.pure:
+            # preallocated memory (no_grad => in-place writes are safe here)
+            mem = traj.new_zeros(B, Lm + max_len, self.dim); mem[:, :Lm] = traj
+            kmem = traj.new_zeros(B, Lm + max_len, self.dim); kmem[:, :Lm] = self.att_key(traj)
+            vmask = torch.zeros(B, Lm + max_len, dtype=torch.bool, device=msg_ids.device)
+            vmask[:, :Lm] = tmask
+            mlen = Lm
         toks, attn = [], []
         done = torch.zeros(B, dtype=torch.bool, device=msg_ids.device)
         prev = None                                   # repeat-killer: last word
@@ -261,16 +276,19 @@ class ReplyBrain(nn.Module):
         ar = torch.arange(B, device=msg_ids.device)
         for t in range(max_len):
             hn = F.normalize(h, dim=-1)
-            q = self.att_query(hn).unsqueeze(1)
-            scores = torch.bmm(q, kmem[:, :mlen].transpose(1, 2)).squeeze(1)
-            a = torch.softmax(scores.masked_fill(~vmask[:, :mlen], -1e9), dim=-1)
-            attn.append(a.argmax(-1))
-            ctx = torch.bmm(a.unsqueeze(1), mem[:, :mlen]).squeeze(1)
-            parts = [hn, z, ctx]
-            if self.pos:
-                parts.append(self.pos_w * self.pos_emb[t].unsqueeze(0).expand(B, -1))
-            query = self.brain(torch.cat(parts, dim=-1))
-            logits = (F.normalize(query, dim=-1) @ A.t()) / self.temp
+            if self.pure:                             # pure collapse: state + thought
+                query = F.normalize(hn + z, dim=-1)
+            else:
+                q = self.att_query(hn).unsqueeze(1)
+                scores = torch.bmm(q, kmem[:, :mlen].transpose(1, 2)).squeeze(1)
+                a = torch.softmax(scores.masked_fill(~vmask[:, :mlen], -1e9), dim=-1)
+                attn.append(a.argmax(-1))
+                ctx = torch.bmm(a.unsqueeze(1), mem[:, :mlen]).squeeze(1)
+                parts = [hn, z, ctx]
+                if self.pos:
+                    parts.append(self.pos_w * self.pos_emb[t].unsqueeze(0).expand(B, -1))
+                query = F.normalize(self.brain(torch.cat(parts, dim=-1)), dim=-1)
+            logits = (query @ A.t()) / self.temp
             if rep_penalty != 1.0 and toks:           # penalize everything said
                 hist = torch.stack(toks, dim=1)       # (B, t)
                 g = torch.gather(logits, 1, hist)
@@ -299,10 +317,11 @@ class ReplyBrain(nn.Module):
             prev = nxt
             toks.append(nxt)
             h = self.collapse_step(h, A[nxt])
-            mem[:, mlen] = F.normalize(h, dim=-1)     # own word joins the memory
-            kmem[:, mlen] = self.att_key(mem[:, mlen])
-            vmask[:, mlen] = ~done
-            mlen += 1
+            if not self.pure:                         # own word joins the memory
+                mem[:, mlen] = F.normalize(h, dim=-1)
+                kmem[:, mlen] = self.att_key(mem[:, mlen])
+                vmask[:, mlen] = ~done
+                mlen += 1
             done = done | (nxt == self.eos)
             if bool(done.all()):
                 break
@@ -476,7 +495,8 @@ def chat_loop(args, device):
     unk, eos = ck["unk"], ck["eos"]
     ctx_words = cfg.get("ctx_words", CTX_WORDS)
     model = ReplyBrain(cfg["n_words"], cfg["dim"], eos,
-                       pos=cfg.get("pos", False)).to(device)
+                       pos=cfg.get("pos", False),
+                       pure=cfg.get("pure", False)).to(device)
     model.load_state_dict(ck["state_dict"])
     model.pos_w = ck.get("pos_w", 0.0)
     if ck.get("fast_alpha") is not None:
@@ -572,6 +592,9 @@ def main():
     # io
     ap.add_argument("--ckpt", default=CKPT_OUT)
     ap.add_argument("--chat", action="store_true", help="talk to the trained model")
+    ap.add_argument("--pure", action="store_true",
+                    help="PURE collapse writer: no attention, no MLP, no growing "
+                         "memory — O(L) and fast, same engine as the noun model")
     # anti-loop decode levers (chat only; defaults = plain greedy)
     ap.add_argument("--rep-penalty", type=float, default=1.3,
                     help="divide the logit of any already-said word (calms "
@@ -607,7 +630,8 @@ def main():
         cfg = ck["config"]
         stoi, itos, unk, eos = ck["stoi"], ck["itos"], ck["unk"], ck["eos"]
         n_words, dim = cfg["n_words"], cfg["dim"]
-        model = ReplyBrain(n_words, dim, eos, pos=cfg.get("pos", False)).to(device)
+        model = ReplyBrain(n_words, dim, eos, pos=cfg.get("pos", False),
+                           pure=cfg.get("pure", False)).to(device)
         model.load_state_dict(ck["state_dict"])
         print(f"resumed {args.resume} (epoch {ck['best']['epoch']}, "
               f"nll {ck['best']['nll']:.4f}) — vocab + wells carried over")
@@ -624,10 +648,11 @@ def main():
             print(f"vocab cut: {full:,} -> {n_words:,} wells "
                   f"(min-freq {args.min_freq}{note}; {minted:,} fresh wells "
                   f"for words the typer never saw)")
-        model = ReplyBrain(n_words, dim, eos, warm=warm, pos=args.pos_anneal > 0,
+        model = ReplyBrain(n_words, dim, eos, warm=warm,
+                           pos=(args.pos_anneal > 0 and not args.pure),
                            warm_start=(extras["start"].to(device)
                                        if extras["start"] is not None else None),
-                           warm_strength=extras["strength"]).to(device)
+                           warm_strength=extras["strength"], pure=args.pure).to(device)
     if args.semantic_init:
         semantic_init(model, stoi, args.semantic_init, device)
     model.neg_samples = args.neg_samples
@@ -735,7 +760,7 @@ def main():
                                        if model.fast_alpha is not None else None),
                         "config": {"dim": dim, "n_words": n_words,
                                    "ctx_words": args.ctx_words,
-                                   "pos": model.pos},
+                                   "pos": model.pos, "pure": model.pure},
                         "pos_w": model.pos_w,
                         "best": {"epoch": ep, "nll": nll}}, args.ckpt)
             print(f"  [BEST (nll {nll:.4f}) -> saved {args.ckpt}]", flush=True)
