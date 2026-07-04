@@ -10,6 +10,71 @@ Two projects live in this folder:
 
 ---
 
+# Wikipedia noun embeddings — pure collapse learns word meaning
+
+`noun_collapse_pure.py` trains word embeddings with **nothing but the collapse
+engine** — one 256-d well per word, a start state, and two scalars (strength,
+temp). No MLP, no attention, no output layer. The task is CBOW-style fill-in-
+the-blank: collapse a state through a noun's ±5-word ordered context and make
+the final state point at the missing noun (sampled-softmax CE over nouns).
+
+Trained on ~5M lines of English Wikipedia (~7.5% of the corpus), **94.75M noun
+occurrences**, one streaming pass, ~3.2 h on an M-series MacBook (MPS).
+
+## What it learned (probe)
+
+```
+cat     -> tabby dog pet felis mouse stray feline
+physics -> chemistry mathematics astronomy quantum mechanics astrophysics
+war     -> vietnam outbreak world cold ii boer veteran
+india   -> gujarat pakistan nepal sikkim delhi bombay punjab bengal
+```
+
+Synonyms, hypernyms, sibling terms and geographic manifolds — emerged from
+prediction pressure alone, nothing told it what a noun means.
+
+## Quality (SimLex-999, the honest yardstick)
+
+| model | data | SimLex-999 ρ (nouns) |
+|---|---|---|
+| **pure collapse** | 7.5% of Wikipedia, noun-only | **0.362** (662/666 pairs) |
+| word2vec / GloVe (published) | full Wikipedia+Gigaword, billions of tokens | ~0.37–0.44 |
+| PPMI+SVD (reference) | full corpus | ~0.38 |
+
+Within the word2vec/GloVe band on a fraction of the data, with no neural
+network. Reproduce: `python3 embed_eval.py --model model/noun_collapse_pure.pt`.
+
+## Speed (`noun_bench.py`, M-series MacBook; **training was running during the
+measurement, so these are pessimistic**)
+
+| batch | CPU words/s | MPS words/s |
+|---:|---:|---:|
+| 1 | 43,863 | 5,174 |
+| 64 | 831,754 | 215,429 |
+| 1024 | 1,464,201 | **2,311,023** |
+
+- Embed one 10-word context: **0.23 ms on CPU** (real-time, no GPU needed).
+- Bulk throughput: **2.3M words/s** on MPS at batch 1024.
+- Nearest-noun query vs 23,758 wells: **0.48 ms** (CPU).
+
+Crossover matches the SNLI demo below: CPU wins single items (launch-bound),
+GPU runs away in bulk (~batch 256+). The 10-step sequential collapse walk
+amortizes to ~4 µs/window under batch parallelism.
+
+## As a semantic initialization layer
+
+These wells transfer into the chat-brain: `chat_reply.py --semantic-init
+model/noun_collapse_pure.pt` warm-starts every shared word from Wikipedia
+geometry before training (matched by word string; same 256-d). Warm start, not
+freeze — dialogue usage still moves the wells. Whether it lowers chat dev-NLL is
+an open A/B (train with vs without `--semantic-init`, same everything else).
+
+Files: `noun_collapse_pure.py` (train, `--resume`/`--sample-parts`/`--max-occ`) ·
+`noun_embed.py` (PPMI+SVD baseline on the same data) · `embed_eval.py` (SimLex) ·
+`noun_bench.py` (speed) · `model/noun_collapse_pure.pt` (weights).
+
+---
+
 # Part 1 — The chat-brain
 
 ## Data rule (single source of truth)
