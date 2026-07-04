@@ -1,0 +1,23 @@
+{
+  "model_type": "noun_collapse",
+  "architecture": "NounCollapse",
+  "framework": "pytorch",
+  "checkpoint_file": "noun_collapse_pure.pt",
+  "dim": 256,
+  "vocab_size": 100001,
+  "num_nouns": 23758,
+  "window": 5,
+  "pad_idx": 0,
+  "learnable_params": "wells + start + strength + temp",
+  "mlp": false,
+  "attention": false,
+  "output_layer": false,
+  "num_params_approx": 25600514,
+  "objective": "CBOW-style fill-in-the-blank: collapse a state through a noun's context, point at the missing noun",
+  "trained_on": "English Wikipedia (~5M lines / ~7.5% of corpus)",
+  "noun_occurrences": 94751102,
+  "pretrained_embeddings": false,
+  "simlex999_noun_spearman": 0.362,
+  "simlex999_coverage": "662/666 noun pairs",
+  "notes": "Pure vector-collapse embeddings. Meaning is read out of the geometry: the wells that pull are the wells you look up. See modeling_noun_collapse.py for the standalone loader. Single streaming pass, ~3.2h on M-series MPS."
+}

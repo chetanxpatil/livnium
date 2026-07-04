@@ -61,6 +61,28 @@ Crossover matches the SNLI demo below: CPU wins single items (launch-bound),
 GPU runs away in bulk (~batch 256+). The 10-step sequential collapse walk
 amortizes to ~4 µs/window under batch parallelism.
 
+## Use it from Hugging Face
+
+The model ships as a ready-to-push HF repo in `hf_noun_upload/` (standalone
+loader, model card, config). To publish it, copy the checkpoint in and upload —
+full steps in [`hf_noun_upload/UPLOAD.md`](hf_noun_upload/UPLOAD.md):
+
+```bash
+cp model/noun_collapse_pure.pt hf_noun_upload/
+pip install -U huggingface_hub && huggingface-cli login
+huggingface-cli upload chetanxpatil/noun-collapse ./hf_noun_upload . --repo-type=model
+```
+
+Then anyone can load it with only torch — no framework, no config wiring:
+
+```python
+from modeling_noun_collapse import NounCollapse
+m = NounCollapse.from_pretrained("noun_collapse_pure.pt")
+m.neighbors("india", k=8)          # nearest nouns
+m.similarity("cat", "dog")         # cosine
+m.encode(["a cat sat on the mat"]) # collapse a sentence -> one vector
+```
+
 ## As a semantic initialization layer
 
 These wells transfer into the chat-brain: `chat_reply.py --semantic-init
