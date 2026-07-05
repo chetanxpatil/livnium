@@ -86,7 +86,13 @@ def main():
     # ---------------- stage 2: the loop (trained) ---------------------------
     pos2 = torch.nn.Parameter(pw1.clone().to(device))
     col2 = torch.nn.Parameter(cw1.clone().to(device))
-    ch2 = torch.nn.Parameter(torch.randn(3, D, device=device) * 0.02)   # NEW
+    # ch2 init by least squares: anchor_rgb @ ch2 ~ color_well, so the raw-RGB
+    # pull starts as a CONTINUOUS version of the label trajectory stage 1
+    # already uses. Random init deadlocks: noise trajectory -> gradient turns
+    # the loop off -> ch2 never learns (observed: log_s2 driven -9 -> -9.95).
+    from pixel_color_pure import COLORS
+    _anchors = torch.tensor(list(COLORS.values()), device=device)       # (13, 3)
+    ch2 = torch.nn.Parameter(torch.linalg.lstsq(_anchors, cw1.to(device)).solution)
     # ~identity init: the pull is applied SS=4096 times, so per-pixel strength
     # must be ~1e-4 for the total first-pass displacement to stay small.
     log_s2 = torch.nn.Parameter(torch.tensor(-9.0, device=device))
@@ -170,7 +176,13 @@ def main():
     # ---------------- train the loop ----------------------------------------
     keep_awake()
     import time
-    opt = torch.optim.Adam(params, lr=args.lr)
+    # log_s2 starts at -9 (identity); at the shared lr it would take thousands
+    # of steps to escape zero and the model just polishes the decoder instead.
+    # Give the strength its own fast lr so the loop physics can switch on.
+    opt = torch.optim.Adam([
+        {"params": [pos2, col2, ch2, log_t2], "lr": args.lr},
+        {"params": [log_s2], "lr": 0.05},
+    ])
     t0 = time.time()
     for step in range(1, args.steps + 1):
         idx = torch.randint(0, N, (args.batch,), device=device)
