@@ -16,6 +16,7 @@ from .basin_field import (
     BasinField,
     maybe_spawn_vectorized,
     prune_and_merge_vectorized,
+    route_all_labels_fused,
     route_to_basin_vectorized,
 )
 from .config import CollapseConfig
@@ -132,31 +133,28 @@ class VectorCollapseEngine(nn.Module):
             basin_field.to(device)
 
         strengths = self.strengths.to(device)[labels]           # (B,)
-        target_centers = torch.zeros_like(h)
 
-        # 1. Routing: fixed target anchor per sample for the whole collapse.
-        for l_idx in range(self.cfg.num_labels):
-            mask = labels == l_idx
-            if not mask.any():
-                continue
-            sub_h = h[mask]
+        # 1a. Seed: any label present in the batch but without a basin gets
+        # one, seeded from its first sample (cheap check, no matmul).
+        for l_idx in torch.unique(labels):
+            l_idx = int(l_idx.item())
+            if not basin_field.active[l_idx].any():
+                first = torch.nonzero(labels == l_idx, as_tuple=True)[0][0]
+                basin_field.add_basin(l_idx, h[first].detach(), global_step)
 
-            centers_sub, align_sub, _, tens_sub, found = route_to_basin_vectorized(
-                basin_field, sub_h, l_idx, global_step, training=update_anchors
-            )
-            if (~found).any():
-                # No basin yet for this label: seed one and re-route.
-                first = torch.nonzero(~found, as_tuple=True)[0][0]
-                basin_field.add_basin(l_idx, sub_h[first].detach(), global_step)
-                centers_sub, align_sub, _, tens_sub, found = route_to_basin_vectorized(
-                    basin_field, sub_h, l_idx, global_step, training=update_anchors
-                )
+        # 1b. Routing: ONE matmul for the whole mixed-label batch.
+        # Fixed target anchor per sample for the whole collapse.
+        target_centers, align_all, _, tens_all, _ = route_all_labels_fused(
+            basin_field, h, labels, global_step, training=update_anchors
+        )
 
-            target_centers[mask] = centers_sub
-
-            if spawn_new:
+        if spawn_new:
+            for l_idx in torch.unique(labels):
+                l_idx = int(l_idx.item())
+                mask = labels == l_idx
                 maybe_spawn_vectorized(
-                    basin_field, sub_h, l_idx, tens_sub, align_sub, global_step,
+                    basin_field, h[mask], l_idx, tens_all[mask], align_all[mask],
+                    global_step,
                     self.cfg.basin.tension_threshold, self.cfg.basin.align_threshold,
                 )
 
@@ -174,17 +172,9 @@ class VectorCollapseEngine(nn.Module):
             h = self._clamp_norm(h + delta - strengths * div.unsqueeze(-1) * away)
 
         # 3. Anchor update: moving average of final positions per basin.
+        # One matmul to re-match + index_add scatter — no loops over basins.
         if update_anchors:
-            lr = self.cfg.basin.anchor_lr
-            for l_idx in torch.unique(labels):
-                l_idx = int(l_idx.item())
-                mask_l = labels == l_idx
-                all_centers = basin_field.centers[l_idx]        # (K, dim)
-                h_final_n = F.normalize(h[mask_l].detach(), dim=-1)
-                best = torch.argmax(torch.matmul(h_final_n, all_centers.t()), dim=1)
-                for k in torch.unique(best):
-                    mean_vec = h_final_n[best == k].mean(dim=0)
-                    all_centers[k] = F.normalize((1 - lr) * all_centers[k] + lr * mean_vec, dim=0)
+            self._update_anchors_fused(h, labels, basin_field)
 
         # 4. Pruning
         if prune_every > 0 and global_step > 0 and global_step % prune_every == 0:
@@ -193,6 +183,44 @@ class VectorCollapseEngine(nn.Module):
             )
 
         return h, trace
+
+    @torch.no_grad()
+    def _update_anchors_fused(
+        self, h: torch.Tensor, labels: torch.Tensor, field: BasinField
+    ) -> None:
+        """EMA-update every touched basin center in one matmul + scatter.
+
+        Re-matches final states to their nearest same-label active basin
+        ((B, L*K) matmul), then accumulates per-basin means with index_add —
+        replaces the old Python double loop over labels x unique basins.
+        """
+        B = h.size(0)
+        device = h.device
+        L, K, D = field.centers.shape
+
+        h_n = F.normalize(h.detach(), dim=-1)                       # (B, D)
+        centers_flat = field.centers.view(L * K, D)
+        sims = torch.matmul(h_n, centers_flat.t())                  # (B, L*K)
+
+        basin_labels = torch.arange(L, device=device).repeat_interleave(K)
+        valid = field.active.view(1, L * K) & (basin_labels.view(1, -1) == labels.view(B, 1))
+        sims = sims.masked_fill(~valid, -2.0)
+        best = sims.argmax(dim=1)                                   # (B,)
+        found = valid.any(dim=1)
+        best, h_n = best[found], h_n[found]
+
+        # per-basin sum and count via scatter
+        sums = torch.zeros(L * K, D, device=device).index_add_(0, best, h_n)
+        cnts = torch.zeros(L * K, device=device).index_add_(
+            0, best, torch.ones(best.size(0), device=device)
+        )
+        touched = cnts > 0
+        means = sums[touched] / cnts[touched].unsqueeze(-1)
+
+        lr = self.cfg.basin.anchor_lr
+        centers_flat[touched] = F.normalize(
+            (1 - lr) * centers_flat[touched] + lr * means, dim=-1
+        )
 
     # ---- legacy checkpoint support ----
 

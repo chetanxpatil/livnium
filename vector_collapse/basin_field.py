@@ -94,6 +94,46 @@ def route_to_basin_vectorized(
     )
 
 
+def route_all_labels_fused(
+    field: BasinField, h: torch.Tensor, labels: torch.Tensor, step: int, training: bool = True
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Route an entire MIXED-label batch in one matmul.
+
+    Flattens the (L, K, dim) basin bank to (L*K, dim), computes all
+    similarities as a single (B, L*K) matmul, and masks out basins that are
+    inactive or belong to another label. No per-label Python loop.
+
+    Returns (target_centers, align, divergence, tension, found_mask).
+    Samples whose label has no active basin get found_mask=False.
+    """
+    B = h.size(0)
+    device = h.device
+    L, K, D = field.centers.shape
+
+    h_n = F.normalize(h, dim=-1)                                    # (B, D)
+    centers_flat = field.centers.view(L * K, D)
+    sims = torch.matmul(h_n, centers_flat.t())                      # (B, L*K)
+
+    # valid[b, j] = basin j active AND basin j's label == labels[b]
+    basin_labels = torch.arange(L, device=device).repeat_interleave(K)  # (L*K,)
+    valid = field.active.view(1, L * K) & (basin_labels.view(1, -1) == labels.view(B, 1))
+    sims = sims.masked_fill(~valid, -2.0)                           # below any cosine
+
+    best_sims, best_flat = sims.max(dim=1)                          # (B,)
+    found = valid.any(dim=1)                                        # (B,)
+
+    target_centers = centers_flat[best_flat] * found.unsqueeze(-1)  # zeros where not found
+    divergence = 1.0 - best_sims
+    tens = divergence.abs()
+
+    if training and found.any():
+        idxs, counts = torch.unique(best_flat[found], return_counts=True)
+        field.counts.view(-1).index_add_(0, idxs, counts.to(field.counts.dtype))
+        field.last_used.view(-1)[idxs] = step
+
+    return target_centers, best_sims, divergence, tens, found
+
+
 def maybe_spawn_vectorized(
     field: BasinField,
     h: torch.Tensor,

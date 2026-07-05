@@ -4,6 +4,7 @@ from .basin_field import (
     BasinField,
     maybe_spawn_vectorized,
     prune_and_merge_vectorized,
+    route_all_labels_fused,
     route_to_basin_vectorized,
 )
 from .config import BasinConfig, CollapseConfig
@@ -17,6 +18,7 @@ __all__ = [
     "divergence_from_alignment",
     "maybe_spawn_vectorized",
     "prune_and_merge_vectorized",
+    "route_all_labels_fused",
     "route_to_basin_vectorized",
     "tension",
 ]
