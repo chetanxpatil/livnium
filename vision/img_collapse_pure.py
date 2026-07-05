@@ -140,6 +140,10 @@ def main():
                     help="sampled-softmax noun negatives (0 = all nouns)")
     ap.add_argument("--ckpt-chunk", type=int, default=256,
                     help="pixels per gradient-checkpoint chunk (memory bound)")
+    ap.add_argument("--pixel-chunk", type=int, default=1,
+                    help="pixels pulling simultaneously per collapse step "
+                         "(1 = exact sequential model; 8-32 = matmul-fused, "
+                         "P-fold fewer sequential steps)")
     ap.add_argument("--log-every", type=int, default=5)
     ap.add_argument("--save-every", type=int, default=500)
     ap.add_argument("--max-steps", type=int, default=0)
@@ -163,15 +167,24 @@ def main():
     S = args.size
 
     # ---------------- pure collapse over the pixel grid --------------------
+    P = args.pixel_chunk
+
     def collapse_span(h, wells_raw, vals, s):
-        """One attraction step per pixel in [span]. h (B,D), wells (K,D), vals (B,K)."""
+        """Attraction over [span] pixels, P at a time. h (B,D), wells (K,D), vals (B,K).
+
+        Each step, all P pixels of the chunk pull on the SAME h (one (B,P)
+        align matmul, summed forces) and h moves once — the same simultaneous-
+        pull physics as the static 3-anchor collapse, applied raster-chunk by
+        raster-chunk. P=1 is exactly the original one-pixel-per-step model;
+        P>1 trades step granularity for P-fold fewer sequential steps.
+        """
         A = F.normalize(wells_raw, dim=-1)
-        for i in range(A.size(0)):
-            t = A[i]                                       # (D,)
-            v = vals[:, i:i + 1]                           # (B,1)
-            align = (F.normalize(h, dim=-1) * t).sum(-1, keepdim=True)
-            away = F.normalize(h - t, dim=-1)
-            h = h - v * s * (1.0 - align) * away
+        for i in range(0, A.size(0), P):
+            t = A[i:i + P]                                 # (C, D)
+            v = vals[:, i:i + P]                           # (B, C)
+            align = F.normalize(h, dim=-1) @ t.t()         # (B, C)  one matmul
+            away = F.normalize(h.unsqueeze(1) - t, dim=-1)  # (B, C, D)
+            h = h - ((v * s * (1.0 - align)).unsqueeze(-1) * away).sum(1)
             n = h.norm(dim=-1, keepdim=True)
             h = torch.where(n > 10.0, h * (10.0 / (n + 1e-8)), h)
         return h
@@ -199,6 +212,7 @@ def main():
         AN = F.normalize(ck["noun_wells"].to(device), dim=-1)
         start, log_s = ck["start"].to(device), ck["log_strength"].to(device)
         cs = ck["config"]["size"]
+        P = ck["config"].get("pixel_chunk", 1)  # physics must match training
         if args.render:
             if args.render not in nouns:
                 sys.exit(f"'{args.render}' is not a trained noun")
@@ -275,7 +289,8 @@ def main():
                     "log_strength": log_strength.detach().cpu(),
                     "strength": torch.sigmoid(log_strength).item(),
                     "temp": (F.softplus(log_temp) + 1e-3).item(),
-                    "config": {"size": S, "dim": args.dim}}, args.out)
+                    "config": {"size": S, "dim": args.dim,
+                               "pixel_chunk": P}}, args.out)
 
     # ---------------- train -------------------------------------------------
     import time
