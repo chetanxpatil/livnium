@@ -1,0 +1,16 @@
+# Default vector collapse configuration (matches trained NLI defaults).
+dim: 256
+num_layers: 4
+max_norm: 10.0
+labels: [E, C, N]        # index order: 0=E, 1=C, 2=N
+strengths:
+  E: 0.1
+  C: 0.1
+  N: 0.05
+basin:
+  max_basins_per_label: 64
+  tension_threshold: 0.15
+  align_threshold: 0.6
+  anchor_lr: 0.05
+  prune_min_count: 10
+  prune_merge_cos: 0.97
