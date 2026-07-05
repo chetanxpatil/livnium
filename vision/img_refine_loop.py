@@ -44,6 +44,8 @@ def main():
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--loops", type=int, default=1, help="refinement passes")
+    ap.add_argument("--err-weight", type=float, default=4.0,
+                    help="loss weight on pixels stage 1 got WRONG (1 = off)")
     ap.add_argument("--pixel-chunk", type=int, default=64)
     ap.add_argument("--log-every", type=int, default=50)
     ap.add_argument("--save-every", type=int, default=500)
@@ -99,15 +101,21 @@ def main():
     log_t2 = torch.nn.Parameter(ck1["log_temp"].clone().to(device))
     params = [pos2, col2, ch2, log_s2, log_t2]
 
-    def refine(h, rgb):
-        """One loop pass: H + raw pixels -> refined H. No labels."""
+    def refine(h, rgb, gate):
+        """One loop pass: H + raw pixels -> refined H.
+
+        gate (B, SS) in [0,1]: only gated pixels pull. Trained with stage-1's
+        error mask, so the loop works exclusively where stage 1 failed — the
+        one place where the raw pixel carries information H1 provably lacks.
+        """
         T = F.normalize(pos2.unsqueeze(0) + rgb @ ch2, dim=-1)          # (B,SS,D)
         s = torch.sigmoid(log_s2)
         for c0 in range(0, SS, P):
             t = T[:, c0:c0 + P]
+            g = gate[:, c0:c0 + P]
             align = (F.normalize(h, dim=-1).unsqueeze(1) * t).sum(-1)
             away = F.normalize(h.unsqueeze(1) - t, dim=-1)
-            h = h - ((s * (1.0 - align)).unsqueeze(-1) * away).sum(1)
+            h = h - ((s * g * (1.0 - align)).unsqueeze(-1) * away).sum(1)
             n = h.norm(dim=-1, keepdim=True)
             h = torch.where(n > 10.0, h * (10.0 / (n + 1e-8)), h)
         return h
@@ -129,20 +137,24 @@ def main():
     print("encoding all images with frozen stage 1 ...", flush=True)
     with torch.no_grad():
         H1 = torch.cat([encode_stage1(labels[b:b + 64]) for b in range(0, N, 64)])
-        # frozen reference: what stage 1 alone scores (decode H1 with frozen wells)
-        ref = ((F.normalize(H1, dim=-1) @ M1.view(-1, D).t()).view(N, SS, 13)
-               .argmax(-1) == labels.long()).float().mean().item()
+        # stage 1's own predictions -> the error mask that PUNISHES stage 2
+        pred1 = ((F.normalize(H1, dim=-1) @ M1.view(-1, D).t())
+                 .view(N, SS, 13).argmax(-1))                          # (N, SS)
+        err1 = (pred1 != labels.long())                                # (N, SS)
+        ref = (~err1).float().mean().item()
     prior = torch.mode(labels.long().cpu(), dim=0).values.to(device)
     prior_acc = (labels.long() == prior.unsqueeze(0)).float().mean().item()
     print(f"  {N:,} images  prior {prior_acc:.3f}  FROZEN stage-1 recon {ref:.3f}  "
-          f"<- the loop must beat this", flush=True)
+          f"({err1.float().mean().item():.1%} of pixels wrong -> stage 2's job)",
+          flush=True)
 
     def save():
         torch.save({"pos2": pos2.detach().cpu(), "col2": col2.detach().cpu(),
                     "ch2": ch2.detach().cpu(), "log_s2": log_s2.detach().cpu(),
                     "log_t2": log_t2.detach().cpu(), "names": names,
                     "config": {"size": S, "dim": D, "pixel_chunk": P,
-                               "loops": args.loops, "base": args.base}}, args.out)
+                               "loops": args.loops, "err_weight": args.err_weight,
+                               "base": args.base}}, args.out)
 
     if args.recon is not None:
         from PIL import Image
@@ -155,8 +167,9 @@ def main():
             for idx in args.recon:
                 h = H1[idx:idx + 1]
                 rgb = rgb_all[idx:idx + 1].float() / 255.0
+                gate = err1[idx:idx + 1].float()
                 for _ in range(ck2["config"]["loops"]):
-                    h = refine(h, rgb)
+                    h = refine(h, rgb, gate)
                 pred = decode2(h).argmax(-1).squeeze(0)
                 lab = labels[idx].long()
                 acc = (pred == lab).float().mean().item()
@@ -188,18 +201,26 @@ def main():
         idx = torch.randint(0, N, (args.batch,), device=device)
         lab = labels[idx]
         rgb = rgb_all[idx].float() / 255.0
+        err = err1[idx]                               # where stage 1 failed
         h = H1[idx]                                   # stage-1 output = input
         for _ in range(args.loops):
-            h = refine(h, rgb)
+            h = refine(h, rgb, err.float())
         logits = decode2(h)
-        loss = F.cross_entropy(logits.reshape(-1, 13), lab.reshape(-1).long())
+        # PUNISH stage 2 hardest on the pixels stage 1 got wrong
+        ce = F.cross_entropy(logits.reshape(-1, 13), lab.reshape(-1).long(),
+                             reduction="none")
+        w = 1.0 + (args.err_weight - 1.0) * err.reshape(-1).float()
+        loss = (ce * w).sum() / w.sum()
         opt.zero_grad(); loss.backward(); opt.step()
         if step % args.log_every == 0 or step == 1:
             with torch.no_grad():
-                acc = (logits.argmax(-1) == lab.long()).float().mean().item()
-            print(f"step {step:5d}  loss {loss.item():.4f}  loop acc {acc:.3f}  "
-                  f"(frozen stage-1 {ref:.3f})  s2 "
-                  f"{torch.sigmoid(log_s2).item():.3f}  | {time.time() - t0:.0f}s",
+                hit = logits.argmax(-1) == lab.long()
+                fix = hit[err].float().mean().item()          # stage-1-wrong, now right
+                keep = hit[~err].float().mean().item()        # stage-1-right, kept right
+            print(f"step {step:5d}  loss {loss.item():.4f}  fix {fix:.3f}  "
+                  f"keep {keep:.3f}  net {hit.float().mean().item():.3f}  "
+                  f"(stage-1 {ref:.3f})  s2 "
+                  f"{torch.sigmoid(log_s2).item():.4f}  | {time.time() - t0:.0f}s",
                   flush=True)
         if args.save_every and step % args.save_every == 0:
             save()
