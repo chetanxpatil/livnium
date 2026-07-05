@@ -59,11 +59,21 @@ class ReplyBrain(nn.Module):
     """(context ids) -> type the reply, word by word, on the shared wells."""
 
     def __init__(self, n_words, dim, eos, warm=None, hidden=512, pos=False,
-                 warm_start=None, warm_strength=None, pure=False):
+                 warm_start=None, warm_strength=None, pure=False, pos_well=True,
+                 align=False):
         super().__init__()
         self.eos, self.dim, self.n_words = eos, dim, n_words
         self.pos = pos
         self.pure = pure          # pure collapse writer: no attention/MLP/memory
+        # positional WELL: one anchor per reply position, ADDED to the query.
+        # pure geometry (just a vector add) — no MLP, no attention — but it tells
+        # the writer WHERE it is, which is what stops the pure bigram loop.
+        self.pos_well = bool(pos_well and pure)
+        # pure cosine-ALIGNMENT: each step scores the query against the CONTEXT
+        # word wells by raw cosine (no learned Q/K/V — same op as the decode),
+        # softmaxes, and adds the aligned context to the query. Tells the writer
+        # WHAT to look at, per word. Only new param is one temperature scalar.
+        self.align = bool(align and pure)
         # training levers, set from outside (see main):
         self.pos_w = 0.0          # positional scaffold weight, annealed 1 -> 0
         self.sample_p = 0.0       # scheduled sampling: prob of walking on own pick
@@ -89,6 +99,10 @@ class ReplyBrain(nn.Module):
 
         # writer: thought + attention + brain + write-collapse
         self.think = nn.Linear(dim, dim)
+        if self.pos_well:
+            self.pos_anchor = nn.Parameter(torch.randn(MAXLEN + 2, dim) * 0.05)
+        if self.align:
+            self.log_align_temp = nn.Parameter(torch.tensor(0.0))   # only align param
         if pos:
             self.pos_emb = nn.Parameter(torch.randn(MAXLEN + 2, dim) * 0.05)
         n_parts = 3 + (1 if pos else 0)               # [h ; z ; ctx] (+pos)
@@ -110,6 +124,10 @@ class ReplyBrain(nn.Module):
     @property
     def strength_read(self):
         return torch.sigmoid(self.log_strength_read)
+
+    @property
+    def align_temp(self):
+        return F.softplus(self.log_align_temp) + 1e-3
 
     # -- reading ------------------------------------------------------------
 
@@ -180,10 +198,13 @@ class ReplyBrain(nn.Module):
         typed word joins it). More expressive, but O(L^2) and slow — growth
         uses torch.cat so autograd keeps the old memory for backward."""
         A = F.normalize(self.word_anchors, dim=-1)
+        AT = self.read_table(A)
         if self.pure:
-            _, _, hread = self.read_context(msg_ids, self.read_table(A))
+            _, _, hread = self.read_context(msg_ids, AT)
+            if self.align:
+                Cwells = AT[msg_ids]; cmask = (msg_ids != PAD)   # context word wells
         else:
-            mem, vmask, hread = self.read_context(msg_ids, self.read_table(A))
+            mem, vmask, hread = self.read_context(msg_ids, AT)
             kmem = self.att_key(mem)
         z = self.think(hread)
         h = z
@@ -193,8 +214,16 @@ class ReplyBrain(nn.Module):
         sampled = self.training and self.neg_samples > 0
         for t in range(L):
             hn = F.normalize(h, dim=-1)
-            if self.pure:                                 # state + thought, pure geometry
-                query = F.normalize(hn + z, dim=-1)
+            if self.pure:                                 # state + thought (+ position + aligned context)
+                q = hn + z
+                if self.pos_well:                         # WHERE am I — pure vector add, no MLP
+                    q = q + self.pos_anchor[min(t, self.pos_anchor.size(0) - 1)]
+                if self.align:                            # WHAT to look at — cosine over context wells, no learned Q/K
+                    probe = F.normalize(hn + z, dim=-1).unsqueeze(1)
+                    sc = torch.bmm(probe, Cwells.transpose(1, 2)).squeeze(1) / self.align_temp
+                    a = torch.softmax(sc.masked_fill(~cmask, float("-inf")), dim=-1)
+                    q = q + torch.bmm(a.unsqueeze(1), Cwells).squeeze(1)
+                query = F.normalize(q, dim=-1)
             else:
                 q = self.att_query(hn).unsqueeze(1)
                 scores = torch.bmm(q, kmem.transpose(1, 2)).squeeze(1)
@@ -258,9 +287,12 @@ class ReplyBrain(nn.Module):
                                — kills 2-word cycles outright.
           temperature >0     : sample instead of argmax (adds variety; 0 = greedy)."""
         A = F.normalize(self.word_anchors, dim=-1)
-        traj, tmask, hread = self.read_context(msg_ids, self.read_table(A))
+        AT = self.read_table(A)
+        traj, tmask, hread = self.read_context(msg_ids, AT)
         z = self.think(hread)
         h = z
+        if self.pure and self.align:
+            Cwells = AT[msg_ids]; cmask = tmask               # context word wells
         B, Lm = msg_ids.size(0), traj.size(1)
         if not self.pure:
             # preallocated memory (no_grad => in-place writes are safe here)
@@ -276,8 +308,16 @@ class ReplyBrain(nn.Module):
         ar = torch.arange(B, device=msg_ids.device)
         for t in range(max_len):
             hn = F.normalize(h, dim=-1)
-            if self.pure:                             # pure collapse: state + thought
-                query = F.normalize(hn + z, dim=-1)
+            if self.pure:                             # pure collapse: state + thought (+ position + aligned context)
+                q = hn + z
+                if self.pos_well:
+                    q = q + self.pos_anchor[min(t, self.pos_anchor.size(0) - 1)]
+                if self.align:
+                    probe = F.normalize(hn + z, dim=-1).unsqueeze(1)
+                    sc = torch.bmm(probe, Cwells.transpose(1, 2)).squeeze(1) / self.align_temp
+                    a = torch.softmax(sc.masked_fill(~cmask, float("-inf")), dim=-1)
+                    q = q + torch.bmm(a.unsqueeze(1), Cwells).squeeze(1)
+                query = F.normalize(q, dim=-1)
             else:
                 q = self.att_query(hn).unsqueeze(1)
                 scores = torch.bmm(q, kmem[:, :mlen].transpose(1, 2)).squeeze(1)
@@ -396,6 +436,29 @@ def semantic_init(model, stoi, path, device):
     print(f"semantic init: {n:,}/{len(stoi):,} wells <- {path}")
 
 
+def build_two_view_wells(warm, stoi, noun_path, device):
+    """Option B (two views): each word well = [typer 256 | noun 256] concatenated
+    into 512-d. The two spaces stay SEPARATE halves — never summed — so their
+    different bases don't fight. Cosine in 512-d is just the average of the two
+    per-view cosines, so the writer must match a word in BOTH its writing
+    geometry and its meaning geometry. Words the noun model never saw get the
+    typer view duplicated (they simply have one view). forward re-normalizes."""
+    ck = torch.load(noun_path, map_location=device)
+    nwells = F.normalize(ck["wells"].to(device), dim=-1)
+    nstoi = ck["stoi"]
+    typer = F.normalize(warm, dim=-1)
+    noun = typer.clone()                        # default: the one view we have
+    hits = 0
+    with torch.no_grad():
+        for w, i in stoi.items():
+            j = nstoi.get(w)
+            if j is not None:
+                noun[i] = nwells[j]; hits += 1
+    cat = torch.cat([typer, noun], dim=1)       # (n_words, 512)
+    cat[PAD] = 0.0
+    return cat, hits
+
+
 def meaning_weights(train_rep, n_words, alpha):
     """Rarity = meaning, no POS tagger needed: function words are frequent,
     content words are rare. weight = surprisal^alpha, occurrence-mean 1 so
@@ -431,6 +494,41 @@ class CharMinter:
     def table(self):
         if not self.rows:
             return torch.zeros(0, self.anchors.size(1), device=self.device)
+        return torch.stack(self.rows).to(self.device)
+
+
+class WordMinter:
+    """OOV context word -> its REAL well from a trained WORD model (e.g.
+    noun_collapse_pure.pt), which lives in the same geometry as the reply
+    wells. Only words that model has never seen fall back to a char
+    fingerprint. Read-side only; ids sit past the trained vocab, exactly like
+    CharMinter, so the writer's vocabulary is unchanged."""
+
+    def __init__(self, out_dim, n_words, device, word_path):
+        ck = torch.load(word_path, map_location=device)
+        self.wells = F.normalize(ck["wells"].to(device), dim=-1).cpu()
+        self.src = self.wells.size(1)                      # source width (256)
+        self.wstoi = dict(ck["stoi"])
+        self.anchors = letter_anchors(self.src, device="cpu")   # char fallback
+        self.out_dim, self.reps = out_dim, max(1, out_dim // self.src)
+        self.base, self.device = n_words, device
+        self.ids, self.rows = {}, []
+        self.hits = self.miss = 0
+
+    def id_for(self, word):
+        if word not in self.ids:
+            self.ids[word] = self.base + len(self.rows)
+            j = self.wstoi.get(word)
+            if j is not None:
+                v = self.wells[j]; self.hits += 1
+            else:
+                v = char_fingerprint(word, self.anchors); self.miss += 1
+            self.rows.append(v.repeat(self.reps) if self.reps > 1 else v)  # tile to out_dim
+        return self.ids[word]
+
+    def table(self):
+        if not self.rows:
+            return torch.zeros(0, self.out_dim, device=self.device)
         return torch.stack(self.rows).to(self.device)
 
 
@@ -496,14 +594,20 @@ def chat_loop(args, device):
     ctx_words = cfg.get("ctx_words", CTX_WORDS)
     model = ReplyBrain(cfg["n_words"], cfg["dim"], eos,
                        pos=cfg.get("pos", False),
-                       pure=cfg.get("pure", False)).to(device)
+                       pure=cfg.get("pure", False),
+                       pos_well=cfg.get("pos_well", False),
+                       align=cfg.get("align", False)).to(device)
     model.load_state_dict(ck["state_dict"])
     model.pos_w = ck.get("pos_w", 0.0)
     if ck.get("fast_alpha") is not None:
         model.fast_alpha = ck["fast_alpha"].to(device)
     model.eval()
     ban = [stoi[t] for t in SPECIALS if t in stoi]
-    minter = CharMinter(cfg["dim"], cfg["n_words"], device)   # char layer, live
+    oov_src = getattr(args, "oov_words", None) or "model/noun_collapse_pure.pt"
+    if os.path.exists(oov_src):
+        minter = WordMinter(cfg["dim"], cfg["n_words"], device, oov_src)  # real word wells
+    else:
+        minter = CharMinter(cfg["dim"], cfg["n_words"], device)           # char fallback
     print(f"loaded {args.ckpt}   ctx {ctx_words} words   device {device}")
     print("multi-turn: it remembers this conversation. :reset to wipe, :q to quit\n")
     from prep_chat_context import clean as clean_text   # same tokenizer as training
@@ -579,6 +683,10 @@ def main():
     ap.add_argument("--no-char-wells", action="store_true",
                     help="OOV context words become <unk> instead of reading "
                          "through char-fingerprint wells")
+    ap.add_argument("--oov-words", default=None,
+                    help="mint OOV context read-wells from this WORD model "
+                         "(real in-geometry wells; char fingerprint only for "
+                         "words it never saw). Defaults to --semantic-init.")
     # two-stage: general pretrain -> personal fine-tune (see prep_dailydialog.py)
     ap.add_argument("--extra-vocab", default=None,
                     help="second tsv whose words also count in the vocab cut, "
@@ -595,6 +703,19 @@ def main():
     ap.add_argument("--pure", action="store_true",
                     help="PURE collapse writer: no attention, no MLP, no growing "
                          "memory — O(L) and fast, same engine as the noun model")
+    ap.add_argument("--two-views", action="store_true",
+                    help="each word well = [typer 256 | noun 256] concatenated "
+                         "(512-d). Keeps BOTH representations instead of "
+                         "overwriting one with the other.")
+    ap.add_argument("--no-pos-well", dest="pos_well", action="store_false",
+                    help="disable the positional well in --pure mode (on by "
+                         "default; it's what stops the pure bigram loop)")
+    ap.set_defaults(pos_well=True)
+    ap.add_argument("--align", action="store_true",
+                    help="pure cosine-alignment in --pure mode: each step attends "
+                         "over the CONTEXT word wells by raw cosine (no learned "
+                         "Q/K) and adds the aligned content to the query. Per-word "
+                         "context lookup, still wells+cosine. Breaks generic replies.")
     # anti-loop decode levers (chat only; defaults = plain greedy)
     ap.add_argument("--rep-penalty", type=float, default=1.3,
                     help="divide the logit of any already-said word (calms "
@@ -631,7 +752,9 @@ def main():
         stoi, itos, unk, eos = ck["stoi"], ck["itos"], ck["unk"], ck["eos"]
         n_words, dim = cfg["n_words"], cfg["dim"]
         model = ReplyBrain(n_words, dim, eos, pos=cfg.get("pos", False),
-                           pure=cfg.get("pure", False)).to(device)
+                           pure=cfg.get("pure", False),
+                           pos_well=cfg.get("pos_well", False),
+                           align=cfg.get("align", False)).to(device)
         model.load_state_dict(ck["state_dict"])
         print(f"resumed {args.resume} (epoch {ck['best']['epoch']}, "
               f"nll {ck['best']['nll']:.4f}) — vocab + wells carried over")
@@ -648,12 +771,20 @@ def main():
             print(f"vocab cut: {full:,} -> {n_words:,} wells "
                   f"(min-freq {args.min_freq}{note}; {minted:,} fresh wells "
                   f"for words the typer never saw)")
+        if args.two_views:
+            noun_path = args.oov_words or args.semantic_init or "model/noun_collapse_pure.pt"
+            warm, nhits = build_two_view_wells(warm, stoi, noun_path, device)
+            dim = warm.size(1)                        # 256 -> 512
+            extras["start"] = None                    # start is now 512-d, fresh
+            print(f"two views: well = [typer | noun] = {dim}d  "
+                  f"({nhits:,} noun-seeded, rest typer-duplicated)")
         model = ReplyBrain(n_words, dim, eos, warm=warm,
                            pos=(args.pos_anneal > 0 and not args.pure),
                            warm_start=(extras["start"].to(device)
                                        if extras["start"] is not None else None),
-                           warm_strength=extras["strength"], pure=args.pure).to(device)
-    if args.semantic_init:
+                           warm_strength=extras["strength"], pure=args.pure,
+                           pos_well=args.pos_well, align=args.align).to(device)
+    if args.semantic_init and not args.two_views:     # two-views already baked noun in
         semantic_init(model, stoi, args.semantic_init, device)
     model.neg_samples = args.neg_samples
     use_fast = not args.no_fast_reader and os.path.exists(FAST_CKPT)
@@ -668,8 +799,14 @@ def main():
     print(f"scaffolds: pos-anneal {args.pos_anneal}   sched-sample {args.sched_sample} "
           f"over {args.sched_anneal} ep   neg-samples {args.neg_samples}", flush=True)
 
-    # -- tensors (context reads through char wells for OOV; replies stay <unk>)
-    minter = None if args.no_char_wells else CharMinter(dim, n_words, device)
+    # -- tensors (context reads through OOV wells; replies stay <unk>)
+    oov_src = args.oov_words or args.semantic_init
+    if args.no_char_wells:
+        minter = None
+    elif oov_src:
+        minter = WordMinter(dim, n_words, device, oov_src)   # real word wells
+    else:
+        minter = CharMinter(dim, n_words, device)            # char fallback
 
     def pre_encode(chunk):
         msg = encode_ctx([m for m, r in chunk], stoi, unk, eos, args.ctx_words,
@@ -681,7 +818,11 @@ def main():
     dev_msg, dev_rep = pre_encode(dev)
     if minter is not None:
         model.oov_wells = minter.table()
-        print(f"char wells: minted {len(minter.rows):,} read-wells for OOV context words")
+        if isinstance(minter, WordMinter):
+            print(f"oov wells: {minter.hits:,} real wells <- {oov_src}   "
+                  f"{minter.miss:,} char fallback")
+        else:
+            print(f"char wells: minted {len(minter.rows):,} read-wells for OOV context words")
     print(f"train {len(train)}   dev {len(dev)}\n", flush=True)
 
     if args.meaning_w > 0:
@@ -736,16 +877,17 @@ def main():
         model.train()
         run_t = torch.zeros((), device=device); nb = 0
         n_batches = (train_msg.size(0) + args.batch_size - 1) // args.batch_size
-        t_mark = t_hb = time.time()
+        t_mark = t_hb = time.time(); hb_nb = 0
         for msg, rep in batches(train_msg, train_rep, shuffle=True):
             loss = model.reply_nll(msg, rep)
             opt.zero_grad(); loss.backward(); opt.step()
             run_t += loss.detach(); nb += 1
-            if nb % 50 == 0:                      # heartbeat: never look stuck
+            if nb == 1 or nb % 10 == 0:           # heartbeat: never look stuck
                 now = time.time()
+                sps = (nb - hb_nb) / max(now - t_hb, 1e-9)
                 print(f"  ep{ep} {nb}/{n_batches}  loss {(run_t / nb).item():.4f}"
-                      f"  | {50 / (now - t_hb):.1f} steps/s", flush=True)
-                t_hb = now
+                      f"  | {sps:.1f} steps/s", flush=True)
+                t_hb = now; hb_nb = nb
         nll = evaluate()
         print(f"epoch {ep}: dev reply-nll/word {nll:.4f}   "
               f"[train {(run_t / nb).item():.4f}  pos_w {model.pos_w:.2f}  "
@@ -759,7 +901,8 @@ def main():
                         "fast_alpha": (model.fast_alpha.cpu()
                                        if model.fast_alpha is not None else None),
                         "config": {"dim": dim, "n_words": n_words,
-                                   "ctx_words": args.ctx_words,
+                                   "ctx_words": args.ctx_words, "pos_well": model.pos_well,
+                                   "align": model.align,
                                    "pos": model.pos, "pure": model.pure},
                         "pos_w": model.pos_w,
                         "best": {"epoch": ep, "nll": nll}}, args.ckpt)
