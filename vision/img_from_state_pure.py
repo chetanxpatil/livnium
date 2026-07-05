@@ -152,8 +152,9 @@ def main():
     N, C = labels.size(0), len(names)
     labels = labels.to(device)
 
-    # positional prior: per-position most common color (the no-H baseline)
-    prior = torch.mode(labels.long(), dim=0).values              # (SS,)
+    # positional prior: per-position most common color (the no-H baseline).
+    # computed on CPU: aten::mode isn't implemented on MPS.
+    prior = torch.mode(labels.long().cpu(), dim=0).values.to(device)   # (SS,)
     prior_acc = (labels.long() == prior.unsqueeze(0)).float().mean().item()
     print(f"  {N:,} images  {SS} positions  {C} colors   "
           f"positional-prior acc {prior_acc:.3f}  <- beat this or H holds nothing",
