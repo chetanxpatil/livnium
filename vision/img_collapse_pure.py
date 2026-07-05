@@ -66,6 +66,23 @@ STOPWORDS = frozenset("""
 # ------------------------------------------------------------ data plumbing
 # torch-free on purpose: testable without the heavy import.
 
+def keep_awake():
+    """macOS: stop idle sleep for the life of this process (caffeinate -i -w PID).
+
+    Long runs otherwise stall when the Mac naps (a ~8 min gap showed up mid-epoch
+    in the first S=64 training log). -w makes caffeinate exit with us; no-op off
+    macOS or if caffeinate is missing.
+    """
+    if sys.platform == "darwin":
+        import subprocess
+        try:
+            subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("  caffeinate: system won't idle-sleep during this run", flush=True)
+        except FileNotFoundError:
+            pass
+
+
 def caption_words(text):
     return _WORD.findall(text.lower())
 
@@ -255,6 +272,7 @@ def main():
         sys.exit("need --train (or --probe / --render)")
 
     # ---------------- data -------------------------------------------------
+    keep_awake()
     print("pass 1/2: caption nouns ...", flush=True)
     nouns, targets, fname = build_targets(
         args.captions, args.min_noun_count, args.max_nouns, args.no_noun_filter)
