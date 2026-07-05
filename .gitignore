@@ -1,3 +1,6 @@
+# Local image datasets (COCO etc. — huge, download separately)
+images/
+
 # Python
 __pycache__/
 *.py[cod]
