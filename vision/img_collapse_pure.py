@@ -47,6 +47,21 @@ from collections import Counter, defaultdict
 OUT = "vision/model/img_collapse_pure.pt"
 _WORD = re.compile(r"[a-z]+")
 
+# WordNet's noun lexicon technically contains "a" (the letter), "in" (inch),
+# "are" (100 m^2), "at" (Lao coin), "sitting"/"standing" (gerunds), etc.
+# In captions these are function words / verbs, and they're the most FREQUENT
+# words, so they dominate the CE and the model learns the caption prior
+# instead of image content (first S=64 P=8 run: every image probed to
+# "a, in, an, sitting, are"). Blacklist them from the target vocabulary.
+STOPWORDS = frozenset("""
+    a an the in on at of to with and or as is are was were be being been it its
+    this that these those there here he she his her they them their who i you
+    we me my your our us
+    sitting standing holding walking looking playing eating flying hanging
+    riding wearing doing having getting going making taking
+    next near very some few many several other another
+""".split())
+
 
 # ------------------------------------------------------------ data plumbing
 # torch-free on purpose: testable without the heavy import.
@@ -81,7 +96,8 @@ def build_targets(captions_path, min_noun_count, max_nouns, no_noun_filter=False
         freq.update(ws)
     keep = set() if no_noun_filter else noun_set()
     nouns = [w for w, c in freq.most_common()
-             if c >= min_noun_count and (no_noun_filter or w in keep)]
+             if c >= min_noun_count and w not in STOPWORDS
+             and (no_noun_filter or w in keep)]
     nouns = nouns[:max_nouns]
     slot = {w: i for i, w in enumerate(nouns)}
     targets = {}
