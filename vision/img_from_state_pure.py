@@ -101,6 +101,11 @@ def main():
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--lr", type=float, default=3e-3)
     ap.add_argument("--pixel-chunk", type=int, default=64)
+    ap.add_argument("--pos-mode", choices=["free", "factored"], default="free",
+                    help="factored: W_pos[x,y] = W_row[y] + W_col[x] — 2*S "
+                         "structured wells instead of S*S independent ones, so "
+                         "neighboring pixels share components (positional "
+                         "understanding by construction)")
     ap.add_argument("--log-every", type=int, default=50)
     ap.add_argument("--save-every", type=int, default=500)
     ap.add_argument("--out", default=OUT)
@@ -185,25 +190,44 @@ def main():
 
     # ---------------- level-2 model: wells + start + 2 scalars --------------
     keep_awake()
-    pos_wells = torch.nn.Parameter(torch.randn(SS, args.dim, device=device) / args.dim ** 0.5)
+    if args.pos_mode == "factored":
+        # positional understanding by construction: pixel (x, y)'s well is
+        # W_row[y] + W_col[x], so neighbors share a component and the geometry
+        # knows about 2D adjacency. 2*S wells instead of S*S.
+        row_wells = torch.nn.Parameter(torch.randn(S, args.dim, device=device) / args.dim ** 0.5)
+        col_wells = torch.nn.Parameter(torch.randn(S, args.dim, device=device) / args.dim ** 0.5)
+        pos_desc = f"{S}+{S} row/col wells (factored)"
+        pos_params = [row_wells, col_wells]
+
+        def get_pos():
+            return (row_wells.unsqueeze(1) + col_wells.unsqueeze(0)).reshape(SS, args.dim)
+    else:
+        pos_wells = torch.nn.Parameter(torch.randn(SS, args.dim, device=device) / args.dim ** 0.5)
+        pos_desc = f"{SS} free position wells"
+        pos_params = [pos_wells]
+
+        def get_pos():
+            return pos_wells
+
     color_wells2 = torch.nn.Parameter(torch.randn(C, args.dim, device=device) / args.dim ** 0.5)
     start = torch.nn.Parameter(torch.randn(args.dim, device=device) * 0.05)
     log_strength = torch.nn.Parameter(torch.tensor(0.0, device=device))
     log_temp = torch.nn.Parameter(torch.tensor(0.0, device=device))
-    params = [pos_wells, color_wells2, start, log_strength, log_temp]
-    print(f"level-2 model: {SS} position wells + {C} color wells x {args.dim} "
+    params = pos_params + [color_wells2, start, log_strength, log_temp]
+    print(f"level-2 model: {pos_desc} + {C} color wells x {args.dim} "
           f"+ start + strength + temp   ({sum(p.numel() for p in params):,} numbers)"
           f"   device {device}", flush=True)
 
     def save():
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-        torch.save({"pos_wells": pos_wells.detach().cpu(),
+        torch.save({"pos_wells": get_pos().detach().cpu(),   # materialized either way
                     "color_wells2": color_wells2.detach().cpu(),
                     "start": start.detach().cpu(),
                     "log_strength": log_strength.detach().cpu(),
                     "log_temp": log_temp.detach().cpu(),
                     "names": names,
-                    "config": {"size": S, "dim": args.dim, "pixel_chunk": P}}, args.out)
+                    "config": {"size": S, "dim": args.dim, "pixel_chunk": P,
+                               "pos_mode": args.pos_mode}}, args.out)
 
     import time
     opt = torch.optim.Adam(params, lr=args.lr)
@@ -211,7 +235,7 @@ def main():
     for step in range(1, args.steps + 1):
         idx = torch.randint(0, N, (args.batch,), device=device)
         lab = labels[idx]
-        M = composites(pos_wells, color_wells2)
+        M = composites(get_pos(), color_wells2)
         H = encode(M, lab, start, log_strength)
         logits = decode_logits(H, M, log_temp)
         loss = F.cross_entropy(logits.reshape(-1, C), lab.reshape(-1).long())
