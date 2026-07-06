@@ -93,8 +93,10 @@ def main():
     # already uses. Random init deadlocks: noise trajectory -> gradient turns
     # the loop off -> ch2 never learns (observed: log_s2 driven -9 -> -9.95).
     from pixel_color_pure import COLORS
-    _anchors = torch.tensor(list(COLORS.values()), device=device)       # (13, 3)
-    ch2 = torch.nn.Parameter(torch.linalg.lstsq(_anchors, cw1.to(device)).solution)
+    _anchors = torch.tensor(list(COLORS.values()))                      # (13, 3)
+    # lstsq on CPU: aten::linalg_lstsq not implemented on MPS
+    ch2 = torch.nn.Parameter(
+        torch.linalg.lstsq(_anchors, cw1.cpu()).solution.to(device))
     # ~identity init: the pull is applied SS=4096 times, so per-pixel strength
     # must be ~1e-4 for the total first-pass displacement to stay small.
     log_s2 = torch.nn.Parameter(torch.tensor(-9.0, device=device))
