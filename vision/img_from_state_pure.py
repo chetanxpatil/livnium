@@ -110,6 +110,11 @@ def main():
                     help="fourier (factored only): init row/col wells with 1D "
                          "sinusoids so METRIC adjacency exists from step 0 — "
                          "nearby indices start similar, decaying with distance")
+    ap.add_argument("--relations", action="store_true",
+                    help="neighbor transition wells: each pixel's pull also "
+                         "carries its RIGHT and DOWN neighbor's color — 2D "
+                         "bigrams, so edges/transitions become first-class "
+                         "directions in H instead of being invisible")
     ap.add_argument("--scan", choices=["raster", "shuffled"], default="raster",
                     help="shuffled: fixed random pixel order — breaks the "
                          "P-aligned row-chunk confound (P=S means every raster "
@@ -140,12 +145,22 @@ def main():
 
     perm = None  # set below if --scan shuffled (fixed, seeded, saved in config)
 
-    def encode(M, lab, start, log_strength):
-        """lab (B, SS) -> H (B, D). Collapse through the image's composites."""
-        T = M[torch.arange(SS, device=lab.device), lab.long()]   # (B, SS, D)
-        if perm is not None:
-            T = T[:, perm]                                       # shuffled scan
-        h = start.expand(lab.size(0), -1).contiguous()
+    def build_traj(pos, cw, lab, wr=None, wd=None):
+        """(B, SS, D) trajectory composites: position + color, and with
+        relation wells also the RIGHT and DOWN neighbor's color — 2D bigrams,
+        so a transition ('brown meets gray here') is its own well direction."""
+        T = pos.unsqueeze(0) + cw[lab.long()]                    # (B, SS, D)
+        if wr is not None:
+            l2 = lab.view(-1, S, S).long()
+            labr = torch.cat([l2[:, :, 1:], l2[:, :, -1:]], 2).reshape(-1, SS)
+            labd = torch.cat([l2[:, 1:, :], l2[:, -1:, :]], 1).reshape(-1, SS)
+            T = T + wr[labr] + wd[labd]
+        T = F.normalize(T, dim=-1)
+        return T if perm is None else T[:, perm]
+
+    def encode(T, start, log_strength):
+        """T (B, SS, D) trajectory -> H (B, D)."""
+        h = start.expand(T.size(0), -1).contiguous()
         s = torch.sigmoid(log_strength)
         for c0 in range(0, SS, P):
             t = T[:, c0:c0 + P]                                  # (B, P, D)
@@ -190,11 +205,13 @@ def main():
         ck = torch.load(args.out, map_location=device)
         perm = make_perm(ck["config"].get("scan", "raster"))     # match training
         pw, cw2 = ck["pos_wells"], ck["color_wells2"]
+        wr, wd = ck.get("trans_right"), ck.get("trans_down")     # relation wells
         M = composites(pw, cw2)
         palette = (torch.tensor(list(COLORS.values())) * 255).byte()
         for idx in args.recon:
             lab = labels[idx:idx + 1]
-            H = encode(M, lab, ck["start"], ck["log_strength"])
+            T = build_traj(pw, cw2, lab, wr, wd)
+            H = encode(T, ck["start"], ck["log_strength"])
             pred = decode_logits(H, M, ck["log_temp"]).argmax(-1).squeeze(0)  # (SS,)
             acc = (pred == lab.squeeze(0).long()).float().mean().item()
             left = palette[lab.squeeze(0).long().cpu()].view(S, S, 3)
@@ -245,22 +262,35 @@ def main():
     start = torch.nn.Parameter(torch.randn(args.dim, device=device) * 0.05)
     log_strength = torch.nn.Parameter(torch.tensor(0.0, device=device))
     log_temp = torch.nn.Parameter(torch.tensor(0.0, device=device))
-    params = pos_params + [color_wells2, start, log_strength, log_temp]
-    print(f"level-2 model: {pos_desc} + {C} color wells x {args.dim} "
+    if args.relations:
+        # 2D bigram wells: "my right neighbor is color c" / "below me is c".
+        # Small init so the base (position+color) physics dominates at first.
+        trans_right = torch.nn.Parameter(torch.randn(C, args.dim, device=device) * 0.02)
+        trans_down = torch.nn.Parameter(torch.randn(C, args.dim, device=device) * 0.02)
+        rel_params, rel_desc = [trans_right, trans_down], f" + 2x{C} transition wells"
+    else:
+        trans_right = trans_down = None
+        rel_params, rel_desc = [], ""
+    params = pos_params + rel_params + [color_wells2, start, log_strength, log_temp]
+    print(f"level-2 model: {pos_desc} + {C} color wells{rel_desc} x {args.dim} "
           f"+ start + strength + temp   ({sum(p.numel() for p in params):,} numbers)"
           f"   device {device}", flush=True)
 
     def save():
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-        torch.save({"pos_wells": get_pos().detach().cpu(),   # materialized either way
-                    "color_wells2": color_wells2.detach().cpu(),
-                    "start": start.detach().cpu(),
-                    "log_strength": log_strength.detach().cpu(),
-                    "log_temp": log_temp.detach().cpu(),
-                    "names": names,
-                    "config": {"size": S, "dim": args.dim, "pixel_chunk": P,
-                               "pos_mode": args.pos_mode, "pos_init": args.pos_init,
-                               "scan": args.scan}}, args.out)
+        ck = {"pos_wells": get_pos().detach().cpu(),   # materialized either way
+              "color_wells2": color_wells2.detach().cpu(),
+              "start": start.detach().cpu(),
+              "log_strength": log_strength.detach().cpu(),
+              "log_temp": log_temp.detach().cpu(),
+              "names": names,
+              "config": {"size": S, "dim": args.dim, "pixel_chunk": P,
+                         "pos_mode": args.pos_mode, "pos_init": args.pos_init,
+                         "relations": args.relations, "scan": args.scan}}
+        if args.relations:
+            ck["trans_right"] = trans_right.detach().cpu()
+            ck["trans_down"] = trans_down.detach().cpu()
+        torch.save(ck, args.out)
 
     import time
     opt = torch.optim.Adam(params, lr=args.lr)
@@ -268,8 +298,10 @@ def main():
     for step in range(1, args.steps + 1):
         idx = torch.randint(0, N, (args.batch,), device=device)
         lab = labels[idx]
-        M = composites(get_pos(), color_wells2)
-        H = encode(M, lab, start, log_strength)
+        pos = get_pos()
+        M = composites(pos, color_wells2)
+        T = build_traj(pos, color_wells2, lab, trans_right, trans_down)
+        H = encode(T, start, log_strength)
         logits = decode_logits(H, M, log_temp)
         loss = F.cross_entropy(logits.reshape(-1, C), lab.reshape(-1).long())
         opt.zero_grad(); loss.backward(); opt.step()
