@@ -106,6 +106,14 @@ def main():
                          "structured wells instead of S*S independent ones, so "
                          "neighboring pixels share components (positional "
                          "understanding by construction)")
+    ap.add_argument("--pos-init", choices=["rand", "fourier"], default="rand",
+                    help="fourier (factored only): init row/col wells with 1D "
+                         "sinusoids so METRIC adjacency exists from step 0 — "
+                         "nearby indices start similar, decaying with distance")
+    ap.add_argument("--scan", choices=["raster", "shuffled"], default="raster",
+                    help="shuffled: fixed random pixel order — breaks the "
+                         "P-aligned row-chunk confound (P=S means every raster "
+                         "chunk IS one image row, so rows get averaged)")
     ap.add_argument("--log-every", type=int, default=50)
     ap.add_argument("--save-every", type=int, default=500)
     ap.add_argument("--out", default=OUT)
@@ -130,9 +138,13 @@ def main():
         """(SS, 13, D) normalized position+color composite wells."""
         return F.normalize(pos_wells.unsqueeze(1) + color_wells.unsqueeze(0), dim=-1)
 
+    perm = None  # set below if --scan shuffled (fixed, seeded, saved in config)
+
     def encode(M, lab, start, log_strength):
         """lab (B, SS) -> H (B, D). Collapse through the image's composites."""
         T = M[torch.arange(SS, device=lab.device), lab.long()]   # (B, SS, D)
+        if perm is not None:
+            T = T[:, perm]                                       # shuffled scan
         h = start.expand(lab.size(0), -1).contiguous()
         s = torch.sigmoid(log_strength)
         for c0 in range(0, SS, P):
@@ -166,10 +178,17 @@ def main():
           flush=True)
 
     # ---------------- reconstruct from an existing model --------------------
+    def make_perm(scan):
+        if scan != "shuffled":
+            return None
+        g = torch.Generator().manual_seed(0)                     # deterministic
+        return torch.randperm(SS, generator=g).to(device)
+
     if args.recon is not None:
         from PIL import Image
         from pixel_color_pure import COLORS
         ck = torch.load(args.out, map_location=device)
+        perm = make_perm(ck["config"].get("scan", "raster"))     # match training
         pw, cw2 = ck["pos_wells"], ck["color_wells2"]
         M = composites(pw, cw2)
         palette = (torch.tensor(list(COLORS.values())) * 255).byte()
@@ -190,12 +209,25 @@ def main():
 
     # ---------------- level-2 model: wells + start + 2 scalars --------------
     keep_awake()
+    perm = make_perm(args.scan)
     if args.pos_mode == "factored":
         # positional understanding by construction: pixel (x, y)'s well is
         # W_row[y] + W_col[x], so neighbors share a component and the geometry
         # knows about 2D adjacency. 2*S wells instead of S*S.
-        row_wells = torch.nn.Parameter(torch.randn(S, args.dim, device=device) / args.dim ** 0.5)
-        col_wells = torch.nn.Parameter(torch.randn(S, args.dim, device=device) / args.dim ** 0.5)
+        def pos_init():
+            if args.pos_init == "fourier":
+                # 1D sinusoids: nearby indices similar, decaying with distance
+                # -> METRIC adjacency from step 0 (rand gives only membership)
+                i = torch.arange(S, device=device).float().unsqueeze(1)
+                f = torch.exp(torch.linspace(0, torch.log(torch.tensor(S / 2.0)),
+                                             args.dim // 2, device=device))
+                pe = torch.cat([torch.sin(i * f * 2 * torch.pi / S),
+                                torch.cos(i * f * 2 * torch.pi / S)], dim=1)
+                return F.normalize(pe, dim=-1)
+            return torch.randn(S, args.dim, device=device) / args.dim ** 0.5
+
+        row_wells = torch.nn.Parameter(pos_init())
+        col_wells = torch.nn.Parameter(pos_init())
         pos_desc = f"{S}+{S} row/col wells (factored)"
         pos_params = [row_wells, col_wells]
 
@@ -227,7 +259,8 @@ def main():
                     "log_temp": log_temp.detach().cpu(),
                     "names": names,
                     "config": {"size": S, "dim": args.dim, "pixel_chunk": P,
-                               "pos_mode": args.pos_mode}}, args.out)
+                               "pos_mode": args.pos_mode, "pos_init": args.pos_init,
+                               "scan": args.scan}}, args.out)
 
     import time
     opt = torch.optim.Adam(params, lr=args.lr)
