@@ -98,18 +98,21 @@ class ReplyBrain(nn.Module):
         self.log_strength_read = nn.Parameter(torch.tensor(s0))
 
         # writer: thought + attention + brain + write-collapse
-        self.think = nn.Linear(dim, dim)
         if self.pos_well:
             self.pos_anchor = nn.Parameter(torch.randn(MAXLEN + 2, dim) * 0.05)
         if self.align:
             self.log_align_temp = nn.Parameter(torch.tensor(0.0))   # only align param
-        if pos:
-            self.pos_emb = nn.Parameter(torch.randn(MAXLEN + 2, dim) * 0.05)
-        n_parts = 3 + (1 if pos else 0)               # [h ; z ; ctx] (+pos)
-        self.brain = nn.Sequential(nn.Linear(n_parts * dim, hidden), nn.Tanh(),
-                                   nn.Linear(hidden, dim))
-        self.att_key = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
-        self.att_query = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
+
+        if not self.pure:
+            self.think = nn.Linear(dim, dim)
+            if pos:
+                self.pos_emb = nn.Parameter(torch.randn(MAXLEN + 2, dim) * 0.05)
+            n_parts = 3 + (1 if pos else 0)               # [h ; z ; ctx] (+pos)
+            self.brain = nn.Sequential(nn.Linear(n_parts * dim, hidden), nn.Tanh(),
+                                       nn.Linear(hidden, dim))
+            self.att_key = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
+            self.att_query = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
+
         self.log_strength = nn.Parameter(torch.tensor(0.0))
         self.log_temp = nn.Parameter(torch.tensor(0.0))
 
@@ -142,9 +145,12 @@ class ReplyBrain(nn.Module):
         for i in range(L):
             target = A[ids[:, i]]
             m = mask[:, i].float().unsqueeze(-1)
-            align = (F.normalize(h, dim=-1) * target).sum(-1)
-            away = F.normalize(h - target, dim=-1)
-            h = h + m * (-s * (1.0 - align).unsqueeze(-1) * away)
+            h_norm = h.norm(dim=-1, keepdim=True)
+            h_n = h / (h_norm + 1e-8)
+            align = (h_n * target).sum(-1, keepdim=True)
+            # Analytical energy gradient: grad = -(target - h_n * align) / (h_norm + 1e-8)
+            grad = -(target - h_n * align) / (h_norm + 1e-8)
+            h = h + m * (-s * grad)
             n = h.norm(dim=-1, keepdim=True)
             h = torch.where(n > 10.0, h * (10.0 / (n + 1e-8)), h)
             states.append(h)
@@ -180,9 +186,12 @@ class ReplyBrain(nn.Module):
     # -- writing ------------------------------------------------------------
 
     def collapse_step(self, h, target):
-        align = (F.normalize(h, dim=-1) * target).sum(-1)
-        away = F.normalize(h - target, dim=-1)
-        h = h - self.strength * (1.0 - align).unsqueeze(-1) * away
+        h_norm = h.norm(dim=-1, keepdim=True)
+        h_n = h / (h_norm + 1e-8)
+        align = (h_n * target).sum(-1, keepdim=True)
+        # Analytical energy gradient: grad = -(target - h_n * align) / (h_norm + 1e-8)
+        grad = -(target - h_n * align) / (h_norm + 1e-8)
+        h = h - self.strength * grad
         n = h.norm(dim=-1, keepdim=True)
         return torch.where(n > 10.0, h * (10.0 / (n + 1e-8)), h)
 
@@ -203,10 +212,11 @@ class ReplyBrain(nn.Module):
             _, _, hread = self.read_context(msg_ids, AT)
             if self.align:
                 Cwells = AT[msg_ids]; cmask = (msg_ids != PAD)   # context word wells
+            z = hread # Pure mode bypasses self.think linear layer
         else:
             mem, vmask, hread = self.read_context(msg_ids, AT)
             kmem = self.att_key(mem)
-        z = self.think(hread)
+            z = self.think(hread)
         h = z
         B, L = rep_ids.shape
         tok_nll = torch.zeros(B, device=rep_ids.device)
@@ -289,7 +299,7 @@ class ReplyBrain(nn.Module):
         A = F.normalize(self.word_anchors, dim=-1)
         AT = self.read_table(A)
         traj, tmask, hread = self.read_context(msg_ids, AT)
-        z = self.think(hread)
+        z = hread if self.pure else self.think(hread)
         h = z
         if self.pure and self.align:
             Cwells = AT[msg_ids]; cmask = tmask               # context word wells
@@ -597,7 +607,7 @@ def chat_loop(args, device):
                        pure=cfg.get("pure", False),
                        pos_well=cfg.get("pos_well", False),
                        align=cfg.get("align", False)).to(device)
-    model.load_state_dict(ck["state_dict"])
+    model.load_state_dict(ck["state_dict"], strict=False)
     model.pos_w = ck.get("pos_w", 0.0)
     if ck.get("fast_alpha") is not None:
         model.fast_alpha = ck["fast_alpha"].to(device)
@@ -755,7 +765,7 @@ def main():
                            pure=cfg.get("pure", False),
                            pos_well=cfg.get("pos_well", False),
                            align=cfg.get("align", False)).to(device)
-        model.load_state_dict(ck["state_dict"])
+        model.load_state_dict(ck["state_dict"], strict=False)
         print(f"resumed {args.resume} (epoch {ck['best']['epoch']}, "
               f"nll {ck['best']['nll']:.4f}) — vocab + wells carried over")
     else:

@@ -90,16 +90,16 @@ class VectorCollapseEngine(nn.Module):
 
         anchor_dirs = F.normalize(self.anchors, dim=-1)  # (L, dim)
 
-        if self.cfg.mode == "attention_projection":
-            # O(1) attention/Hopfield lookup step
+        if self.cfg.mode == "direct_collapse":
+            # O(1) closed-form direct collapse step
             h_n = F.normalize(h, dim=-1)
             align = torch.matmul(h_n, anchor_dirs.t())  # (B, L)
             w = F.softmax(self.cfg.beta * align, dim=-1)  # (B, L)
             h_infty = torch.matmul(w, anchor_dirs)  # (B, dim)
             return self._clamp_norm(h_infty * self.cfg.max_norm), {}
 
-        elif self.cfg.mode == "gradient_descent":
-            # Pure analytical energy gradient descent (No MLP)
+        elif self.cfg.mode == "gradient_collapse":
+            # Pure analytical energy gradient descent collapse (No MLP)
             alpha = self.cfg.alpha
             beta = self.cfg.beta
             for _ in range(self.num_layers):
@@ -115,8 +115,8 @@ class VectorCollapseEngine(nn.Module):
                 h = self._clamp_norm(h - alpha * grad_V)
             return h, {}
 
-        elif self.cfg.mode == "mlp_legacy":
-            # mlp_legacy: old MLP-residual + hand-designed away force
+        elif self.cfg.mode == "mlp_collapse":
+            # mlp_collapse: old MLP-residual + hand-designed away force
             for _ in range(self.num_layers):
                 h_n = F.normalize(h, dim=-1)
                 align = torch.matmul(h_n, anchor_dirs.t())          # (B, L)
@@ -197,15 +197,15 @@ class VectorCollapseEngine(nn.Module):
             h_n = h / (h_norm + 1e-8)
             align = (h_n * target_centers).sum(dim=1, keepdim=True)  # (B, 1)
 
-            if self.cfg.mode == "gradient_descent":
+            if self.cfg.mode == "gradient_collapse":
                 # Analytical gradient of V(h) = -cos(h, T)
                 grad = -(target_centers - h_n * align) / (h_norm + 1e-8)
                 h = self._clamp_norm(h - self.cfg.alpha * grad)
-            elif self.cfg.mode == "attention_projection":
-                # O(1) attention/projection
+            elif self.cfg.mode == "direct_collapse":
+                # O(1) direct collapse
                 h = F.normalize(target_centers, dim=-1) * self.cfg.max_norm
                 break
-            elif self.cfg.mode == "mlp_legacy":
+            elif self.cfg.mode == "mlp_collapse":
                 delta = self.update(h)
                 away = F.normalize(h - target_centers, dim=-1)      # anchor -> h
                 div = divergence_from_alignment(align.squeeze(-1))
