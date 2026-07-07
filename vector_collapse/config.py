@@ -39,6 +39,9 @@ class CollapseConfig:
     strengths: Dict[str, float] = field(
         default_factory=lambda: {"E": 0.1, "C": 0.1, "N": 0.05}
     )
+    mode: str = "gradient_descent"  # choices: "gradient_descent", "attention_projection", "mlp_legacy"
+    beta: float = 20.0             # Boltzmann sharpness parameter
+    alpha: float = 0.2             # gradient descent step size
     basin: BasinConfig = field(default_factory=BasinConfig)
 
     def __post_init__(self):

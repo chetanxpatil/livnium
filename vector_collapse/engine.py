@@ -83,28 +83,54 @@ class VectorCollapseEngine(nn.Module):
     # ---- static collapse ----
 
     def collapse(self, h0: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
-        """Static collapse under all per-label anchors simultaneously."""
+        """Collapse under all per-label anchors simultaneously."""
         h = h0.clone()
         if h.dim() == 1:
             h = h.unsqueeze(0)
 
         anchor_dirs = F.normalize(self.anchors, dim=-1)  # (L, dim)
 
-        for _ in range(self.num_layers):
+        if self.cfg.mode == "attention_projection":
+            # O(1) attention/Hopfield lookup step
             h_n = F.normalize(h, dim=-1)
-            align = torch.matmul(h_n, anchor_dirs.t())          # (B, L)
-            div = divergence_from_alignment(align)              # (B, L)
+            align = torch.matmul(h_n, anchor_dirs.t())  # (B, L)
+            w = F.softmax(self.cfg.beta * align, dim=-1)  # (B, L)
+            h_infty = torch.matmul(w, anchor_dirs)  # (B, dim)
+            return self._clamp_norm(h_infty * self.cfg.max_norm), {}
 
-            delta = self.update(h)
+        elif self.cfg.mode == "gradient_descent":
+            # Pure analytical energy gradient descent (No MLP)
+            alpha = self.cfg.alpha
+            beta = self.cfg.beta
+            for _ in range(self.num_layers):
+                h_norm = h.norm(dim=-1, keepdim=True)
+                h_n = h / (h_norm + 1e-8)
+                align = torch.matmul(h_n, anchor_dirs.t())  # (B, L)
+                w = F.softmax(beta * align, dim=-1)  # (B, L)
+                
+                term1 = w.unsqueeze(-1) * anchor_dirs.unsqueeze(0)  # (B, L, dim)
+                term2 = w.unsqueeze(-1) * h_n.unsqueeze(1) * align.unsqueeze(-1)  # (B, L, dim)
+                
+                grad_V = -(term1 - term2).sum(dim=1) / (h_norm + 1e-8)  # (B, dim)
+                h = self._clamp_norm(h - alpha * grad_V)
+            return h, {}
 
-            # (B, L, dim): direction from each anchor to h
-            away = F.normalize(h.unsqueeze(1) - anchor_dirs.unsqueeze(0), dim=-1)
-            # force summed over labels, weighted by per-label strength
-            force = (self.strengths.view(1, -1, 1) * div.unsqueeze(-1) * away).sum(dim=1)
+        else:
+            # mlp_legacy: old MLP-residual + hand-designed away force
+            for _ in range(self.num_layers):
+                h_n = F.normalize(h, dim=-1)
+                align = torch.matmul(h_n, anchor_dirs.t())          # (B, L)
+                div = divergence_from_alignment(align)              # (B, L)
 
-            h = self._clamp_norm(h + delta - force)
+                delta = self.update(h)
 
-        return h, {}
+                # (B, L, dim): direction from each anchor to h
+                away = F.normalize(h.unsqueeze(1) - anchor_dirs.unsqueeze(0), dim=-1)
+                # force summed over labels, weighted by per-label strength
+                force = (self.strengths.view(1, -1, 1) * div.unsqueeze(-1) * away).sum(dim=1)
+
+                h = self._clamp_norm(h + delta - force)
+            return h, {}
 
     def forward(self, h0: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
         return self.collapse(h0)
@@ -165,13 +191,23 @@ class VectorCollapseEngine(nn.Module):
         strengths = strengths.unsqueeze(-1)                     # (B, 1)
 
         for _ in range(self.num_layers):
-            h_n = F.normalize(h, dim=-1)
-            align = (h_n * target_centers).sum(dim=1)           # (B,)
-            div = divergence_from_alignment(align)
+            h_norm = h.norm(dim=-1, keepdim=True)
+            h_n = h / (h_norm + 1e-8)
+            align = (h_n * target_centers).sum(dim=1, keepdim=True)  # (B, 1)
 
-            delta = self.update(h)
-            away = F.normalize(h - target_centers, dim=-1)      # anchor -> h
-            h = self._clamp_norm(h + delta - strengths * div.unsqueeze(-1) * away)
+            if self.cfg.mode == "gradient_descent":
+                # Analytical gradient of V(h) = -cos(h, T)
+                grad = -(target_centers - h_n * align) / (h_norm + 1e-8)
+                h = self._clamp_norm(h - self.cfg.alpha * grad)
+            elif self.cfg.mode == "attention_projection":
+                # O(1) attention/projection
+                h = F.normalize(target_centers, dim=-1) * self.cfg.max_norm
+                break
+            else:
+                delta = self.update(h)
+                away = F.normalize(h - target_centers, dim=-1)      # anchor -> h
+                div = divergence_from_alignment(align.squeeze(-1))
+                h = self._clamp_norm(h + delta - strengths * div.unsqueeze(-1) * away)
 
         # 3. Anchor update: moving average of final positions per basin.
         if update_anchors:
