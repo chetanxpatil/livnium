@@ -37,3 +37,18 @@ We compared the throughput (operations per second) of the continuous floating-po
 **Discrete Group Collapse is 28.4x FASTER**, running at over **3 Million steps/sec** on CPU.
 
 Because hypercube rotations are simple coordinate swaps and sign changes, they require zero floating-point division or norm evaluations. This makes them ideal for edge processors and analog memristor execution, while maintaining 100% reversible, lossless history.
+
+---
+
+## 3. Precomputed Group Table Lookup Benchmark
+
+To achieve maximum execution speed, we precomputed the 24x24 octahedral group multiplication table ($G \times G \to G$) and replaced all matrix multiplications in the sequence loop with a chain of simple integer lookups.
+
+### Benchmark Results (100,000 runs):
+* **Matrix Multiply Version:** `188,020.46` runs/sec
+* **Table Lookup Version:** `620,747.51` runs/sec
+
+### Verdict:
+**Precomputed Table Lookup is 3.30x FASTER** than the matrix-multiplication version. 
+
+By precomputing the multiplication table, we reduce sequence composition to a chain of integer lookups, deferring the single matrix-vector multiplication until label readout. This makes discrete sequence collapse extremely lightweight and fast.
