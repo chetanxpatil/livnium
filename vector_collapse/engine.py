@@ -115,7 +115,7 @@ class VectorCollapseEngine(nn.Module):
                 h = self._clamp_norm(h - alpha * grad_V)
             return h, {}
 
-        else:
+        elif self.cfg.mode == "mlp_legacy":
             # mlp_legacy: old MLP-residual + hand-designed away force
             for _ in range(self.num_layers):
                 h_n = F.normalize(h, dim=-1)
@@ -131,6 +131,8 @@ class VectorCollapseEngine(nn.Module):
 
                 h = self._clamp_norm(h + delta - force)
             return h, {}
+        else:
+            raise ValueError(f"Unknown collapse mode: {self.cfg.mode}")
 
     def forward(self, h0: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
         return self.collapse(h0)
@@ -203,11 +205,13 @@ class VectorCollapseEngine(nn.Module):
                 # O(1) attention/projection
                 h = F.normalize(target_centers, dim=-1) * self.cfg.max_norm
                 break
-            else:
+            elif self.cfg.mode == "mlp_legacy":
                 delta = self.update(h)
                 away = F.normalize(h - target_centers, dim=-1)      # anchor -> h
                 div = divergence_from_alignment(align.squeeze(-1))
                 h = self._clamp_norm(h + delta - strengths * div.unsqueeze(-1) * away)
+            else:
+                raise ValueError(f"Unknown collapse mode: {self.cfg.mode}")
 
         # 3. Anchor update: moving average of final positions per basin.
         if update_anchors:
