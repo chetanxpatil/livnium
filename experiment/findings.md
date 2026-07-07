@@ -1,27 +1,37 @@
 # Research Brief: Noun Model Potential & Discrete Group Benchmark
 
-## 1. Recovering the Closed-Form Potential of the Noun Model
+## 1. The Noun Model Force Has No Exact Scalar Potential (and why that matters)
 
 In the NLI paper (*"A Trained Iterative Classifier Reduces to Energy Gradient Descent"*), we showed that an iterative update head trained with an MLP can be replaced by the analytical gradient of a logsumexp energy potential:
 $$V(h) = -\log \sum_k \exp\big(\beta \cos(h, A_k)\big)$$
 
-We applied the same methodology to the **Noun Collapse model** (`noun_collapse_pure.py`). We solved for the scalar potential energy function $E(h)$ whose negative gradient yields the model's hand-designed attraction steps:
-$$F(h) = -s (1 - \cos(h, c)) \frac{h - c}{\|h - c\|}$$
+We tried to apply the same methodology to the **Noun Collapse model** (`noun_collapse_pure.py`), whose hand-designed read step is an attraction force
+$$F(h) = -s\,(1 - \cos(h, c))\,\frac{h - c}{\|h - c\|}.$$
 
-### Mathematical Derivation:
-Let $r = \|h - c\|$ be the distance between the state and the context attractor. Since the vectors are normalized, $r^2 \approx 2 - 2 \cos(h, c)$, meaning:
-$$1 - \cos(h, c) \approx \frac{r^2}{2}$$
+The result is a **negative** one, and it is the interesting part: this force is **not** the gradient of the cosine-style potential a naive derivation suggests. It is verified numerically in `scratch/verify_noun_potential.py`.
 
-Substituting this into the force equation gives:
-$$F(h) = -\frac{s}{2} r (h - c)$$
+### The tempting (wrong) derivation
+Let $r = \|h - c\|$. If $h$ and $c$ both lay exactly on the unit sphere, then $r^2 = 2 - 2\cos(h,c)$, so $1-\cos = r^2/2$, and the force becomes a Euclidean central force $F = -\tfrac{s}{2} r\,(h-c)$. Integrating the magnitude gives a cubic-in-distance well
+$$E_{\text{euc}}(h) = \tfrac{s}{6}\,\|h-c\|^{3},$$
+and one is tempted to rewrite it via the same substitution as $E(h) = \tfrac{\sqrt 2}{3}\, s\,(1-\cos(h,c))^{1.5}$.
 
-Since this is a radial conservative force field, we integrate the force magnitude with respect to the distance $r$ to recover the potential energy:
-$$E(r) = \int \frac{s}{2} r^2 dr = \frac{s}{6} r^3 + C$$
+### Why it fails
+Substituting $r^2 = 2-2\cos$ **inside the potential and then differentiating freely in $\mathbb R^{d}$ is not valid** — the identity only holds on the constraint surface $\|h\|=1$. Numerically, even *on* the unit sphere:
 
-Substituting $r = \sqrt{2 - 2\cos(h,c)}$ back in gives the **exact closed-form energy potential of the noun model**:
-$$E(h) = \frac{\sqrt{2}}{3} s \big(1 - \cos(h, c)\big)^{1.5}$$
+$$-\nabla E_{\text{euc}} \text{ vs } F : \text{angle } 0.00^\circ,\ \text{mag-ratio } 1.000 \qquad
+-\nabla E_{\cos} \text{ vs } F : \text{angle } 43.9^\circ,\ \text{mag-ratio } 0.72$$
 
-This proves that the hand-designed updates are mathematically identical to gradient descent on a simple, harmonic-like potential well centered on the context wordwells.
+So the cubic **Euclidean** well $E_{\text{euc}} = \tfrac{s}{6}\|h-c\|^3$ reproduces the force *on the sphere* (direction exact everywhere, magnitude exact at $\|h\|=1$), but the $(1-\cos)^{1.5}$ **cosine** form does **not** — its gradient is $\sim\!44^\circ$ off, because $\nabla(\cos\text{-form})$ points along the *tangential* cosine-gradient $(c-\cos\hat h)$ while the force points along the *Euclidean chord* $(h-c)$.
+
+### The real conclusion
+As a field in $\mathbb R^{d}$ the noun force is **non-conservative**: its Jacobian is asymmetric ($\max|J-J^\top| = 2.3\times10^{-2}$ on the sphere), so **no exact global scalar potential exists**. The magnitude uses the *normalized* cosine while the direction uses the *unnormalized* chord $(h-c)$, and because the walk norm-clamps rather than renormalizes, $h$ leaves the sphere and the two disagree.
+
+This is precisely the **Euclidean-radial vs. cosine-gradient mismatch** the NLI paper identified in Livnium v1 (there $\approx135^\circ$; here $\approx44^\circ$). In other words, the noun model runs the *un-corrected* force — the very thing the trained SNLI MLP had to learn to fix.
+
+### The correction (already live in `pure_reply.py`)
+Replacing the chord direction with the **true cosine gradient** makes the system conservative with an *exact* closed-form potential:
+$$V(h) = -\cos(h,c), \qquad \nabla_h V = -\frac{c - \cos(h,c)\,\hat h}{\|h\|}, \qquad h \leftarrow h + s\,\frac{c - \cos(h,c)\,\hat h}{\|h\|}.$$
+This is exactly `collapse_step` in `experiment/pure_reply.py`, and the single-anchor special case of the NLI energy $V(h) = -\log\sum_k \exp(\beta\cos(h,A_k))$. Porting it into the noun read is the honest "grad-V" upgrade; the best that can be said for the *current* noun force is that it approximates a cubic distance well $E_{\text{euc}} \approx \tfrac{s}{6}\|h-c\|^3$ near the unit sphere.
 
 ---
 
