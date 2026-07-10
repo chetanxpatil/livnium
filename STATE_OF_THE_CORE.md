@@ -17,12 +17,14 @@ A 5.98M-parameter sequence model trained only on SNLI, no pretrained embeddings.
 | generative-classifier accuracy | 52.9% on 1,500 SNLI dev pairs (chance 33%) | ✓ |
 | CPU latency | ~4.5 ms / reply (NumPy reimpl of trained weights) | ✓ |
 | classifier sibling w/ alignment | 74.7% dev / 74.4% test | ✓ |
-| collapse dynamics | Lyapunov-stable, non-expansive: monotone energy descent on 100% of 12,000 sampled steps; ~99.8% of directions contracting; worst S_max ≈ 1.007 | ✓ |
+| collapse dynamics | measurable and attractor-directed: monotone empirical energy descent on 100% of 12,000 sampled steps; ~99.8% of directions contracting; worst S_max ≈ 1.007. The chord force is **non-conservative** (no exact global scalar potential — `experiment/findings.md`), so this is an empirical Lyapunov *candidate*, not a proven Lyapunov energy | ⚠️ empirical |
 
 **Scope (pruned):** not a chatbot, no understanding. "Attention-free" → *no
 transformer self-attention; one lightweight cross-attention alignment step*. Not a
-strict global contraction → *Lyapunov-stable and non-expansive*. See
-`chat/LYAPUNOV_TEST.md`, `chat/CLAIMS_CHECKPOINT_MAP.md`.
+strict global contraction, and not a proven Lyapunov energy → *empirically
+non-expansive with monotone energy descent on sampled trajectories; an exact
+cosine-gradient (conservative) variant exists separately*. See
+`chat/LYAPUNOV_TEST.md`, `chat/CLAIMS_CHECKPOINT_MAP.md`, `experiment/findings.md`.
 
 ---
 

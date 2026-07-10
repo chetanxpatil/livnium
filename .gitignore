@@ -38,10 +38,8 @@ model_full_physics/
 *.pt
 *.npz
 
-# Allow tracking the official published checkpoints:
-!collapse_retrain/model_nli_v1/
-!collapse_retrain/model_nli_v1/nli_epoch20.pt
-!collapse_retrain/model_nli_v1/best_model.pt
+# Checkpoints are NOT tracked in git — they live on Hugging Face / GitHub
+# Releases. See CHECKPOINTS.md for URLs and SHA-256 hashes.
 
 
 

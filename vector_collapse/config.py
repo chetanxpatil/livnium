@@ -7,7 +7,7 @@ or construct in code with overrides:
     cfg = CollapseConfig(dim=512, strengths={"E": 0.2, "C": 0.2, "N": 0.1})
 """
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -17,11 +17,11 @@ class BasinConfig:
     """Dynamic basin field (per-label micro-basins)."""
 
     max_basins_per_label: int = 64
-    tension_threshold: float = 0.15   # spawn if tension exceeds this...
-    align_threshold: float = 0.6      # ...and alignment is below this
-    anchor_lr: float = 0.05           # moving-average rate for center updates
-    prune_min_count: int = 10         # basins used fewer times get pruned
-    prune_merge_cos: float = 0.97     # basins more similar than this get merged
+    tension_threshold: float = 0.15  # spawn if tension exceeds this...
+    align_threshold: float = 0.6  # ...and alignment is below this
+    anchor_lr: float = 0.05  # moving-average rate for center updates
+    prune_min_count: int = 10  # basins used fewer times get pruned
+    prune_merge_cos: float = 0.97  # basins more similar than this get merged
 
 
 @dataclass
@@ -36,12 +36,12 @@ class CollapseConfig:
     num_layers: int = 4
     max_norm: float = 10.0
     labels: Tuple[str, ...] = ("E", "C", "N")
-    strengths: Dict[str, float] = field(
-        default_factory=lambda: {"E": 0.1, "C": 0.1, "N": 0.05}
+    strengths: Dict[str, float] = field(default_factory=lambda: {"E": 0.1, "C": 0.1, "N": 0.05})
+    mode: str = (
+        "gradient_collapse"  # choices: "gradient_collapse", "direct_collapse", "mlp_collapse"
     )
-    mode: str = "gradient_collapse"  # choices: "gradient_collapse", "direct_collapse", "mlp_collapse"
-    beta: float = 20.0               # Boltzmann sharpness parameter
-    alpha: float = 0.2               # gradient descent step size
+    beta: float = 20.0  # Boltzmann sharpness parameter
+    alpha: float = 0.2  # gradient descent step size
     basin: BasinConfig = field(default_factory=BasinConfig)
 
     def __post_init__(self):

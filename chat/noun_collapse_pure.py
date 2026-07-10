@@ -207,6 +207,12 @@ def main():
             pos = (h * A[tgt_ids]).sum(-1, keepdim=True) / temp
             neg = noun_ids_t[torch.randint(0, len(noun_ids), (args.neg,), device=device)]
             ng = (h @ A[neg].t()) / temp
+            # mask false negatives: a sampled negative that equals the true
+            # target must not be penalized as a negative.
+            # NOTE: the published v1 checkpoint (noun_collapse_pure.pt, SimLex
+            # rho=0.362) was trained WITHOUT this mask; a v2 retrain is pending.
+            # See CHECKPOINTS.md.
+            ng = ng.masked_fill(neg.unsqueeze(0) == tgt_ids.unsqueeze(1), float("-inf"))
             cand = torch.cat([pos, ng], dim=1)
             return F.cross_entropy(cand, torch.zeros(cand.size(0), dtype=torch.long,
                                                      device=device))

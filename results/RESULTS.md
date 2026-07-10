@@ -176,13 +176,15 @@ We executed the ablation script `collapse_retrain/ablate_nli.py` on the properly
 
 ### Verdict & Interpretation
 
-1. **Geometry Beats Linear Head**: The **Full Collapse** model (68.92% test accuracy) beats the standard linear projection probe (**Linear Head Probe** at 64.06%) by **+4.86 percentage points**. This confirms that the VectorCollapseEngine's point-attractor mechanics are not a superficial layer but actively contribute to the classification performance.
-2. **Causal Attractors**: Randomizing the anchors or the embeddings collapses accuracy back to chance level (~32.4% / ~34.7%). This confirms that the learned attractor geometry is the causal mechanism driving the performance.
-3. **Geometry-Native Representation**: While a standard 2-layer MLP classifier on top of raw embeddings achieves **70.13%** accuracy, the Full Collapse model achieves a comparable **68.92%** using point-attractor dynamics. This proves that Livnium offers a geometry-native representation of NLI features with performance comparable to MLPs but with structured attractor dynamics.
+1. **Collapse beats a linear readout — on frozen embeddings**: The **Full Collapse** model (68.92% test) beats the linear probe (64.06%) by **+4.86 points**. Important caveat: this is a **post-hoc probe on embeddings that were originally optimized for collapse**, so the comparison is biased toward the collapse head. It shows the collapse readout uses these embeddings better than a linear map does; it does **not** prove causality.
+2. **Learned geometry is load-bearing**: Randomizing the anchors or the embeddings collapses accuracy to chance (~32.4% / ~34.7%), so the trained anchor/embedding geometry is necessary for this model's performance — necessary, but not shown to be uniquely sufficient.
+3. **Comparable to an MLP, not better**: A 2-layer MLP probe on the same frozen embeddings scores **70.13%**, above Full Collapse (68.92%). Collapse offers a structured, inspectable attractor readout at comparable (slightly lower) accuracy — a representational trade-off, not a win.
+
+**What is still required**: a matched **end-to-end multi-seed ablation** — train linear-head, MLP-head and collapse-head models from scratch under identical budgets and several seeds — before attributing any gain causally to the collapse dynamics.
 
 ## Note on ANLI and Supervised Collapse
 
-As of June 2026, the Supervised Collapse Model is only trained and evaluated on **SNLI** (where it reaches 68.92% test accuracy and the collapse engine contributes +4.86% over a linear head). Evaluation on **ANLI** has not been performed because:
+As of June 2026, the Supervised Collapse Model is only trained and evaluated on **SNLI** (where it reaches 68.92% test accuracy; a post-hoc frozen-embedding probe favors collapse over a linear head by +4.86%, pending a matched end-to-end ablation). Evaluation on **ANLI** has not been performed because:
 1. **Adversarial Complexity**: ANLI is designed to be adversarial and artifact-free, requiring deep semantic reasoning that is typically out of reach for non-attention mean-pooled embeddings (which discard word order and sentence interaction).
 2. **Vocabulary Coverage**: The current vocabulary is constrained to SNLI (~50k words) and out-of-vocabulary words are mapped to `<unk>`. Running on ANLI would require training/fine-tuning embeddings on the ANLI training dataset to cover its broader vocabulary.
 

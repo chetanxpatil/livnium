@@ -155,6 +155,10 @@ class PremiseBrain(nn.Module):
                 neg_ids = torch.randint(1, self.n_words, (self.neg_samples,),
                                         device=prem_ids.device)                  # skip PAD(0)
                 neg = (query @ A[neg_ids].t()) / self.temp                       # (B, K)
+                # mask false negatives: sampled ids equal to the true target.
+                # NOTE: published checkpoints predate this mask (see CHECKPOINTS.md);
+                # retraining will not exactly reproduce them.
+                neg = neg.masked_fill(neg_ids.unsqueeze(0) == tgt.unsqueeze(1), float("-inf"))
                 cand = torch.cat([pos, neg], dim=1)                              # (B, 1+K), true=col 0
                 ll = F.cross_entropy(cand, torch.zeros(cand.size(0), dtype=torch.long,
                                                        device=prem_ids.device), reduction="none")

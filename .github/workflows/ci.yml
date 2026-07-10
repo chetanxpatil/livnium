@@ -31,6 +31,30 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+  research-smoke:
+    # The research tests skip cleanly when torch is absent (core-only
+    # installs), but at least one job must actually EXECUTE them.
+    name: research smoke (torch, CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with experimental deps (CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[experimental,test]" scipy
+
+      - name: Run research tests (deps required — missing torch/scipy fails, never skips)
+        env:
+          LIVNIUM_REQUIRE_RESEARCH_DEPS: "1"
+        run: python -m pytest tests/test_research.py -q
+
   lint:
     name: lint & format
     runs-on: ubuntu-latest

@@ -23,9 +23,15 @@ class BasinField(nn.Module):
 
         # (L, K, dim); label index order is defined by CollapseConfig.labels
         self.register_buffer("centers", torch.zeros(num_labels, max_basins_per_label, dim))
-        self.register_buffer("active", torch.zeros(num_labels, max_basins_per_label, dtype=torch.bool))
-        self.register_buffer("counts", torch.zeros(num_labels, max_basins_per_label, dtype=torch.int32))
-        self.register_buffer("last_used", torch.zeros(num_labels, max_basins_per_label, dtype=torch.int32))
+        self.register_buffer(
+            "active", torch.zeros(num_labels, max_basins_per_label, dtype=torch.bool)
+        )
+        self.register_buffer(
+            "counts", torch.zeros(num_labels, max_basins_per_label, dtype=torch.int32)
+        )
+        self.register_buffer(
+            "last_used", torch.zeros(num_labels, max_basins_per_label, dtype=torch.int32)
+        )
 
     def get_active_centers(self, label_idx: int) -> torch.Tensor:
         """(K_active, dim) centers for one label."""
@@ -67,13 +73,13 @@ def route_to_basin_vectorized(
             torch.zeros(B, dtype=torch.bool, device=device),
         )
 
-    active_centers = field.centers[label_idx][mask]                 # (K, dim)
-    sims = torch.matmul(h_n, active_centers.t())                    # (B, K)
-    best_sims, best_local = torch.max(sims, dim=1)                  # (B,)
+    active_centers = field.centers[label_idx][mask]  # (K, dim)
+    sims = torch.matmul(h_n, active_centers.t())  # (B, K)
+    best_sims, best_local = torch.max(sims, dim=1)  # (B,)
 
     active_global = torch.nonzero(mask, as_tuple=True)[0]
     best_global = active_global[best_local]
-    target_centers = field.centers[label_idx, best_global]          # (B, dim)
+    target_centers = field.centers[label_idx, best_global]  # (B, dim)
 
     # Attractive law: div = 1 - align, zero only on the anchor.
     # Must stay consistent with engine.divergence_from_alignment.
