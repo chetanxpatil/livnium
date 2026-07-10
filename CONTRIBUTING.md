@@ -1,18 +1,18 @@
 # Contributing to Livnium
 
 Thanks for your interest. Livnium is a small, honest project, and the bar for
-anything that lands in `livnium_core/` is the same as for the rest of it:
+anything that lands in `packages/livnium-core/src/livnium_core/` is the same as for the rest of it:
 **proven, tested, and reversible.**
 
 ## Ground rules
 
-- The core (`livnium_core/`) is pure Python with **zero runtime dependencies**.
+- The core (`packages/livnium-core/src/livnium_core/`) is pure Python with **zero runtime dependencies**.
   Keep it that way — anything needing `numpy`, `torch`, etc. belongs in the
-  experimental folders (`cortex_v2/`, `collapse_retrain/`) or in `results/`.
+  experimental folders (`research/archive/cortex-v2/`, `research/nli/supervised-collapse/`) or in `benchmarks/nli/`.
 - Every change to the core must come with tests, and every existing test must
   stay green.
 - Honesty over hype. If something doesn't work, we write down that it doesn't
-  work (see `docs/FINDINGS.md`). Negative results are welcome here.
+  work (see `docs/history/FINDINGS.md`). Negative results are welcome here.
 
 ## Development setup
 

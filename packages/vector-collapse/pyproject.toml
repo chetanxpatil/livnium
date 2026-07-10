@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vector-collapse"
+version = "0.1.0"
+description = "Reusable vector collapse engine: collapse variants, basin field, DynamicsLedger observability."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "PolyForm Noncommercial 1.0.0 — commercial use requires a paid license (see LICENSE, COMMERCIAL.md)" }
+authors = [{ name = "Chetan Patil" }]
+keywords = ["dynamical-systems", "attractor-networks", "energy-based-models"]
+
+[project.urls]
+Homepage = "https://github.com/chetanxpatil/livnium"
+Repository = "https://github.com/chetanxpatil/livnium"
+
+[project.optional-dependencies]
+# mirrors the old repo-root [experimental] extra
+runtime = ["numpy", "torch", "tqdm", "pyyaml"]
+test = ["pytest", "numpy", "torch", "pyyaml"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["vector_collapse"]

@@ -1,48 +1,26 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "livnium-core"
-version = "0.1.0"
-description = "A conserved geometric state space: base-27 codec, exposure classes, cube rotation group."
-readme = "README.md"
-requires-python = ">=3.8"
-license = { text = "PolyForm Noncommercial 1.0.0 — commercial use requires a paid license (see LICENSE, COMMERCIAL.md)" }
-authors = [{ name = "Chetan Patil" }]
-keywords = ["geometry", "reversible-computing", "base-27", "lattice", "group-theory"]
-
-[project.urls]
-Homepage = "https://github.com/chetanxpatil/livnium"
-Repository = "https://github.com/chetanxpatil/livnium"
-
-[project.optional-dependencies]
-test = ["pytest"]
-dev = ["pytest", "ruff", "black"]
-# Reproduce the NLI benchmark in results/ (mirrors requirements.txt).
-results = ["numpy", "pandas", "scikit-learn", "scipy", "pyarrow", "gensim"]
-# Experimental research prototypes (cortex_v2/, collapse_retrain/,
-# vector_collapse/). NOT part of the proven core; heavy deps, kept separate on
-# purpose. pyyaml is required by vector_collapse.CollapseConfig.from_yaml().
-experimental = ["numpy", "torch", "tqdm", "pyyaml"]
-
-[tool.setuptools]
-# livnium_core is the zero-dependency proven core. vector_collapse is the
-# documented collapse engine (needs the [experimental] extra at runtime).
-packages = ["livnium_core", "vector_collapse"]
+# Workspace-level tooling config only. The installable packages live in
+# packages/livnium-core and packages/vector-collapse — each has its own
+# pyproject.toml. Install for development with:
+#   pip install -e packages/livnium-core -e packages/vector-collapse
 
 [tool.black]
 line-length = 100
 target-version = ["py38"]
-# Lint/format applies to the proven core only. Research prototypes (chat/,
-# rule30/, cortex_v2/, ...) keep their deliberate compact style.
-extend-exclude = '/(chat|rule30|cortex_v2|collapse_retrain|experiment|experiments|reached|ramsey|scratch|vision)/'
+# Lint/format applies to the proven packages only. Research prototypes keep
+# their deliberate compact style.
+extend-exclude = '/(research|benchmarks|apps|scratch|reached|ramsey|images)/'
 
 [tool.ruff]
 line-length = 100
 target-version = "py38"
-# Same scope as black: the proven core is held to lint; research folders are not.
-extend-exclude = ["chat", "rule30", "cortex_v2", "collapse_retrain", "experiment", "experiments", "reached", "ramsey", "scratch", "vision"]
+# Same scope as black: packages are held to lint; research folders are not.
+extend-exclude = ["research", "benchmarks", "apps", "scratch", "reached", "ramsey", "images"]
+# src layout: tell ruff where the first-party packages live so import
+# sorting keeps grouping them separately from pytest/torch.
+src = ["packages/livnium-core/src", "packages/vector-collapse/src"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["livnium_core", "vector_collapse"]
 
 [tool.ruff.lint]
 # Pycodestyle (E), pyflakes (F), and import sorting (I).
@@ -51,12 +29,9 @@ select = ["E", "F", "I"]
 #       geometry/math code and are kept intentionally.
 ignore = ["E741"]
 
-[tool.ruff.lint.per-file-ignores]
-# Reproduction / research scripts adjust sys.path before importing the package
-# (E402) and contain long data-bearing strings and result tables (E501) that are
-# clearer left unwrapped.
-"results/*.py" = ["E402", "E501"]
-"collapse_retrain/*.py" = ["E501"]
-
 [tool.pytest.ini_options]
-testpaths = ["tests", "cortex_v2"]
+testpaths = [
+    "packages/livnium-core/tests",
+    "packages/vector-collapse/tests",
+    "research/embeddings/noun-collapse",
+]

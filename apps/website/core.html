@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Livnium Core — the part that's proven</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;800&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#000; --panel:#0a0a0b; --panel2:#101012; --line:#1d1d20;
+    --text:#f2f3f5; --dim:#9aa0a6; --faint:#5f6368;
+    --blue:#2f9bf0; --blue-deep:#1b46b3;
+    --mono:"Roboto Mono",ui-monospace,Menlo,monospace;
+    --sans:"Inter",-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1360px;margin:0 auto;padding:0 48px}
+  @media(max-width:700px){.wrap{padding:0 24px}}
+
+  nav{position:fixed;top:0;left:0;right:0;z-index:20;background:rgba(0,0,0,.9);backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:84px}
+  .logo{font-size:22px;font-weight:800;letter-spacing:.06em;text-decoration:none;color:#fff}
+  nav ul{display:flex;gap:40px;list-style:none;align-items:center}
+  nav ul a{color:var(--dim);text-decoration:none;font-size:15px;transition:color .2s}
+  nav ul a:hover{color:#fff}
+  nav ul a.active{color:var(--blue)}
+  .contact-btn{background:#fff;color:#000 !important;font-weight:600;padding:10px 24px;border-radius:8px}
+  .contact-btn:hover{background:#e8eaed}
+  @media(max-width:860px){nav ul{display:none}}
+
+  .hero{min-height:88vh;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden;padding-top:84px}
+  .hero-glow{position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse 55% 65% at 70% 40%, rgba(27,70,179,.18), transparent 65%)}
+  .hero .wrap{position:relative;z-index:2;width:100%;display:grid;
+    grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:64px;align-items:center}
+  .crumb{font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--blue);margin-bottom:28px}
+  .hero h1{font-size:clamp(34px,4.6vw,64px);line-height:1.2;font-weight:300;color:#e8eaed;max-width:24ch}
+  .hero h1 b{font-weight:600;color:#fff}
+  .hero h1 .accent{color:var(--blue)}
+  .hero .sub{margin-top:26px;font-size:17px;font-weight:300;color:var(--dim);max-width:60ch}
+  .hero .cta{margin-top:42px;display:flex;gap:16px;flex-wrap:wrap}
+  .btn{display:inline-block;padding:13px 30px;border-radius:8px;font-size:15px;font-weight:600;text-decoration:none;transition:all .2s}
+  .btn-white{background:#fff;color:#000}
+  .btn-white:hover{background:#e8eaed}
+  .btn-line{border:1px solid #333;color:var(--text)}
+  .btn-line:hover{border-color:var(--blue);color:var(--blue)}
+
+  /* the descent + the Om */
+  .hero-cube{display:flex;justify-content:center;align-items:center;position:relative}
+  .hero-cube::before{content:"";position:absolute;width:460px;height:460px;border-radius:50%;
+    background:radial-gradient(circle, rgba(27,70,179,.28), transparent 65%)}
+  #voxelCube{width:440px;height:440px;max-width:100%;position:relative;z-index:1;touch-action:none}
+  @media(max-width:1000px){.hero-cube{display:none}.hero .wrap{grid-template-columns:1fr}}
+
+  section{padding:110px 0}
+  .sec-label{font-size:15px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:#fff;margin-bottom:56px}
+  .sec-label::after{content:"";display:block;width:44px;height:2px;background:var(--blue);margin-top:14px}
+
+  /* law */
+  .law{border:1px solid var(--line);border-radius:6px;padding:64px 70px;background:
+    radial-gradient(ellipse 70% 100% at 85% 20%, rgba(27,70,179,.16), transparent 60%), var(--panel);text-align:center}
+  .law .formula{font-family:var(--mono);font-size:clamp(18px,2.6vw,28px);color:#e8eaed}
+  .law .formula b{color:var(--blue)}
+  .law p{color:var(--dim);font-weight:300;margin:20px auto 0;font-size:16px;max-width:58ch}
+  @media(max-width:700px){.law{padding:40px 28px}}
+
+  /* census table */
+  .tbl{border:1px solid var(--line);width:100%;border-collapse:collapse}
+  .tbl th,.tbl td{padding:17px 24px;text-align:left;font-size:14.5px;border-bottom:1px solid var(--line)}
+  .tbl th{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--blue);
+    background:var(--panel);font-weight:500}
+  .tbl td{color:var(--dim);font-weight:300}
+  .tbl td.m{font-family:var(--mono);color:var(--text)}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl tr.total td{background:var(--panel);color:#fff;font-weight:500}
+  .tbl tr.total td.m{color:var(--blue)}
+
+  /* modules */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:2px;background:var(--line);border:1px solid var(--line)}
+  .card{background:#000;padding:36px 32px;display:flex;flex-direction:column;gap:12px;transition:background .25s}
+  .card:hover{background:var(--panel2)}
+  .card .file{font-family:var(--mono);font-size:13px;color:var(--blue)}
+  .card h3{font-size:18px;font-weight:600;color:#fff}
+  .card p{font-size:14.5px;font-weight:300;color:var(--dim);flex:1}
+  .tag{align-self:flex-start;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    padding:5px 11px;border-radius:99px;border:1px solid rgba(47,155,240,.4);color:var(--blue)}
+
+  /* code */
+  .code{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:34px 38px;
+    font-family:var(--mono);font-size:14px;line-height:1.9;color:#e8eaed;overflow-x:auto}
+  .code .c{color:#5f6368} .code .k{color:#8ab4f8} .code .s{color:#7ee2b8} .code .f{color:#fdd663}
+
+  /* facts */
+  .numstrip{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));border:1px solid var(--line)}
+  .numstrip>div{padding:44px 20px;text-align:center;border-right:1px solid var(--line)}
+  .numstrip>div:last-child{border-right:none}
+  .numstrip .v{font-family:var(--mono);font-size:30px;color:#fff}
+  .numstrip .k{font-size:12.5px;color:var(--faint);margin-top:10px}
+  @media(max-width:900px){.numstrip>div{border-bottom:1px solid var(--line)}}
+
+  /* band */
+  .band{border:1px solid var(--line);border-radius:6px;padding:64px 70px;text-align:center;background:
+    radial-gradient(ellipse 60% 100% at 50% 0%, rgba(27,70,179,.2), transparent 65%), var(--panel)}
+  .band h2{font-size:clamp(26px,3vw,38px);font-weight:300;color:#fff}
+  .band h2 b{font-weight:600;color:var(--blue)}
+  .band p{color:var(--dim);font-weight:300;margin:14px auto 30px;max-width:56ch}
+
+  footer{border-top:1px solid var(--line);padding:52px 0}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:20px}
+  footer span{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  footer a{color:var(--dim);text-decoration:none;font-size:14px}
+  footer a:hover{color:var(--blue)}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="logo" href="index.html">LIVNIUM</a>
+  <ul>
+    <li><a href="index.html#services">Services</a></li>
+    <li><a href="index.html#products">Products</a></li>
+    <li><a class="active" href="core.html">Core</a></li>
+    <li><a href="index.html#numbers">Numbers</a></li>
+    <li><a class="contact-btn" href="index.html#license">Contact Us</a></li>
+  </ul>
+</div></nav>
+
+<header class="hero">
+  <div class="hero-glow"></div>
+  <div class="wrap">
+    <div class="hero-text">
+    <div class="crumb">livnium_core · zero dependencies · fully tested</div>
+    <h1>Livnium <span class="accent">Core</span>.<br><b>The part that's proven.</b></h1>
+    <p class="sub">A conserved geometric state space on a 3×3×3 cube: 27 cells, a 27-character alphabet,
+      a weight law with closed-form formulas, and 24 reversible rotations that never lose a bit.
+      Pure Python. Every claim backed by a test.</p>
+    <div class="cta">
+      <a class="btn btn-white" href="https://github.com/chetanxpatil/livnium">View on GitHub</a>
+      <a class="btn btn-line" href="index.html#products">← All products</a>
+    </div>
+    </div>
+    <div class="hero-cube">
+      <div id="voxelCube"></div>
+    </div>
+  </div>
+</header>
+
+<main>
+<section class="wrap">
+  <div class="sec-label">The conservation law</div>
+  <div class="law">
+    <div class="formula">SW = 9·f &nbsp;·&nbsp; f ∈ {0, 1, 2, 3} &nbsp;·&nbsp; <b>ΣSW = 486</b> for N = 3</div>
+    <p>Every cell has an exposure class f — how many faces it shows. Hidden core: 0. Face-center: 1.
+       Edge: 2. Corner: 3. Weight is 9·f, and the total is conserved by every one of the 24 rotations.
+       Not approximately. Exactly.</p>
+  </div>
+</section>
+
+<section class="wrap" style="padding-top:0">
+  <div class="sec-label">The census</div>
+  <table class="tbl">
+    <tr><th>Cell type</th><th>Exposure f</th><th>Weight SW</th><th>Count</th><th>Subtotal</th></tr>
+    <tr><td>Hidden core — the "Om"</td><td class="m">0</td><td class="m">0</td><td class="m">1</td><td class="m">0</td></tr>
+    <tr><td>Face centers</td><td class="m">1</td><td class="m">9</td><td class="m">6</td><td class="m">54</td></tr>
+    <tr><td>Edges</td><td class="m">2</td><td class="m">18</td><td class="m">12</td><td class="m">216</td></tr>
+    <tr><td>Corners</td><td class="m">3</td><td class="m">27</td><td class="m">8</td><td class="m">216</td></tr>
+    <tr class="total"><td>Total</td><td></td><td></td><td class="m">27</td><td class="m">ΣSW = 486</td></tr>
+  </table>
+</section>
+
+<section class="wrap" style="padding-top:0">
+  <div class="sec-label">The modules</div>
+  <div class="grid">
+    <div class="card"><div class="file">base27.py</div><h3>Base-27 codec</h3>
+      <p>A number system over the alphabet 0, a–z. Lossless and reversible: z + a = a0,
+         because 26 + 1 = 27 rolls over exactly.</p><span class="tag">test_base27</span></div>
+    <div class="card"><div class="file">lattice.py</div><h3>Cube geometry &amp; weights</h3>
+      <p>Coordinates, exposure classes, and the symbolic-weight conservation law — with closed-form
+         formulas for any cube size N.</p><span class="tag">test_lattice</span></div>
+    <div class="card"><div class="file">rotations.py</div><h3>The 24 rotations</h3>
+      <p>The rotation group of the cube (S₄). Each rotation is reversible and preserves every
+         conserved quantity. The law, made concrete.</p><span class="tag">test_rotations</span></div>
+    <div class="card"><div class="file">moves.py</div><h3>Face moves</h3>
+      <p>Face permutations and move sequences — the Rubik's-style operations layered on top of
+         the rotation group.</p><span class="tag">test_moves</span></div>
+    <div class="card"><div class="file">hierarchy.py</div><h3>Nested cubes</h3>
+      <p>Cubes nest inside cubes, with capacity and wreath-group bookkeeping that adds up cleanly
+         across every level.</p><span class="tag">test_hierarchy</span></div>
+    <div class="card"><div class="file">ping.py</div><h3>The inward ping</h3>
+      <p>Nested-frame descent — the newest core addition. Descend through frames and come back
+         with the books still balanced.</p><span class="tag">test_ping</span></div>
+    <div class="card"><div class="file">layer_language.py</div><h3>Layer language</h3>
+      <p>A small parser and evaluator for the layer language — describe and execute layer
+         operations symbolically.</p><span class="tag">test_layer_language</span></div>
+  </div>
+</section>
+
+<section class="wrap" style="padding-top:0">
+  <div class="sec-label">Try it</div>
+  <div class="code">
+<span class="c"># pure Python, no dependencies — this runs, verbatim</span><br>
+<span class="k">from</span> livnium_core <span class="k">import</span> lattice, rotations, base27<br><br>
+field = lattice.sw_field(<span class="f">3</span>)&nbsp;&nbsp;&nbsp;<span class="c"># 27 cells, ΣSW = 486</span><br>
+<span class="k">for</span> R <span class="k">in</span> rotations.rotation_group():&nbsp;&nbsp;<span class="c"># all 24 elements…</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="k">assert</span> <span class="f">sum</span>(lattice.rotate_field(field, R).values()) == <span class="f">486</span>&nbsp;&nbsp;<span class="c"># …conserve the total</span><br><br>
+<span class="c"># and the codec never loses a bit</span><br>
+base27.int_to_base27(base27.base27_to_int(<span class="s">"z"</span>) + base27.base27_to_int(<span class="s">"a"</span>))&nbsp;&nbsp;<span class="c"># → "a0"</span>
+  </div>
+</section>
+
+<section class="wrap" style="padding-top:0">
+  <div class="sec-label">Core facts</div>
+  <div class="numstrip">
+    <div><div class="v">27</div><div class="k">cells · one alphabet</div></div>
+    <div><div class="v">24</div><div class="k">rotations (S₄), reversible</div></div>
+    <div><div class="v">486</div><div class="k">ΣSW, conserved exactly</div></div>
+    <div><div class="v">0</div><div class="k">dependencies</div></div>
+    <div><div class="v">8</div><div class="k">test modules, all green</div></div>
+  </div>
+</section>
+
+<section class="wrap" style="padding-top:0">
+  <div class="band">
+    <h2>Build on the part that's <b>proven</b>.</h2>
+    <p>Free for research, students, and nonprofits. Commercial use takes a simple annual license —
+       tell us what you're building.</p>
+    <a class="btn btn-white" href="index.html#license">Get a license</a>
+  </div>
+</section>
+</main>
+
+<footer><div class="wrap">
+  <span>LIVNIUM · deep tech, honestly measured · PolyForm NC 1.0</span>
+  <div style="display:flex;gap:28px">
+    <a href="index.html">Home</a>
+    <a href="https://github.com/chetanxpatil/livnium">GitHub</a>
+    <a href="https://huggingface.co/chetanxpatil/noun-collapse">Hugging Face</a>
+  </div>
+</div></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="cube.js"></script>
+</body>
+</html>
