@@ -109,20 +109,31 @@ def maybe_spawn_vectorized(
     step: int,
     tension_threshold: float,
     align_threshold: float,
-) -> None:
-    """Spawn new basins where tension is high and alignment poor."""
+) -> int:
+    """Spawn new basins where tension is high and alignment poor.
+
+    Returns the number of basins spawned (0 if none or field full).
+    """
     spawn_mask = (tens > tension_threshold) & (align < align_threshold)
     if not spawn_mask.any():
-        return
+        return 0
+    spawned = 0
     for idx in torch.nonzero(spawn_mask, as_tuple=True)[0]:
         if not field.add_basin(label_idx, h[idx], step):
             break  # field is full; stop early instead of looping uselessly
+        spawned += 1
+    return spawned
 
 
 def prune_and_merge_vectorized(
     field: BasinField, min_count: int = 10, merge_cos_threshold: float = 0.97
-) -> None:
-    """Prune rarely used basins, merge near-duplicate ones (count-weighted)."""
+) -> Tuple[int, int]:
+    """Prune rarely used basins, merge near-duplicate ones (count-weighted).
+
+    Returns (num_pruned, num_merged).
+    """
+    n_pruned = 0
+    n_merged = 0
     for l_idx in range(field.num_labels):
         mask = field.active[l_idx]
         if not mask.any():
@@ -130,6 +141,7 @@ def prune_and_merge_vectorized(
 
         to_prune = (field.counts[l_idx] < min_count) & mask
         if to_prune.any():
+            n_pruned += int(to_prune.sum().item())
             field.active[l_idx][to_prune] = False
             field.counts[l_idx][to_prune] = 0
             field.last_used[l_idx][to_prune] = 0
@@ -159,3 +171,5 @@ def prune_and_merge_vectorized(
                 field.active[l_idx, idx_j] = False
                 field.counts[l_idx, idx_j] = 0
                 merged[j] = True
+                n_merged += 1
+    return n_pruned, n_merged

@@ -8,11 +8,15 @@ from .basin_field import (
 )
 from .config import BasinConfig, CollapseConfig
 from .engine import VectorCollapseEngine, divergence_from_alignment, tension
+from .ledger import BasinEvent, DynamicsLedger, StepRecord
 
 __all__ = [
     "BasinConfig",
+    "BasinEvent",
     "BasinField",
     "CollapseConfig",
+    "DynamicsLedger",
+    "StepRecord",
     "VectorCollapseEngine",
     "divergence_from_alignment",
     "maybe_spawn_vectorized",

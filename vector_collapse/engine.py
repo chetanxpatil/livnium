@@ -19,6 +19,7 @@ from .basin_field import (
     route_to_basin_vectorized,
 )
 from .config import CollapseConfig
+from .ledger import DynamicsLedger
 
 
 def divergence_from_alignment(align: torch.Tensor) -> torch.Tensor:
@@ -80,13 +81,53 @@ class VectorCollapseEngine(nn.Module):
 
     # ---- static collapse ----
 
-    def collapse(self, h0: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
-        """Collapse under all per-label anchors simultaneously."""
+    def _static_energy(self, h_n: torch.Tensor, align: torch.Tensor) -> torch.Tensor:
+        """Exact potential for static gradient_collapse.
+
+        V(h) = -(1/beta) * logsumexp(beta * align): the softmax-weighted
+        gradient in the loop below is exactly -dV/dh, so this value must be
+        non-increasing along the trajectory. The ledger checks that.
+        """
+        return -torch.logsumexp(self.cfg.beta * align, dim=-1) / self.cfg.beta
+
+    def collapse(
+        self,
+        h0: torch.Tensor,
+        ledger: Optional[DynamicsLedger] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
+        """Collapse under all per-label anchors simultaneously.
+
+        Pass a DynamicsLedger to record norms, displacement, per-anchor
+        alignment, force and (for gradient_collapse) exact energy per step.
+        Logging costs nothing when ledger is None.
+        """
         h = h0.clone()
         if h.dim() == 1:
             h = h.unsqueeze(0)
 
         anchor_dirs = F.normalize(self.anchors, dim=-1)  # (L, dim)
+
+        if ledger is not None:
+            ledger.mode = self.cfg.mode
+            if not ledger.labels:
+                ledger.labels = list(self.cfg.labels)
+
+        def log(step, h_new, h_old, force=None, exact_energy=False):
+            if ledger is None:
+                return
+            with torch.no_grad():  # observation must not touch the graph
+                h_n = F.normalize(h_new, dim=-1)
+                align = torch.matmul(h_n, anchor_dirs.t())
+                energy = self._static_energy(h_n, align) if exact_energy else None
+                ledger.log_step(
+                    step,
+                    h_new,
+                    h_old,
+                    align,
+                    force=force,
+                    energy=energy,
+                    energy_kind="exact" if exact_energy else "empirical",
+                )
 
         if self.cfg.mode == "direct_collapse":
             # O(1) closed-form direct collapse step
@@ -94,13 +135,19 @@ class VectorCollapseEngine(nn.Module):
             align = torch.matmul(h_n, anchor_dirs.t())  # (B, L)
             w = F.softmax(self.cfg.beta * align, dim=-1)  # (B, L)
             h_infty = torch.matmul(w, anchor_dirs)  # (B, dim)
-            return self._clamp_norm(h_infty * self.cfg.max_norm), {}
+            out = self._clamp_norm(h_infty * self.cfg.max_norm)
+            if ledger is not None:
+                log(0, h, h)
+                log(1, out, h)
+                ledger.finish("closed_form")
+            return out, {}
 
         elif self.cfg.mode == "gradient_collapse":
             # Pure analytical energy gradient descent collapse (No MLP)
             alpha = self.cfg.alpha
             beta = self.cfg.beta
-            for _ in range(self.num_layers):
+            log(0, h, h, exact_energy=True)
+            for i in range(self.num_layers):
                 h_norm = h.norm(dim=-1, keepdim=True)
                 h_n = h / (h_norm + 1e-8)
                 align = torch.matmul(h_n, anchor_dirs.t())  # (B, L)
@@ -110,12 +157,17 @@ class VectorCollapseEngine(nn.Module):
                 term2 = w.unsqueeze(-1) * h_n.unsqueeze(1) * align.unsqueeze(-1)  # (B, L, dim)
 
                 grad_V = -(term1 - term2).sum(dim=1) / (h_norm + 1e-8)  # (B, dim)
-                h = self._clamp_norm(h - alpha * grad_V)
+                h_new = self._clamp_norm(h - alpha * grad_V)
+                log(i + 1, h_new, h, force=grad_V, exact_energy=True)
+                h = h_new
+            if ledger is not None:
+                ledger.finish()
             return h, {}
 
         elif self.cfg.mode == "mlp_collapse":
             # mlp_collapse: old MLP-residual + hand-designed away force
-            for _ in range(self.num_layers):
+            log(0, h, h)
+            for i in range(self.num_layers):
                 h_n = F.normalize(h, dim=-1)
                 align = torch.matmul(h_n, anchor_dirs.t())  # (B, L)
                 div = divergence_from_alignment(align)  # (B, L)
@@ -127,7 +179,11 @@ class VectorCollapseEngine(nn.Module):
                 # force summed over labels, weighted by per-label strength
                 force = (self.strengths.view(1, -1, 1) * div.unsqueeze(-1) * away).sum(dim=1)
 
-                h = self._clamp_norm(h + delta - force)
+                h_new = self._clamp_norm(h + delta - force)
+                log(i + 1, h_new, h, force=force)
+                h = h_new
+            if ledger is not None:
+                ledger.finish()
             return h, {}
         else:
             raise ValueError(f"Unknown collapse mode: {self.cfg.mode}")
@@ -146,16 +202,32 @@ class VectorCollapseEngine(nn.Module):
         spawn_new: bool = True,
         prune_every: int = 0,
         update_anchors: bool = True,
+        ledger: Optional[DynamicsLedger] = None,
     ) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
         """Collapse each sample toward its label's nearest basin.
 
         h0: (B, dim), labels: (B,) integer-encoded per cfg.labels order.
+        Pass a DynamicsLedger to record dynamics, basin selection and
+        spawn/seed/prune/merge events. The returned trace holds per-step
+        (B,) tensors of alignment/divergence/tension to the routed target.
+
+        Ledger honesty: alignment here is to a routed, moving target, so
+        gradient-mode energy (-cos to target) is exact only per collapse
+        call; across training steps targets move. Chord/mlp mode records
+        empirical observations only.
         """
         h = h0.clone()
         device = h.device
 
         if basin_field.centers.device != device:
             basin_field.to(device)
+
+        if ledger is not None:
+            ledger.mode = self.cfg.mode
+            if not ledger.labels:
+                ledger.labels = ["target"]
+            ledger.meta.setdefault("dynamic", True)
+            ledger.meta.setdefault("global_step", global_step)
 
         strengths = self.strengths.to(device)[labels]  # (B,)
         target_centers = torch.zeros_like(h)
@@ -174,14 +246,25 @@ class VectorCollapseEngine(nn.Module):
                 # No basin yet for this label: seed one and re-route.
                 first = torch.nonzero(~found, as_tuple=True)[0][0]
                 basin_field.add_basin(l_idx, sub_h[first].detach(), global_step)
+                if ledger is not None:
+                    ledger.log_event(global_step, "seed", self.cfg.labels[l_idx], 1)
                 centers_sub, align_sub, _, tens_sub, found = route_to_basin_vectorized(
                     basin_field, sub_h, l_idx, global_step, training=update_anchors
                 )
 
             target_centers[mask] = centers_sub
 
+            if ledger is not None:
+                # Which basin slot each sample routed to (recomputed only
+                # when observing; costs one small matmul).
+                with torch.no_grad():
+                    sub_n = F.normalize(sub_h.detach(), dim=-1)
+                    sims = torch.matmul(sub_n, basin_field.centers[l_idx].t())
+                    sims[:, ~basin_field.active[l_idx]] = -2.0
+                    ledger.log_basin_selection(self.cfg.labels[l_idx], sims.argmax(dim=1))
+
             if spawn_new:
-                maybe_spawn_vectorized(
+                spawned = maybe_spawn_vectorized(
                     basin_field,
                     sub_h,
                     l_idx,
@@ -191,12 +274,34 @@ class VectorCollapseEngine(nn.Module):
                     self.cfg.basin.tension_threshold,
                     self.cfg.basin.align_threshold,
                 )
+                if ledger is not None:
+                    ledger.log_event(global_step, "spawn", self.cfg.labels[l_idx], spawned)
 
         # 2. Dynamics: attract each h toward its fixed target center.
         trace: Dict[str, List[torch.Tensor]] = {"align": [], "div": [], "tens": []}
         strengths = strengths.unsqueeze(-1)  # (B, 1)
 
-        for _ in range(self.num_layers):
+        def record(step, h_new, h_old, align_col, force=None):
+            """Fill the returned trace and, if present, the ledger."""
+            a = align_col.squeeze(-1).detach()
+            d = divergence_from_alignment(a)
+            trace["align"].append(a)
+            trace["div"].append(d)
+            trace["tens"].append(tension(d))
+            if ledger is not None:
+                exact = self.cfg.mode == "gradient_collapse"
+                ledger.log_step(
+                    step,
+                    h_new,
+                    h_old,
+                    a,
+                    force=force,
+                    energy=-a if exact else None,  # V(h) = -cos(h, target)
+                    energy_kind="exact" if exact else "empirical",
+                )
+
+        closed_form = False
+        for i in range(self.num_layers):
             h_norm = h.norm(dim=-1, keepdim=True)
             h_n = h / (h_norm + 1e-8)
             align = (h_n * target_centers).sum(dim=1, keepdim=True)  # (B, 1)
@@ -204,16 +309,24 @@ class VectorCollapseEngine(nn.Module):
             if self.cfg.mode == "gradient_collapse":
                 # Analytical gradient of V(h) = -cos(h, T)
                 grad = -(target_centers - h_n * align) / (h_norm + 1e-8)
-                h = self._clamp_norm(h - self.cfg.alpha * grad)
+                h_new = self._clamp_norm(h - self.cfg.alpha * grad)
+                record(i, h_new, h, align, force=grad)
+                h = h_new
             elif self.cfg.mode == "direct_collapse":
                 # O(1) direct collapse
-                h = F.normalize(target_centers, dim=-1) * self.cfg.max_norm
+                h_new = F.normalize(target_centers, dim=-1) * self.cfg.max_norm
+                record(i, h_new, h, align)
+                h = h_new
+                closed_form = True
                 break
             elif self.cfg.mode == "mlp_collapse":
                 delta = self.update(h)
                 away = F.normalize(h - target_centers, dim=-1)  # anchor -> h
                 div = divergence_from_alignment(align.squeeze(-1))
-                h = self._clamp_norm(h + delta - strengths * div.unsqueeze(-1) * away)
+                force = strengths * div.unsqueeze(-1) * away
+                h_new = self._clamp_norm(h + delta - force)
+                record(i, h_new, h, align, force=force)
+                h = h_new
             else:
                 raise ValueError(f"Unknown collapse mode: {self.cfg.mode}")
 
@@ -232,9 +345,15 @@ class VectorCollapseEngine(nn.Module):
 
         # 4. Pruning
         if prune_every > 0 and global_step > 0 and global_step % prune_every == 0:
-            prune_and_merge_vectorized(
+            n_pruned, n_merged = prune_and_merge_vectorized(
                 basin_field, self.cfg.basin.prune_min_count, self.cfg.basin.prune_merge_cos
             )
+            if ledger is not None:
+                ledger.log_event(global_step, "prune", "*", n_pruned)
+                ledger.log_event(global_step, "merge", "*", n_merged)
+
+        if ledger is not None:
+            ledger.finish("closed_form" if closed_form else None)
 
         return h, trace
 
