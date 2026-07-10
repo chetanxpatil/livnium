@@ -21,12 +21,15 @@ test = ["pytest"]
 dev = ["pytest", "ruff", "black"]
 # Reproduce the NLI benchmark in results/ (mirrors requirements.txt).
 results = ["numpy", "pandas", "scikit-learn", "scipy", "pyarrow", "gensim"]
-# Experimental research prototypes (cortex_v2/, collapse_retrain/). NOT part of
-# the proven core; heavy deps, kept separate on purpose.
-experimental = ["numpy", "torch", "tqdm"]
+# Experimental research prototypes (cortex_v2/, collapse_retrain/,
+# vector_collapse/). NOT part of the proven core; heavy deps, kept separate on
+# purpose. pyyaml is required by vector_collapse.CollapseConfig.from_yaml().
+experimental = ["numpy", "torch", "tqdm", "pyyaml"]
 
 [tool.setuptools]
-packages = ["livnium_core"]
+# livnium_core is the zero-dependency proven core. vector_collapse is the
+# documented collapse engine (needs the [experimental] extra at runtime).
+packages = ["livnium_core", "vector_collapse"]
 
 [tool.black]
 line-length = 100
