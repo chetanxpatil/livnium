@@ -15,6 +15,12 @@ line-length = 100
 target-version = "py38"
 # Same scope as black: packages are held to lint; research folders are not.
 extend-exclude = ["research", "benchmarks", "apps", "scratch", "reached", "ramsey", "images"]
+# src layout: tell ruff where the first-party packages live so import
+# sorting keeps grouping them separately from pytest/torch.
+src = ["packages/livnium-core/src", "packages/vector-collapse/src"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["livnium_core", "vector_collapse"]
 
 [tool.ruff.lint]
 # Pycodestyle (E), pyflakes (F), and import sorting (I).
