@@ -36,13 +36,13 @@ line-length = 100
 target-version = ["py38"]
 # Lint/format applies to the proven core only. Research prototypes (chat/,
 # rule30/, cortex_v2/, ...) keep their deliberate compact style.
-extend-exclude = '/(chat|rule30|cortex_v2|collapse_retrain|experiments|reached|ramsey)/'
+extend-exclude = '/(chat|rule30|cortex_v2|collapse_retrain|experiment|experiments|reached|ramsey|scratch|vision)/'
 
 [tool.ruff]
 line-length = 100
 target-version = "py38"
 # Same scope as black: the proven core is held to lint; research folders are not.
-extend-exclude = ["chat", "rule30", "cortex_v2", "collapse_retrain", "experiments", "reached", "ramsey"]
+extend-exclude = ["chat", "rule30", "cortex_v2", "collapse_retrain", "experiment", "experiments", "reached", "ramsey", "scratch", "vision"]
 
 [tool.ruff.lint]
 # Pycodestyle (E), pyflakes (F), and import sorting (I).

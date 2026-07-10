@@ -26,6 +26,7 @@ DIM = 16
 
 # ---------------------------------------------------------------- helpers
 
+
 def collapse_step_torch(h, t, s):
     """Livnium v1 chord step: h <- h - s * (1 - cos(h, t)) * norm(h - t)."""
     align = (F.normalize(h, dim=-1) * F.normalize(t, dim=-1)).sum(-1, keepdim=True)
@@ -44,10 +45,11 @@ def collapse_step_numpy(h, t, s):
 
 # ---------------------------------------------------- 1. false negatives
 
+
 def test_sampled_softmax_masks_true_target():
     """A sampled negative equal to the true target must get -inf, never a
     finite logit (the bug fixed in noun_collapse_pure.py / premise_from_hyp.py)."""
-    B, K, V = 4, 8, 20
+    B, V = 4, 20
     g = torch.Generator().manual_seed(0)
     h = F.normalize(torch.randn(B, DIM, generator=g), dim=-1)
     A = F.normalize(torch.randn(V, DIM, generator=g), dim=-1)
@@ -58,7 +60,7 @@ def test_sampled_softmax_masks_true_target():
     ng = ng.masked_fill(neg.unsqueeze(0) == tgt_ids.unsqueeze(1), float("-inf"))
 
     for b in range(B):
-        collide = (neg == tgt_ids[b])
+        collide = neg == tgt_ids[b]
         assert torch.isinf(ng[b][collide]).all() and (ng[b][collide] < 0).all()
         assert torch.isfinite(ng[b][~collide]).all()
 
@@ -71,6 +73,7 @@ def test_sampled_softmax_masks_true_target():
 
 # ------------------------------------------------------- 2. Spearman ties
 
+
 def test_spearman_handles_ties():
     scipy_stats = pytest.importorskip("scipy.stats")
     a = np.array([1.0, 2.0, 2.0, 3.0, 4.0, 4.0, 5.0])
@@ -79,6 +82,7 @@ def test_spearman_handles_ties():
 
     import importlib.util
     import pathlib
+
     src = pathlib.Path(__file__).resolve().parents[1] / "chat" / "embed_eval.py"
     spec = importlib.util.spec_from_file_location("embed_eval", src)
     mod = importlib.util.module_from_spec(spec)
@@ -89,12 +93,14 @@ def test_spearman_handles_ties():
     # for this vector pair differs from the tie-blind one
     ra = np.argsort(np.argsort(a)).astype(float)
     rb = np.argsort(np.argsort(b)).astype(float)
-    ra -= ra.mean(); rb -= rb.mean()
+    ra -= ra.mean()
+    rb -= rb.mean()
     naive = float((ra * rb).sum() / np.sqrt((ra * ra).sum() * (rb * rb).sum()))
     assert naive != pytest.approx(expected, abs=1e-12)
 
 
 # --------------------------------------------- 3. NumPy / PyTorch parity
+
 
 def test_collapse_step_numpy_torch_parity():
     rng = np.random.default_rng(1)
@@ -104,15 +110,20 @@ def test_collapse_step_numpy_torch_parity():
         t /= np.linalg.norm(t)
         s = 0.11
         out_np = collapse_step_numpy(h.copy(), t, s)
-        out_th = collapse_step_torch(
-            torch.tensor(h, dtype=torch.float64).unsqueeze(0),
-            torch.tensor(t, dtype=torch.float64).unsqueeze(0),
-            s,
-        ).squeeze(0).numpy()
+        out_th = (
+            collapse_step_torch(
+                torch.tensor(h, dtype=torch.float64).unsqueeze(0),
+                torch.tensor(t, dtype=torch.float64).unsqueeze(0),
+                s,
+            )
+            .squeeze(0)
+            .numpy()
+        )
         np.testing.assert_allclose(out_np, out_th, rtol=1e-10, atol=1e-10)
 
 
 # ------------------------------------------------- 4. energy behavior
+
 
 def test_single_well_energy_descends():
     """V(h) = 1 - cos(h, W) must be non-increasing when collapsing repeatedly
@@ -130,6 +141,7 @@ def test_single_well_energy_descends():
 
 
 # --------------------------------------------- 5. checkpoint round-trip
+
 
 def test_checkpoint_roundtrip(tmp_path):
     """Save/load in the noun_collapse_pure.pt schema; embed_eval must be able
@@ -159,6 +171,7 @@ def test_checkpoint_roundtrip(tmp_path):
 
 
 # ------------------------------------------------------- 6. tiny overfit
+
 
 def test_tiny_overfit():
     """A few wells + the v1 step must be able to overfit 4 fixed
@@ -191,6 +204,7 @@ def test_tiny_overfit():
 
 # --------------------------------------------------- 7. generation smoke
 
+
 def test_generation_smoke():
     """Greedy decode loop over random wells: must produce valid ids and a
     finite state at every step (no NaN blow-ups from the norm clamp)."""
@@ -203,7 +217,7 @@ def test_generation_smoke():
         scores = F.normalize(h, dim=-1) @ wells.t()
         idx = int(scores.argmax())
         out.append(idx)
-        h = collapse_step_torch(h, wells[idx:idx + 1], 0.11)
+        h = collapse_step_torch(h, wells[idx : idx + 1], 0.11)
         n = h.norm(dim=-1, keepdim=True)
         h = torch.where(n > 10.0, h * (10.0 / (n + 1e-8)), h)
         assert torch.isfinite(h).all()

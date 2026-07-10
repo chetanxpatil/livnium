@@ -76,9 +76,7 @@ class VectorCollapseEngine(nn.Module):
 
     def _clamp_norm(self, h: torch.Tensor) -> torch.Tensor:
         h_norm = h.norm(p=2, dim=-1, keepdim=True)
-        return torch.where(
-            h_norm > self.cfg.max_norm, h * (self.cfg.max_norm / (h_norm + 1e-8)), h
-        )
+        return torch.where(h_norm > self.cfg.max_norm, h * (self.cfg.max_norm / (h_norm + 1e-8)), h)
 
     # ---- static collapse ----
 
@@ -107,10 +105,10 @@ class VectorCollapseEngine(nn.Module):
                 h_n = h / (h_norm + 1e-8)
                 align = torch.matmul(h_n, anchor_dirs.t())  # (B, L)
                 w = F.softmax(beta * align, dim=-1)  # (B, L)
-                
+
                 term1 = w.unsqueeze(-1) * anchor_dirs.unsqueeze(0)  # (B, L, dim)
                 term2 = w.unsqueeze(-1) * h_n.unsqueeze(1) * align.unsqueeze(-1)  # (B, L, dim)
-                
+
                 grad_V = -(term1 - term2).sum(dim=1) / (h_norm + 1e-8)  # (B, dim)
                 h = self._clamp_norm(h - alpha * grad_V)
             return h, {}
@@ -119,8 +117,8 @@ class VectorCollapseEngine(nn.Module):
             # mlp_collapse: old MLP-residual + hand-designed away force
             for _ in range(self.num_layers):
                 h_n = F.normalize(h, dim=-1)
-                align = torch.matmul(h_n, anchor_dirs.t())          # (B, L)
-                div = divergence_from_alignment(align)              # (B, L)
+                align = torch.matmul(h_n, anchor_dirs.t())  # (B, L)
+                div = divergence_from_alignment(align)  # (B, L)
 
                 delta = self.update(h)
 
@@ -159,7 +157,7 @@ class VectorCollapseEngine(nn.Module):
         if basin_field.centers.device != device:
             basin_field.to(device)
 
-        strengths = self.strengths.to(device)[labels]           # (B,)
+        strengths = self.strengths.to(device)[labels]  # (B,)
         target_centers = torch.zeros_like(h)
 
         # 1. Routing: fixed target anchor per sample for the whole collapse.
@@ -184,13 +182,19 @@ class VectorCollapseEngine(nn.Module):
 
             if spawn_new:
                 maybe_spawn_vectorized(
-                    basin_field, sub_h, l_idx, tens_sub, align_sub, global_step,
-                    self.cfg.basin.tension_threshold, self.cfg.basin.align_threshold,
+                    basin_field,
+                    sub_h,
+                    l_idx,
+                    tens_sub,
+                    align_sub,
+                    global_step,
+                    self.cfg.basin.tension_threshold,
+                    self.cfg.basin.align_threshold,
                 )
 
         # 2. Dynamics: attract each h toward its fixed target center.
         trace: Dict[str, List[torch.Tensor]] = {"align": [], "div": [], "tens": []}
-        strengths = strengths.unsqueeze(-1)                     # (B, 1)
+        strengths = strengths.unsqueeze(-1)  # (B, 1)
 
         for _ in range(self.num_layers):
             h_norm = h.norm(dim=-1, keepdim=True)
@@ -207,7 +211,7 @@ class VectorCollapseEngine(nn.Module):
                 break
             elif self.cfg.mode == "mlp_collapse":
                 delta = self.update(h)
-                away = F.normalize(h - target_centers, dim=-1)      # anchor -> h
+                away = F.normalize(h - target_centers, dim=-1)  # anchor -> h
                 div = divergence_from_alignment(align.squeeze(-1))
                 h = self._clamp_norm(h + delta - strengths * div.unsqueeze(-1) * away)
             else:
@@ -219,7 +223,7 @@ class VectorCollapseEngine(nn.Module):
             for l_idx in torch.unique(labels):
                 l_idx = int(l_idx.item())
                 mask_l = labels == l_idx
-                all_centers = basin_field.centers[l_idx]        # (K, dim)
+                all_centers = basin_field.centers[l_idx]  # (K, dim)
                 h_final_n = F.normalize(h[mask_l].detach(), dim=-1)
                 best = torch.argmax(torch.matmul(h_final_n, all_centers.t()), dim=1)
                 for k in torch.unique(best):
