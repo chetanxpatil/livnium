@@ -50,10 +50,10 @@ jobs:
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -e ".[experimental,test]" scipy
 
-      - name: Run research tests (must execute, not skip)
-        run: |
-          python -m pytest tests/test_research.py -q -rs | tee out.txt
-          grep -q "7 passed" out.txt
+      - name: Run research tests (deps required — missing torch/scipy fails, never skips)
+        env:
+          LIVNIUM_REQUIRE_RESEARCH_DEPS: "1"
+        run: python -m pytest tests/test_research.py -q
 
   lint:
     name: lint & format

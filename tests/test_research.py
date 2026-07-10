@@ -13,12 +13,28 @@ guard the *research* code paths that have bitten us before:
 
 Heavy deps (torch, scipy) are optional: each test skips cleanly when its
 dependency is absent, so the zero-dependency core suite stays green anywhere.
+EXCEPTION: when LIVNIUM_REQUIRE_RESEARCH_DEPS is set (research CI), a missing
+dependency is a hard failure — these tests must execute there, never skip.
 """
+
+import os
 
 import numpy as np
 import pytest
 
-torch = pytest.importorskip("torch", reason="research tests need torch")
+REQUIRE_DEPS = bool(os.environ.get("LIVNIUM_REQUIRE_RESEARCH_DEPS"))
+
+
+def _import_or_skip(name):
+    """importorskip normally; hard ImportError under LIVNIUM_REQUIRE_RESEARCH_DEPS."""
+    if REQUIRE_DEPS:
+        import importlib
+
+        return importlib.import_module(name)
+    return pytest.importorskip(name, reason=f"research tests need {name}")
+
+
+torch = _import_or_skip("torch")
 F = torch.nn.functional
 
 DIM = 16
@@ -75,7 +91,7 @@ def test_sampled_softmax_masks_true_target():
 
 
 def test_spearman_handles_ties():
-    scipy_stats = pytest.importorskip("scipy.stats")
+    scipy_stats = _import_or_skip("scipy.stats")
     a = np.array([1.0, 2.0, 2.0, 3.0, 4.0, 4.0, 5.0])
     b = np.array([0.9, 2.2, 1.8, 3.1, 4.5, 3.9, 5.2])
     expected = float(scipy_stats.spearmanr(a, b).statistic)
