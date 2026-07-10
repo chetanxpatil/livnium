@@ -65,3 +65,6 @@ livnium_core/ramsey/
 
 # Generated reconstruction outputs (vision experiments)
 recon_*.png
+
+# Local scratch (never committed)
+scratch/

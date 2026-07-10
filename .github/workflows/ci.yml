@@ -25,11 +25,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # numpy is needed by the cortex_v2 regression tests; the core needs nothing.
+          # numpy is needed by test_moments; the core needs nothing else.
           python -m pip install pytest numpy
 
-      - name: Run tests
-        run: python -m pytest -q
+      - name: Run core tests
+        run: python -m pytest packages/livnium-core/tests -q
 
   research-smoke:
     # The research tests skip cleanly when torch is absent (core-only
@@ -48,12 +48,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install -e ".[experimental,test]" scipy
+          python -m pip install -e packages/livnium-core -e "packages/vector-collapse[runtime,test]" scipy
 
       - name: Run research tests (deps required — missing torch/scipy fails, never skips)
         env:
           LIVNIUM_REQUIRE_RESEARCH_DEPS: "1"
-        run: python -m pytest tests/test_research.py -q
+        run: python -m pytest research/embeddings/noun-collapse/test_research.py packages/vector-collapse/tests -q
 
   lint:
     name: lint & format

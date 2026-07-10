@@ -1,6 +1,12 @@
 # Livnium — Project Index, Graded & Ranked
 
-*Generated 2026-06-27. Updated 2026-07-02: `chat/` now also hosts the **chat-brain** — a personal char→word→sentence→context→reasoning ladder trained on a raw ChatGPT export (see the chat/ section and `chat/README.md` Part 1). Covers all real files — caches (`__pycache__`, `.pyc`, `.pytest_cache`, `.ruff_cache`), `.git`, and `.DS_Store` excluded.*
+> **Layout note (2026-07-11).** This inventory was graded against the pre-refactor
+> flat layout (tagged `pre-layout-refactor`). Paths below have been mechanically
+> updated to the new `packages/ + research/ + benchmarks/ + apps/` layout, but the
+> grades and duplicate analysis predate the refactor. `scratch/` and `reached/`
+> are no longer tracked in git.
+
+*Generated 2026-06-27. Updated 2026-07-02: `research/generation/chat-brain/` now also hosts the **chat-brain** — a personal char→word→sentence→context→reasoning ladder trained on a raw ChatGPT export (see the research/generation/chat-brain/ section and `research/generation/chat-brain/README.md` Part 1). Covers all real files — caches (`__pycache__`, `.pyc`, `.pytest_cache`, `.ruff_cache`), `.git`, and `.DS_Store` excluded.*
 
 ## How to read this
 
@@ -13,7 +19,7 @@ Grades: **A+** keeper / load-bearing · **A** strong · **B** solid working code
 
 ### The one structural fact that drives the ranking
 
-The repo is **heavily duplicated**. `reached/pure/` is a near-complete mirror of the whole project (its own `livnium_core/`, `cortex_v2/`, `docs/`, `tests/`, `results/`, plus model weights). `reached/pure-cleaned/`, `chat/`, and `collapse_retrain/` ↔ `reached/code/` are cleaned/partial copies of the same experiments. Roughly **half the 344 files are duplicates**. Canonical copies live at the repo root and in the top-level package dirs; the `reached/` tree is an archived snapshot and is graded down for redundancy regardless of internal quality.
+The repo is **heavily duplicated**. `reached/pure/` is a near-complete mirror of the whole project (its own `packages/livnium-core/src/livnium_core/`, `research/archive/cortex-v2/`, `docs/`, `tests/`, `benchmarks/nli/`, plus model weights). `reached/pure-cleaned/`, `research/generation/chat-brain/`, and `research/nli/supervised-collapse/` ↔ `reached/code/` are cleaned/partial copies of the same experiments. Roughly **half the 344 files are duplicates**. Canonical copies live at the repo root and in the top-level package dirs; the `reached/` tree is an archived snapshot and is graded down for redundancy regardless of internal quality.
 
 ---
 
@@ -21,15 +27,15 @@ The repo is **heavily duplicated**. `reached/pure/` is a near-complete mirror of
 
 | Rank | Component | Grade | What it is |
 |---|---|---|---|
-| 1 | `livnium_core/` | **A+** | The proven, zero-dependency mathematical core. The keeper. |
+| 1 | `packages/livnium-core/src/livnium_core/` | **A+** | The proven, zero-dependency mathematical core. The keeper. |
 | 2 | `tests/` | **A** | Test suite that backs the core's correctness claims. |
 | 3 | `docs/` | **A** | The honest written record — formulas, limits, findings, components. |
 | 4 | `ramsey/` | **A** | Verified Ramsey results (Cayley-on-cube-group, COMPASS, sum-tree). |
 | 5 | Root verdict/status docs | **A** | `README`, `STATE_OF_THE_CORE`, the two `*_VERDICT` files. |
-| 6 | `chat/` | **B+** | The on-device 5.98M premise generator demo + the chat-brain ladder (2026-07-02). |
-| 7 | `collapse_retrain/` | **B** | Supervised NLI collapse model v1 (~68.9% SNLI) + training harness. |
-| 8 | `cortex_v2/` | **B** | Geometry/MPS experiments + validation scripts (audited, patched). |
-| 9 | `results/` | **B** | SNLI benchmark ladder scripts + honest RESULTS.md. |
+| 6 | `research/generation/chat-brain/` | **B+** | The on-device 5.98M premise generator demo + the chat-brain ladder (2026-07-02). |
+| 7 | `research/nli/supervised-collapse/` | **B** | Supervised NLI collapse model v1 (~68.9% SNLI) + training harness. |
+| 8 | `research/archive/cortex-v2/` | **B** | Geometry/MPS experiments + validation scripts (audited, patched). |
+| 9 | `benchmarks/nli/` | **B** | SNLI benchmark ladder scripts + honest RESULTS.md. |
 | 10 | Root experiment scripts | **B–** | `livnium.py`, `geometry_discriminator_test.py`, `char_typer_symbols.py`. |
 | 11 | `reached/code`, `reached/models`, `reached/pure-cleaned` | **C** | Archived experiment snapshots; mostly duplicated elsewhere. |
 | 12 | `reached/pure/` | **D** | Full mirror of the repo. Redundant by construction. |
@@ -38,7 +44,7 @@ The repo is **heavily duplicated**. `reached/pure/` is a near-complete mirror of
 
 ## Tier 1 — The core (A+ / A)
 
-### `livnium_core/` — the proven system *(grade: A+)*
+### `packages/livnium-core/src/livnium_core/` — the proven system *(grade: A+)*
 
 Pure Python, zero dependencies, fully tested. This is the part safe to call "Livnium."
 
@@ -69,9 +75,9 @@ Each maps to a core module. These are what make the core trustworthy.
 | File | Grade | Notes |
 |---|---|---|
 | `README.md` | A+ | Honest framing: "the math is real, the 'beats AI' claim isn't." Best entry point. |
-| `STATE_OF_THE_CORE.md` | A+ | Every claim with a number + reproducing script. The status source of truth. |
-| `COLLAPSE_ENGINE_VERDICT.md` | A | Forensic post-mortem of the cortex_v2 training bugs. Excellent engineering honesty. |
-| `GEOMETRY_DISCRIMINATOR_VERDICT.md` | A | Classical-vs-amplitude verdict; clear scope. |
+| `docs/core/STATE_OF_THE_CORE.md` | A+ | Every claim with a number + reproducing script. The status source of truth. |
+| `docs/collapse/COLLAPSE_ENGINE_VERDICT.md` | A | Forensic post-mortem of the cortex_v2 training bugs. Excellent engineering honesty. |
+| `docs/results/GEOMETRY_DISCRIMINATOR_VERDICT.md` | A | Classical-vs-amplitude verdict; clear scope. |
 | `LICENSE` | B | PolyForm NC 1.0. |
 | `COMMERCIAL.md`, `CONTRIBUTING.md` | B | Standard project docs. |
 | `pyproject.toml`, `requirements.txt`, `.gitignore`, `.github/workflows/ci.yml` | B | Project config / CI. |
@@ -100,13 +106,13 @@ Each maps to a core module. These are what make the core trustworthy.
 | `master.csv`, `witness_n24.json`, `r45_race_table.md` | B | Result data/artifacts. |
 | `cayley_cube_ramsey` siblings | B | Supporting solver scripts. |
 
-> Note: `livnium_core/ramsey/FINDINGS.md` and root `livnium.py` are related Ramsey artifacts — `livnium.py` (43 KB) is the "pattern-replication operator" stress-test against diagonal Ramsey numbers; honest, but a large standalone monolith → **B–**.
+> Note: `packages/livnium-core/src/livnium_core/ramsey/FINDINGS.md` and root `livnium.py` are related Ramsey artifacts — `livnium.py` (43 KB) is the "pattern-replication operator" stress-test against diagonal Ramsey numbers; honest, but a large standalone monolith → **B–**.
 
 ---
 
 ## Tier 3 — Experiments (B)
 
-### `chat/` — the on-device demo + the chat-brain *(grade: B+)*
+### `research/generation/chat-brain/` — the on-device demo + the chat-brain *(grade: B+)*
 
 Two packages. (a) The 5.98M-param SNLI premise generator with measured numbers
 and explicit claim corrections. (b) **The chat-brain (added 2026-07-02):** a
@@ -141,7 +147,7 @@ truth; the flatten is retired). Same collapse engine at every rung.
 | `char_collapse_pure.py` | B | Frozen char→word stage (dup of root concept). |
 | `model/premise_from_hyp_align_53.pt`, `batch_crossover.png` | B | Shipped checkpoint + figure. |
 
-### `collapse_retrain/` — supervised NLI v1 *(grade: B)*
+### `research/nli/supervised-collapse/` — supervised NLI v1 *(grade: B)*
 
 The label-supervised collapse model (~68.9% SNLI test). Well-documented training/eval/ablation harness.
 
@@ -157,9 +163,9 @@ The label-supervised collapse model (~68.9% SNLI test). Well-documented training
 | `save_failures.py`, `score_sentence_typer.py`, `eval_nli_meaning_forms_symbols.py`, `visualize_char_collapse.py`, `verify_char_collapse_numpy.py` | B | Utilities. |
 | `*.pt` (8 checkpoints), `failed_examples.json`, `model_nli_v1/nli_epoch20.pt` | B | Trained weights (large binaries). |
 
-### `cortex_v2/` — geometry/MPS experiments *(grade: B)*
+### `research/archive/cortex-v2/` — geometry/MPS experiments *(grade: B)*
 
-Audited & patched per `COLLAPSE_ENGINE_VERDICT.md`. Strong validation coverage.
+Audited & patched per `docs/collapse/COLLAPSE_ENGINE_VERDICT.md`. Strong validation coverage.
 
 | File | Grade | Notes |
 |---|---|---|
@@ -169,22 +175,22 @@ Audited & patched per `COLLAPSE_ENGINE_VERDICT.md`. Strong validation coverage.
 | `validate_*.py` (20 scripts) | B | Broad validation suite (cube, conservation, nesting, energy, survival, forward-cone, etc.). |
 | `test_regressions.py` | B | Regression tests. |
 
-### `results/` *(grade: B)*
+### `benchmarks/nli/` *(grade: B)*
 
 `RESULTS.md` (A — honest SNLI verdict), `README.md` (B), `rung2_lib.py`, `rung2_livnium.py`, `rung2_livnium_word.py` (B — benchmark ladder).
 
-### `experiments/` — standalone experiment scripts *(moved from root 2026-07-02)*
+### `research/archive/experiments/` — standalone experiment scripts *(moved from root 2026-07-02)*
 
 | File | Grade | Notes |
 |---|---|---|
-| `experiments/livnium.py` | B– | 43 KB Ramsey stress-test monolith; honest but large/standalone. |
-| `experiments/geometry_discriminator_test.py` | B | Backs the geometry verdict (reproducible). |
-| `experiments/char_typer_symbols.py` + `.pt` | B | Pure-geometry whole-symbol typer. |
-| `experiments/ledger.py`, `experiments/container_stream.py` | B | Ledger geometry + container stream (container_stream imports ledger — run from `experiments/`). |
-| `experiments/qwen_probe.py` | B | Qwen probe experiment. |
-| `visualizer/index.html` | B | Standalone visualizer. |
+| `research/archive/experiments/livnium.py` | B– | 43 KB Ramsey stress-test monolith; honest but large/standalone. |
+| `research/archive/experiments/geometry_discriminator_test.py` | B | Backs the geometry verdict (reproducible). |
+| `research/archive/experiments/char_typer_symbols.py` + `.pt` | B | Pure-geometry whole-symbol typer. |
+| `research/archive/experiments/ledger.py`, `research/archive/experiments/container_stream.py` | B | Ledger geometry + container stream (container_stream imports ledger — run from `research/archive/experiments/`). |
+| `research/archive/experiments/qwen_probe.py` | B | Qwen probe experiment. |
+| `apps/core-visualizer/index.html` | B | Standalone visualizer. |
 
-### `rule30/` — Rule-30 investigation *(moved from root 2026-07-02)*
+### `research/archive/rule30/` — Rule-30 investigation *(moved from root 2026-07-02)*
 
 `collapse_engine_rule30.py`, `honest_rule30_test.py`, `genuine_prediction_rule30.py`,
 `light_cone_rule30.py`, `funnel_rule30.py`, `scaffolding_rule30.py`,
@@ -201,10 +207,10 @@ These are graded **down for redundancy**, not for internal quality — several a
 | Path | Grade | Notes |
 |---|---|---|
 | `reached/README.md` | B | Useful narrative of the char-collapse → meaning journey. |
-| `reached/code/` (13 files) | C | Snapshot of the char/word/NLI experiment scripts — overlaps `collapse_retrain/`. |
+| `reached/code/` (13 files) | C | Snapshot of the char/word/NLI experiment scripts — overlaps `research/nli/supervised-collapse/`. |
 | `reached/models/` (4 `.pt`) | C | Duplicate checkpoints (`char_typer`, `nli_meaning_*`). |
-| `reached/pure-cleaned/` (9 files) | C | Cleaned premise-generator build; overlaps `chat/`. |
-| `reached/pure/` (58+ files) | **D** | **Full mirror** of the repo: its own `livnium_core/`, `cortex_v2/`, `docs/`, `tests/`, `results/`, `model/`, `hf_upload/`, plus the gateN scripts and `train_nli_*` variants. Redundant by construction; keep only if needed as a frozen release snapshot. |
+| `reached/pure-cleaned/` (9 files) | C | Cleaned premise-generator build; overlaps `research/generation/chat-brain/`. |
+| `reached/pure/` (58+ files) | **D** | **Full mirror** of the repo: its own `packages/livnium-core/src/livnium_core/`, `research/archive/cortex-v2/`, `docs/`, `tests/`, `benchmarks/nli/`, `model/`, `hf_upload/`, plus the gateN scripts and `train_nli_*` variants. Redundant by construction; keep only if needed as a frozen release snapshot. |
 
 Notable unique-ish items inside `reached/pure/` (still archived): the `gate3b/gate4/gate5/gate6*` phase-gate scripts, `train_nli_joint_nested.py`, `born_dims_corpus.py`, `closed_loop.py`, `phase_*_test.py`, and `hf_upload/` (HuggingFace packaging: `modeling_collapsenli.py`, `config.json`, `eval_snli.py`, `UPLOAD.md`) — all **C**, interesting but parked.
 
@@ -218,7 +224,7 @@ Not source, but they consume the bulk of disk. Grade reflects keep-value, not qu
 |---|---|---|---|
 | `reached/pure/data/snli_1.0_train.jsonl` ×2 | 487 MB each | C | SNLI training set, duplicated across `pure` and `pure-cleaned`. ~975 MB total — biggest cleanup target. |
 | `snli_1.0_dev/test.jsonl` ×2 | ~9.7 MB each | C | Duplicated SNLI splits. |
-| `collapse_retrain/model_nli_v1/nli_epoch20.pt` ×2 | 52.6 MB | B | The official 68.9% checkpoint (also mirrored in `reached/pure`). |
+| `research/nli/supervised-collapse/model_nli_v1/nli_epoch20.pt` ×2 | 52.6 MB | B | The official 68.9% checkpoint (also mirrored in `reached/pure`). |
 | Various `*.pt` (sentence_typer, premise_from_hyp_align, nli_meaning_*) | 21–51 MB | B/C | Many duplicated 2–6× across trees. |
 | `reached/pure/embedding.npy` | 20.5 MB | C | Exported embeddings. |
 
@@ -226,8 +232,8 @@ Not source, but they consume the bulk of disk. Grade reflects keep-value, not qu
 
 ## Bottom line
 
-The **A-grade heart of the project is small and excellent**: `livnium_core/` + `tests/` + `docs/` + `ramsey/` + the honest status/verdict docs. That's the keeper, and it's genuinely well-documented and verified.
+The **A-grade heart of the project is small and excellent**: `packages/livnium-core/src/livnium_core/` + `tests/` + `docs/` + `ramsey/` + the honest status/verdict docs. That's the keeper, and it's genuinely well-documented and verified.
 
-The **B-grade experimental layer** (`chat/`, `collapse_retrain/`, `cortex_v2/`, `results/`) is solid, honestly scoped research code.
+The **B-grade experimental layer** (`research/generation/chat-brain/`, `research/nli/supervised-collapse/`, `research/archive/cortex-v2/`, `benchmarks/nli/`) is solid, honestly scoped research code.
 
 The **biggest hygiene issue** is duplication: the entire `reached/pure/` mirror plus duplicated SNLI data (~1 GB) and repeated `.pt` checkpoints. Collapsing `reached/` to a single frozen snapshot (or removing it) and de-duplicating the SNLI `.jsonl` files would shrink the repo dramatically with zero loss of unique content.

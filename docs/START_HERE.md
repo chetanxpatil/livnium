@@ -8,7 +8,7 @@
 
 A chat model built on **one mechanism** — vector collapse — instead of a transformer. No self-attention blocks, no pretrained embeddings, no external knowledge. Every layer of the system (reading characters, reading words, reading a conversation, writing a reply) uses the same one-line update rule, and the whole thing trains from scratch on a laptop.
 
-The purpose: find out how far a single geometric primitive can go as a language engine, and measure it honestly. The repo keeps its failures on record next to its wins (`docs/FINDINGS.md`) — every claim below has a number behind it.
+The purpose: find out how far a single geometric primitive can go as a language engine, and measure it honestly. The repo keeps its failures on record next to its wins (`docs/history/FINDINGS.md`) — every claim below has a number behind it.
 
 ---
 
@@ -16,9 +16,9 @@ The purpose: find out how far a single geometric primitive can go as a language 
 
 1. This file, top to bottom.
 2. Root `README.md` — the project's origin (a conserved cube geometry) and the honest benchmark history.
-3. `chat/README.md` — the current work: the chat-brain ladder + the SNLI premise generator, with results and known-stale items.
-4. `docs/COLLAPSE_VISUALIZATION.md` — *see* the attractor basins: flow fields and grid warping of the trained engine.
-5. Code, in this order: `chat/premise_from_hyp.py` (smallest complete generator) → `chat/chat_typer.py` → `chat/chat_reply.py` (the full model).
+3. `research/generation/chat-brain/README.md` — the current work: the chat-brain ladder + the SNLI premise generator, with results and known-stale items.
+4. `docs/collapse/COLLAPSE_VISUALIZATION.md` — *see* the attractor basins: flow fields and grid warping of the trained engine.
+5. Code, in this order: `research/nli/premise-generator/premise_from_hyp.py` (smallest complete generator) → `research/generation/chat-brain/chat_typer.py` → `research/generation/chat-brain/chat_reply.py` (the full model).
 
 ---
 
@@ -36,7 +36,7 @@ you > is the girl standing
 ai  > a girl in a pink shirt standing in a doorway.   [neutral]
 ```
 
-That's a 5.98M-parameter model, trained only on SNLI, answering in ~5 ms on CPU. Checkpoint ships in `chat/model/` — no training needed to try it.
+That's a 5.98M-parameter model, trained only on SNLI, answering in ~5 ms on CPU. Checkpoint ships in `research/generation/chat-brain/model/` — no training needed to try it.
 
 To train the chat model yourself (two-stage: general fluency on DailyDialog, then personal voice):
 
@@ -67,8 +67,8 @@ h ← h − strength · (1 − cos(h, W)) · norm(h − W)
 ```
 
 (The repo also contains three sibling rules — an exact cosine-energy-gradient
-variant (v2, `experiment/pure_reply.py`), a closed-form direct collapse and a
-learned MLP-residual collapse (both in `vector_collapse/`). They share the
+variant (v2, `research/dynamics/exact-gradient/pure_reply.py`), a closed-form direct collapse and a
+learned MLP-residual collapse (both in `packages/vector-collapse/src/vector_collapse/`). They share the
 attractor idea but are distinct update laws; see the README's variant table.)
 
 - `(1 − cos(h, W))` — how misaligned the state is. Already at the well → factor ~0, nothing moves. Far away → strong pull.
@@ -77,7 +77,7 @@ attractor idea but are distinct update laws; see the README's variant table.)
 
 Each well is a **point attractor**. Collapsing through a sentence word-by-word traces a **trajectory**, and that trajectory is order-sensitive: reordering the words gives mean-pool cosine 1.000 but collapse cosine 0.072. Mean-pooling can't tell "dog bites man" from "man bites dog"; collapse can. Each step is constant in sequence length after pooling (for fixed dimension, anchors and collapse steps) — no attention matrix — which is where the CPU speed comes from.
 
-This sits in **dynamical systems, not physics**: the noun dynamics are measurable and attractor-directed, but the chord force above is **non-conservative** — it is not the gradient of a global scalar potential (`experiment/findings.md`). The quantity `V(h) = 1 − cos(h, target)` is an *empirical* Lyapunov candidate: monotone non-increasing on 100% of 12,000 measured steps, predominantly contracting Jacobians (mean singular value ≈ 0.89) — an observation, not a proof. An exact cosine-gradient variant with a true closed-form potential is implemented separately. Precise claims and caveats: `chat/LYAPUNOV_TEST.md`.
+This sits in **dynamical systems, not physics**: the noun dynamics are measurable and attractor-directed, but the chord force above is **non-conservative** — it is not the gradient of a global scalar potential (`research/generation/discrete-chat/findings.md`). The quantity `V(h) = 1 − cos(h, target)` is an *empirical* Lyapunov candidate: monotone non-increasing on 100% of 12,000 measured steps, predominantly contracting Jacobians (mean singular value ≈ 0.89) — an observation, not a proof. An exact cosine-gradient variant with a true closed-form potential is implemented separately. Precise claims and caveats: `research/generation/chat-brain/LYAPUNOV_TEST.md`.
 
 **How the models use it.** The neural parts only *pick* the next well; collapse *executes* the move.
 
@@ -96,6 +96,6 @@ This sits in **dynamical systems, not physics**: the noun dynamics are measurabl
 | Word typer (20k vocab) | type sentences back | 98.0% per-word; **100.0%** OOV-free exact | — |
 | Speed (premise model) | CPU, per reply | **~5 ms**, 1,630 tok/s | GPU is *slower* (13 ms) — decode is launch-bound |
 
-What it is **not**: not a general chatbot, no understanding, coherent only in its training domains (SNLI captions; everyday dialogue). Grammar emerges fast because grammar is local — that's fluency, not comprehension. The cube geometry alone carries no meaning (38%, ~chance) and ANLI sits at chance — both documented, kept, and explained in `results/RESULTS.md` and `docs/LIMITS.md`.
+What it is **not**: not a general chatbot, no understanding, coherent only in its training domains (SNLI captions; everyday dialogue). Grammar emerges fast because grammar is local — that's fluency, not comprehension. The cube geometry alone carries no meaning (38%, ~chance) and ANLI sits at chance — both documented, kept, and explained in `docs/results/nli.md` and `docs/core/LIMITS.md`.
 
-Full leaderboard and kill-tests: `chat/SNLI_BASELINES.md` · claim-to-checkpoint map: `chat/CLAIMS_CHECKPOINT_MAP.md`
+Full leaderboard and kill-tests: `research/generation/chat-brain/SNLI_BASELINES.md` · claim-to-checkpoint map: `research/generation/chat-brain/CLAIMS_CHECKPOINT_MAP.md`

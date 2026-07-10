@@ -71,7 +71,7 @@ symbolic_weight_total(7)     # 2646   — the conserved total for a 7×7×7 cube
 len(rotation_group())        # 24     — the rotations of a cube
 ```
 
-There is also a **3D visualizer** — open [`visualizer/index.html`](visualizer/index.html)
+There is also a **3D visualizer** — open [`apps/core-visualizer/index.html`](apps/core-visualizer/index.html)
 in any browser to see the lattice, the exposure classes, and the rotations.
 
 ---
@@ -93,7 +93,7 @@ they are not interchangeable:
 
 | Variant | Rule | Character |
 |---|---|---|
-| **Livnium v1** (chord-directed) | `h ← h − s · (1 − cos(h, W)) · norm(h − W)` | Hand-designed; **non-conservative** (no exact global scalar potential — see `experiment/findings.md`) |
+| **Livnium v1** (chord-directed) | `h ← h − s · (1 − cos(h, W)) · norm(h − W)` | Hand-designed; **non-conservative** (no exact global scalar potential — see `research/generation/discrete-chat/findings.md`) |
 | **Livnium v2** (exact energy gradient) | `h ← h + s · (W − cos(h, W)·ĥ)/‖h‖` | Exact gradient of `V(h) = −cos(h, W)`; conservative |
 | **Direct collapse** | closed-form step (`vector_collapse`, `mode="direct_collapse"`) | Closed-form approximation, no iteration |
 | **MLP collapse** | learned residual + away-force (`mode="mlp_collapse"`) | Learned variant; not a fixed physical law |
@@ -102,12 +102,12 @@ On stability: the noun dynamics are measurable and attractor-directed, but the
 current chord force (v1) is **non-conservative** — it is not the gradient of a
 global scalar potential, so earlier statements about a proven Lyapunov energy
 for that exact rule are withdrawn. The empirical energy-descent measurements in
-`chat/LYAPUNOV_TEST.md` remain valid as *empirical* observations of a Lyapunov
+`research/generation/chat-brain/LYAPUNOV_TEST.md` remain valid as *empirical* observations of a Lyapunov
 candidate on sampled trajectories. An exact cosine-gradient variant (v2) with a
 true closed-form potential is implemented separately in
-`experiment/pure_reply.py`.
+`research/dynamics/exact-gradient/pure_reply.py`.
 
-The standalone, configurable engine lives in [`vector_collapse/`](vector_collapse/)
+The standalone, configurable engine lives in [`packages/vector-collapse/src/vector_collapse/`](packages/vector-collapse/src/vector_collapse/)
 (installable; requires the `[experimental]` extra). For the full mechanics,
 reading order, and how to run it in two minutes, see
 [`docs/START_HERE.md`](docs/START_HERE.md).
@@ -117,7 +117,7 @@ reading order, and how to run it in two minutes, see
 ## Part 3 — Research Models: nouns, SNLI, generation and vision
 
 These are experiments, not the proven core. Checkpoints are published
-externally — see [`CHECKPOINTS.md`](CHECKPOINTS.md) for URLs and SHA-256 hashes.
+externally — see [`artifacts/checkpoints.md`](artifacts/checkpoints.md) for URLs and SHA-256 hashes.
 
 ### The honest NLI results, in plain language
 
@@ -136,7 +136,7 @@ a win until it beats the dumbest thing that works.
 And on **ANLI** — a harder benchmark built specifically so you can't cheat with
 word-counting — Livnium scores at chance (~33%), like every word-counting method.
 
-*Note on the Supervised Collapse model:* By training word embeddings end-to-end with a 4-layer vector collapse engine (`VectorCollapseEngine`) that warps difference vectors toward three learned point-attractors (Entailment, Neutral, Contradiction), the model reaches **68.87% test accuracy** on SNLI. On the ablation: a post-hoc frozen-embedding probe scores 64.06% with a linear head, 68.92% with collapse and 70.13% with an MLP. Because the embeddings were originally optimized for collapse, a matched end-to-end multi-seed ablation is still required before attributing the gain to the collapse dynamics. On speed: single-pair inference runs in **0.33 ms** on CPU and over **215,000 pairs/sec** on Apple Silicon GPU (MPS) — these figures measure already-tokenized encoder latency, not end-to-end application latency, and the collapse step is constant in sequence length after $O(L)$ pooling, for fixed dimension, anchors and collapse steps. See [results/RESULTS.md](results/RESULTS.md) and [docs/COLLAPSE_VISUALIZATION.md](docs/COLLAPSE_VISUALIZATION.md) for details.
+*Note on the Supervised Collapse model:* By training word embeddings end-to-end with a 4-layer vector collapse engine (`VectorCollapseEngine`) that warps difference vectors toward three learned point-attractors (Entailment, Neutral, Contradiction), the model reaches **68.87% test accuracy** on SNLI. On the ablation: a post-hoc frozen-embedding probe scores 64.06% with a linear head, 68.92% with collapse and 70.13% with an MLP. Because the embeddings were originally optimized for collapse, a matched end-to-end multi-seed ablation is still required before attributing the gain to the collapse dynamics. On speed: single-pair inference runs in **0.33 ms** on CPU and over **215,000 pairs/sec** on Apple Silicon GPU (MPS) — these figures measure already-tokenized encoder latency, not end-to-end application latency, and the collapse step is constant in sequence length after $O(L)$ pooling, for fixed dimension, anchors and collapse steps. See [docs/results/nli.md](docs/results/nli.md) and [docs/collapse/COLLAPSE_VISUALIZATION.md](docs/collapse/COLLAPSE_VISUALIZATION.md) for details.
 
 ### Word embeddings from pure collapse
 
@@ -150,14 +150,14 @@ corpora — a matched-corpus baseline is still pending — and embeds one
 already-tokenized context in 0.23 ms on CPU (encoder latency, not end-to-end
 application latency). The model is live on the Hub:
 [🤗 chetanxpatil/noun-collapse](https://huggingface.co/chetanxpatil/noun-collapse).
-Details in [`chat/README.md`](chat/README.md).
+Details in [`research/generation/chat-brain/README.md`](research/generation/chat-brain/README.md).
 
 ### Generation and vision
 
-- **Premise generator / chat-brain** (`chat/`): a 5.98M-param on-device sequence
+- **Premise generator / chat-brain** (`research/generation/chat-brain/`): a 5.98M-param on-device sequence
   model — type a hypothesis, it types back a premise (~53% gold-label match,
   chance 33%). See [`docs/START_HERE.md`](docs/START_HERE.md).
-- **Vision collapse** (`vision/`): every attractor is a pixel; images collapse
+- **Vision collapse** (`research/vision/`): every attractor is a pixel; images collapse
   through their own pixels. Smoke-tested at 64², not yet trained at full scale.
 
 ### The lesson, stated once
@@ -169,19 +169,19 @@ So the accuracy was never going to come from the geometry; it comes from the
 words you put in it, and once you're counting words you're not reasoning. This
 isn't a failure of the math — it's the **shape** of the tool, and knowing it is
 what makes the tool usable. (The full reasoning is in
-[`docs/LIMITS.md`](docs/LIMITS.md).)
+[`docs/core/LIMITS.md`](docs/core/LIMITS.md).)
 
 There was **one** genuine bright spot — a compression result where "collapse text to
 what you already know" beat gzip and showed ~78% of ordinary text is predictable
 "dark matter." That one points somewhere real; see
-[`docs/COMPRESSION_NOTE.md`](docs/COMPRESSION_NOTE.md).
+[`docs/core/COMPRESSION_NOTE.md`](docs/core/COMPRESSION_NOTE.md).
 
-The full story: [`docs/ORIGINS.md`](docs/ORIGINS.md) is the real history.
-[`docs/FINDINGS.md`](docs/FINDINGS.md) is a complete inventory of every claim
+The full story: [`docs/history/ORIGINS.md`](docs/history/ORIGINS.md) is the real history.
+[`docs/history/FINDINGS.md`](docs/history/FINDINGS.md) is a complete inventory of every claim
 made over the year, each marked **proven**, **standard**, **partial**, or
 **falsified**. The honest test results live in
-[`results/RESULTS.md`](results/RESULTS.md) and
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+[`docs/results/nli.md`](docs/results/nli.md) and
+[`docs/results/BENCHMARKS.md`](docs/results/BENCHMARKS.md).
 
 ---
 
@@ -189,40 +189,49 @@ made over the year, each marked **proven**, **standard**, **partial**, or
 
 ```
 livnium/
-├── README.md              ← you are here
-├── LICENSE                ← source-available; all rights reserved
-├── CHECKPOINTS.md         ← checkpoint manifest: URLs + SHA-256
-├── livnium_core/          ← Part 1: the proven math (pure Python, no dependencies)
-├── tests/                 ← the test suite (run: pytest)
-├── vector_collapse/       ← Part 2: the standalone collapse engine
-├── chat/                  ← Part 3: noun embeddings, premise generator, chat-brain
-├── collapse_retrain/      ← Part 3: supervised collapse NLI (experimental)
-├── cortex_v2/             ← Part 3: experimental MPS simulator + collapse prototype
-├── vision/                ← Part 3: vision collapse (research)
+├── README.md                      ← you are here
+├── LICENSE                        ← source-available; all rights reserved
+│
+├── packages/                      ← the two installable, tested packages
+│   ├── livnium-core/              ←   Part 1: proven math (pure Python, no deps) + tests
+│   └── vector-collapse/           ←   Part 2: reusable collapse engine + tests
+│
+├── research/                      ← Part 3: research models (one folder per model)
+│   ├── embeddings/noun-collapse/  ←   pure-collapse noun embeddings (+ HF upload)
+│   ├── nli/supervised-collapse/   ←   supervised collapse NLI (~68.9% SNLI)
+│   ├── nli/premise-generator/     ←   the on-device premise demo
+│   ├── generation/chat-brain/     ←   personal char→word→sentence ladder
+│   ├── generation/discrete-chat/  ←   discrete-cube chat experiments
+│   ├── dynamics/exact-gradient/   ←   v2 exact-gradient collapse
+│   ├── dynamics/qwen-hook/        ←   Qwen probe
+│   ├── vision/                    ←   vision collapse (pixel color, image state, fovea)
+│   └── archive/                   ←   superseded work, each with STATUS.md
+│       ├── cortex-v2/             ←     MPS simulator + collapse prototype (post-mortem'd)
+│       ├── experiments/           ←     loose standalone scripts
+│       └── rule30/                ←     the Rule-30 prediction investigation
+│
+├── benchmarks/                    ← controlled comparisons, never beside training code
+│   ├── embeddings/matched-corpus/ ←   collapse vs SGNS vs PPMI-SVD, one frozen corpus
+│   └── nli/                       ←   SNLI ladder scripts + data download
+│
+├── apps/
+│   ├── core-visualizer/           ← interactive 3D view of the lattice
+│   └── website/                   ← website draft
+│
 ├── docs/
-│   ├── COMPONENTS.md      ← plain-language tour of every file (start here)
-│   ├── START_HERE.md      ← collapse engine mechanics + reading order
-│   ├── ORIGINS.md         ← the real story, from the first day
-│   ├── FINDINGS.md        ← every claim, marked proven / standard / partial / falsified
-│   ├── FORMULAS.md        ← the formal definitions and proofs
-│   ├── LIMITS.md          ← what it provably cannot do, and why
-│   ├── BENCHMARKS.md      ← the honest NLI test
-│   ├── REARRANGEMENT.md   ← face turns and the Rubik's group
-│   ├── COMPRESSION_NOTE.md← the one positive result worth chasing
-│   ├── ML_LADDER.md       ← the path forward, learned the hard way
-│   ├── COLLAPSE_VISUALIZATION.md ← 2D projection plots of the attractor flow field
-│   └── COLLAPSE_STRUCTURE_REPORT.md ← formal dynamical analysis of anchors and basins
-├── results/
-│   ├── RESULTS.md         ← measured numbers: Livnium vs baselines, with kill-tests
-│   └── *.py               ← the exact, reproducible experiment scripts
-├── experiment/            ← v2 exact-gradient collapse + findings
-├── COLLAPSE_ENGINE_VERDICT.md  ← forensic post-mortem of the cortex_v2 experiment
-└── visualizer/index.html  ← interactive 3D view of the lattice
+│   ├── START_HERE.md              ← collapse engine mechanics + reading order
+│   ├── core/                      ← FORMULAS, LIMITS, COMPONENTS, REARRANGEMENT, STATE_OF_THE_CORE
+│   ├── collapse/                  ← structure report, visualization, engine verdict
+│   ├── results/                   ← nli.md (measured numbers), BENCHMARKS, discriminator verdict
+│   └── history/                   ← ORIGINS, FINDINGS, ML_LADDER
+│
+├── artifacts/checkpoints.md       ← checkpoint manifest: URLs + SHA-256
+└── .github/workflows/ci.yml       ← core tests + research smoke + lint
 ```
 
 > **Heads-up on the experimental folders.** Everything under Part 3 is a
 > research prototype, not part of the proven core. They depend on `numpy`
-> and `torch` and are kept for transparency — see `COLLAPSE_ENGINE_VERDICT.md`
+> and `torch` and are kept for transparency — see `docs/collapse/COLLAPSE_ENGINE_VERDICT.md`
 > for an honest account of what worked and what didn't.
 
 ---
