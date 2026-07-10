@@ -15,9 +15,34 @@ The hash must match this table exactly.
 
 | Checkpoint | Model | Size | SHA-256 | Where |
 |---|---|---:|---|---|
-| `noun_collapse_pure.pt` | Wikipedia noun embeddings (pure collapse) | 104,704,445 B | `537707dfdd82a6caffacadfa683a88f32029e0bfbdcb8edb380a4f429953a4ea` | [🤗 chetanxpatil/noun-collapse](https://huggingface.co/chetanxpatil/noun-collapse) |
-| `nli_epoch20.pt` | Supervised Collapse NLI v1 (`collapse_retrain/`) | 52,614,341 B | `2ae8026dc25deaeb7a904b3980ed1fc6b95312874304d05b201bf645b796958d` | _upload pending — GitHub Release `checkpoints-v1`_ |
-| `premise_from_hyp_align_53.pt` | SNLI premise generator (`chat/`) | 24,306,725 B | `a5ba5abcd140d80d8bbf19c7a1fdb5129bb733b57154d82fee49d2de8251001a` | _upload pending — GitHub Release `checkpoints-v1`_ |
+| `noun_collapse_pure.pt` (**v1**) | Wikipedia noun embeddings (pure collapse) | 104,704,445 B | `537707dfdd82a6caffacadfa683a88f32029e0bfbdcb8edb380a4f429953a4ea` | [🤗 chetanxpatil/noun-collapse](https://huggingface.co/chetanxpatil/noun-collapse) |
+| `nli_epoch20.pt` | Supervised Collapse NLI v1 (`collapse_retrain/`) | 52,614,341 B | `2ae8026dc25deaeb7a904b3980ed1fc6b95312874304d05b201bf645b796958d` | ⚠️ _upload pending — see below_ |
+| `premise_from_hyp_align_53.pt` | SNLI premise generator (`chat/`) | 24,306,725 B | `a5ba5abcd140d80d8bbf19c7a1fdb5129bb733b57154d82fee49d2de8251001a` | ⚠️ _upload pending — see below_ |
+
+**Pending uploads** — the two ⚠️ rows have no download URL yet. Until they are
+uploaded, these checkpoints exist only on the author's machine. To publish them
+as a GitHub Release and make this manifest fully verifiable:
+
+```bash
+gh release create checkpoints-v1 \
+  collapse_retrain/model_nli_v1/nli_epoch20.pt \
+  chat/model/premise_from_hyp_align_53.pt \
+  --title "Model checkpoints v1" \
+  --notes "SHA-256 hashes in CHECKPOINTS.md"
+```
+
+then replace the ⚠️ cells with
+`https://github.com/chetanxpatil/livnium/releases/tag/checkpoints-v1`.
+
+## Checkpoint versioning
+
+**`noun_collapse_pure.pt` v1**: the published v1 checkpoint used the original
+sampled-softmax implementation, *without* false-negative masking. Masking (a
+sampled negative equal to the true target is now excluded with `-inf`) was
+added to `chat/noun_collapse_pure.py` afterward; a **v2 retrain is pending**.
+Consequence: retraining with the current code will not exactly reproduce the
+v1 checkpoint or its SimLex ρ = 0.362. The v1 *evaluation* is unaffected
+(masking only changes training).
 
 ## Expected local paths
 

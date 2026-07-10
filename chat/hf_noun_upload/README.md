@@ -53,6 +53,13 @@ h ← h − strength · (1 − cos(h, W)) · norm(h − W)
 Because the context is read as an ordered collapse trajectory (not a bag),
 word order is physically encoded — unlike CBOW/PPMI.
 
+**Version note (v1).** This checkpoint was trained with the original
+sampled-softmax implementation, *without* false-negative masking (a sampled
+negative equal to the true target was scored as a negative). Masking was added
+to the training code afterward; a v2 retrain is pending. Retraining with the
+current repo code will not exactly reproduce this checkpoint; evaluation is
+unaffected.
+
 ## Quality — SimLex-999 (similarity, not association)
 
 | model | data | SimLex-999 ρ (nouns) |

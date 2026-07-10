@@ -54,6 +54,13 @@ preprocessing. A matched-corpus baseline (identical Wikipedia subset, identical
 preprocessing, word2vec SGNS / PPMI+SVD, multiple seeds, SimLex-999 +
 WordSim-353 + MEN) is still required before claiming parity.
 
+Checkpoint version note: the published **v1** checkpoint was trained with the
+original sampled-softmax implementation, *without* false-negative masking.
+Masking was added to the training code afterward; a **v2 retrain is pending**.
+Retraining with the current code will therefore not exactly reproduce the v1
+checkpoint (evaluation is unaffected — masking only changes training). See
+`../CHECKPOINTS.md`.
+
 ## Geometry — a curved ~20-d manifold, not a flat subspace
 
 `intrinsic_dim.py` measures how many dimensions the wells *actually* use. The
