@@ -13,7 +13,7 @@ import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../chat"))
 from chat_reply import read_pairs
-DEFAULT_DATA = "chat/data/chat_context.tsv"
+DEFAULT_DATA = os.path.abspath(os.path.join(os.path.dirname(__file__), "../chat/data/chat_context.tsv"))
 
 # ----------------------------------------------------------- 1. 5D Group Setup
 
@@ -72,10 +72,12 @@ def label_sentence(msg):
 # ------------------------------------------------------------- 3. Engine
 
 def run_trajectory(words, word_to_action, start_state):
+    assert start_state.ndim == 1 and start_state.shape[0] == DIM, f"start_state must be 1D of size {DIM}, got shape {start_state.shape}"
     h = start_state.copy()
     for w in words:
         if w in word_to_action:
             action_idx = word_to_action[w]
+            assert 0 <= action_idx < len(GENERATORS), f"Action index {action_idx} out of range [0, {len(GENERATORS) - 1}]"
             R = GENERATORS[action_idx]
             h = R @ h
     return h

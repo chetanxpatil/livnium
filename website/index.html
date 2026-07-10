@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Livnium — a lab for software that thinks differently</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;800&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#000; --panel:#0a0a0b; --panel2:#101012; --line:#1d1d20;
+    --text:#f2f3f5; --dim:#9aa0a6; --faint:#5f6368;
+    --blue:#2f9bf0; --blue-deep:#1b46b3; --blue-tint:rgba(47,155,240,.12);
+    --mono:"Roboto Mono",ui-monospace,Menlo,monospace;
+    --sans:"Inter",-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1360px;margin:0 auto;padding:0 48px}
+  @media(max-width:700px){.wrap{padding:0 24px}}
+
+  /* nav */
+  nav{position:fixed;top:0;left:0;right:0;z-index:20;background:linear-gradient(180deg,rgba(0,0,0,.85),rgba(0,0,0,0));
+    transition:background .3s}
+  nav.scrolled{background:rgba(0,0,0,.9);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:84px}
+  .logo{font-size:22px;font-weight:800;letter-spacing:.06em;text-decoration:none;color:#fff}
+  nav ul{display:flex;gap:40px;list-style:none;align-items:center}
+  nav ul a{color:#b8bcc2;text-decoration:none;font-size:15px;font-weight:400;transition:color .2s}
+  nav ul a:hover{color:#fff}
+  .contact-btn{background:#fff;color:#000 !important;font-weight:600;padding:10px 24px;border-radius:8px}
+  .contact-btn:hover{background:#e8eaed}
+
+  /* hero */
+  .hero{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden;padding-top:84px}
+  .lab-badge{font-family:var(--mono);font-size:11.5px;letter-spacing:.3em;color:var(--dim);margin-bottom:30px}
+  .lab-badge b{color:var(--blue);font-weight:500}
+  .hero-glow{position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse 55% 60% at 75% 45%, rgba(27,70,179,.16), transparent 65%),
+               radial-gradient(ellipse 40% 45% at 20% 80%, rgba(47,155,240,.06), transparent 60%)}
+  .hero .wrap{position:relative;z-index:2;width:100%;display:grid;
+    grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:64px;align-items:center}
+  .hero h1{font-size:clamp(40px,5vw,72px);line-height:1.08;font-weight:300;color:#e8eaed;max-width:18ch;letter-spacing:-.04em}
+  .hero h1 b{font-weight:600;color:#fff}
+  .hero h1 .accent{color:var(--blue)}
+  .hero h1 .strap{display:block;margin-top:26px;font-size:clamp(18px,1.7vw,24px);font-weight:400;
+    letter-spacing:.01em;color:var(--dim);line-height:1.5}
+  .hero .sub{margin-top:28px;font-size:17px;font-weight:300;color:var(--dim);max-width:58ch}
+  .hero .cta{margin-top:44px;display:flex;gap:16px;flex-wrap:wrap}
+  .btn{display:inline-block;padding:13px 30px;border-radius:8px;font-size:15px;font-weight:600;text-decoration:none;transition:all .2s}
+  .btn-white{background:#fff;color:#000}
+  .btn-white:hover{background:#e8eaed}
+  .btn-line{border:1px solid #333;color:var(--text)}
+  .btn-line:hover{border-color:var(--blue);color:var(--blue)}
+  .btn-glow{border:1px solid #2c2c30;color:var(--text)}
+  .btn-glow:hover{border-color:rgba(47,155,240,.6);color:#fff}
+  .hero-foot{position:absolute;bottom:40px;left:0;right:0;z-index:2}
+  .hero-foot .wrap{display:flex;justify-content:space-between;align-items:center}
+  .socials{display:flex;gap:26px;align-items:center}
+  .socials a{color:#c8ccd0;transition:color .2s}
+  .socials a:hover{color:var(--blue)}
+  .socials svg{width:22px;height:22px;fill:currentColor}
+  .scroll-hint{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.25em;text-transform:uppercase;
+    writing-mode:vertical-rl;animation:drift 2.6s ease-in-out infinite}
+  @keyframes drift{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+
+  /* cube = the engine */
+  .hero-cube{display:flex;flex-direction:column;justify-content:center;align-items:center;position:relative}
+  .hero-cube::before{content:"";position:absolute;top:8px;width:420px;height:420px;border-radius:50%;
+    background:radial-gradient(circle, rgba(27,70,179,.22), transparent 65%)}
+  #voxelCube{width:400px;height:400px;max-width:100%;position:relative;z-index:1;touch-action:none}
+  /* conservation ledger — the core idea, made visible */
+  .ledger{position:relative;z-index:2;margin-top:6px;min-width:300px;padding:16px 20px;
+    background:rgba(10,12,18,.72);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:12px;font-family:var(--mono);text-align:left}
+  .ledger-head{font-size:10.5px;letter-spacing:.28em;color:var(--faint)}
+  .ledger-main{display:flex;align-items:baseline;gap:12px;margin:7px 0 2px}
+  .ledger-main b{font-size:30px;font-weight:500;color:#fff;font-variant-numeric:tabular-nums}
+  .note{font-size:12px;transition:color .25s,opacity .25s}
+  .note.ok{color:#3ad07f}
+  .note.run{color:var(--blue);opacity:.85}
+  .ledger-sub{font-size:11px;color:var(--dim);letter-spacing:.02em;line-height:1.5;font-family:var(--sans)}
+  .ledger-classes{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:12px;padding-top:11px;
+    border-top:1px solid var(--line);font-size:11px;color:var(--dim)}
+  .ledger-classes .om{color:var(--blue)}
+  @media(max-width:1000px){.hero-cube{display:none}.hero .wrap{grid-template-columns:1fr}}
+
+  /* proof strip */
+  .proof{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--panel)}
+  .proof .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0}
+  .proof .wrap>div{padding:26px 28px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:3px}
+  .proof .wrap>div:last-child{border-right:none}
+  .proof b{font-size:14.5px;font-weight:600;color:#fff}
+  .proof span{font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.04em}
+  @media(max-width:900px){.proof .wrap>div{border-right:none;border-bottom:1px solid var(--line)}}
+
+  /* sections */
+  section{padding:110px 0}
+  .sec-label{font-size:15px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:#fff;margin-bottom:56px}
+  .sec-label::after{content:"";display:block;width:44px;height:2px;background:var(--blue);margin-top:14px}
+
+  /* services — the rail */
+  .svc-screen{min-height:100svh;display:flex;flex-direction:column;justify-content:center;padding:110px 0}
+  .svc{display:grid;grid-template-columns:360px 1fr;gap:80px;align-items:center}
+  .svc-list{list-style:none}
+  .svc-list li{padding:22px 0 22px 30px;border-left:3px solid #232326;color:var(--faint);
+    font-size:23px;font-weight:300;cursor:pointer;transition:all .25s;user-select:none}
+  .svc-list li:hover{color:var(--dim)}
+  .svc-list li.on{border-left-color:var(--blue);color:#fff;font-weight:500}
+  .svc-panel{position:relative;background:var(--panel2);border-radius:6px;min-height:430px;overflow:hidden;
+    display:flex;flex-direction:column;justify-content:center;padding:64px 70px}
+  .svc-panel::before{content:"";position:absolute;inset:0;
+    background:radial-gradient(ellipse 80% 90% at 80% 15%, rgba(27,70,179,.22), transparent 60%);pointer-events:none}
+  .svc-panel h3{font-size:30px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#fff;position:relative}
+  .svc-panel p{margin-top:26px;font-size:17.5px;font-weight:300;color:#c8ccd0;max-width:52ch;position:relative}
+  .svc-panel .meta{margin-top:30px;font-family:var(--mono);font-size:12px;color:var(--blue);letter-spacing:.08em;position:relative}
+  .svc-nav{position:absolute;bottom:28px;right:32px;display:flex;gap:12px}
+  .svc-nav button{width:42px;height:42px;border-radius:50%;border:1px solid #333;background:transparent;color:#c8ccd0;
+    font-size:18px;cursor:pointer;transition:all .2s}
+  .svc-nav button:hover{border-color:var(--blue);color:var(--blue)}
+  .fadein{animation:fade .4s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @media(max-width:900px){.svc{grid-template-columns:1fr;gap:40px}.svc-panel{padding:44px 32px}}
+
+  /* honesty */
+  .honesty{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--panel);padding:70px 0}
+  .honesty blockquote{font-size:clamp(19px,2.2vw,25px);font-weight:300;color:#e8eaed;max-width:64ch;margin:0 auto;text-align:center}
+  .honesty blockquote b{color:var(--blue);font-weight:600}
+  .honesty .src{display:block;text-align:center;margin-top:18px;font-family:var(--mono);font-size:12px;color:var(--faint);letter-spacing:.1em}
+
+  /* products */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:2px;background:var(--line);
+    border:1px solid var(--line)}
+  .card{background:#000;padding:36px 32px;display:flex;flex-direction:column;gap:14px;transition:background .25s}
+  .card:hover{background:var(--panel2)}
+  .card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .card h3{font-size:18px;font-weight:600;color:#fff}
+  .card h3 a{color:inherit;text-decoration:none}
+  .card h3 a:hover{color:var(--blue)}
+  .badge{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    padding:5px 11px;border-radius:99px;white-space:nowrap;border:1px solid}
+  .b-proven{color:var(--blue);border-color:rgba(47,155,240,.4)}
+  .b-measured{color:#7ee2b8;border-color:rgba(126,226,184,.35)}
+  .b-research{color:#c6a4f8;border-color:rgba(198,164,248,.35)}
+  .b-method{color:#9aa0a6;border-color:#2a2a2e}
+  .b-live{color:#fdd663;border-color:rgba(253,214,99,.35)}
+  .card p{font-size:14.5px;font-weight:300;color:var(--dim);flex:1}
+  .num{font-family:var(--mono);font-size:13px;color:var(--blue);padding-top:14px;border-top:1px solid var(--line)}
+  .path{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+  /* numbers */
+  .numstrip{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));border:1px solid var(--line)}
+  .numstrip>div{padding:44px 20px;text-align:center;border-right:1px solid var(--line)}
+  .numstrip>div:last-child{border-right:none}
+  .numstrip .v{font-family:var(--mono);font-size:30px;font-weight:400;color:#fff}
+  .numstrip .k{font-size:12.5px;color:var(--faint);margin-top:10px;letter-spacing:.04em}
+  @media(max-width:900px){.numstrip>div{border-bottom:1px solid var(--line)}}
+
+  /* core band */
+  .core-band{display:grid;grid-template-columns:1fr auto;gap:40px;align-items:center;
+    border:1px solid var(--line);border-radius:6px;padding:64px 70px;background:
+    radial-gradient(ellipse 60% 100% at 90% 50%, rgba(27,70,179,.18), transparent 65%), var(--panel)}
+  .core-band h2{font-size:clamp(26px,3vw,38px);font-weight:300;color:#fff}
+  .core-band h2 b{font-weight:600;color:var(--blue)}
+  .core-band p{margin-top:16px;color:var(--dim);font-weight:300;max-width:56ch}
+  @media(max-width:800px){.core-band{grid-template-columns:1fr;padding:44px 32px}}
+
+  /* license */
+  .lic{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:var(--line);border:1px solid var(--line);max-width:960px}
+  .lic>div{background:#000;padding:44px 40px}
+  .lic h3{font-size:20px;font-weight:600;margin-bottom:18px}
+  .lic .free h3{color:#7ee2b8}.lic .paid h3{color:var(--blue)}
+  .lic ul{list-style:none}
+  .lic li{font-size:14.5px;font-weight:300;color:var(--dim);padding:6px 0 6px 24px;position:relative}
+  .lic li::before{content:"—";position:absolute;left:0;color:var(--blue)}
+  @media(max-width:800px){.lic{grid-template-columns:1fr}}
+
+  footer{border-top:1px solid var(--line);padding:52px 0}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:20px}
+  footer span{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  footer .socials svg{width:19px;height:19px}
+  @media(max-width:860px){nav ul{display:none}}
+</style>
+</head>
+<body>
+
+<nav id="nav"><div class="wrap">
+  <a class="logo" href="#">LIVNIUM</a>
+  <ul>
+    <li><a href="#services">Services</a></li>
+    <li><a href="#products">Products</a></li>
+    <li><a href="core.html">Core</a></li>
+    <li><a href="#numbers">Numbers</a></li>
+    <li><a class="contact-btn" href="#license">Contact Us</a></li>
+  </ul>
+</div></nav>
+
+<header class="hero">
+  <div class="hero-glow"></div>
+  <div class="wrap">
+    <div class="hero-text">
+    <div class="lab-badge"><b>LIVNIUM LAB</b> &nbsp;·&nbsp; SOFTWARE / AI / GEOMETRY</div>
+    <h1>A software lab for <b>intelligent systems</b>.
+        <span class="strap"><span class="accent">Flutter apps.</span> AI systems. Mathematical engines.</span></h1>
+    <p class="sub">We build production-ready mobile apps while experimenting with new foundations
+       for intelligence, geometry, and machine learning.</p>
+    <div class="cta">
+      <a class="btn btn-white" href="#license">Start a project</a>
+      <a class="btn btn-glow" href="core.html">Enter the lab →</a>
+    </div>
+    </div>
+    <div class="hero-cube">
+      <div id="voxelCube"></div>
+      <div class="ledger" aria-live="polite">
+        <div class="ledger-head">ΣSW LEDGER</div>
+        <div class="ledger-main"><b id="swVal">13,122</b><span class="note ok" id="swNote">conserved ✓</span></div>
+        <div class="ledger-sub">every turn permutes cells — the sum never moves</div>
+        <div class="ledger-classes"><span>corners 8</span><span>edges 12</span><span>centers 6</span><span>core 1</span><span class="om">Om · LO</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-foot"><div class="wrap">
+    <div class="socials">
+      <a href="https://github.com/chetanxpatil/livnium" aria-label="GitHub"><svg viewBox="0 0 24 24"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.7.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6a11.5 11.5 0 0 0 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg></a>
+      <a href="https://huggingface.co/chetanxpatil/noun-collapse" aria-label="Hugging Face"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-3.5 7a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zm7 0a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zM7.6 13.5c1 1.6 2.6 2.5 4.4 2.5s3.4-.9 4.4-2.5c.2-.4-.1-.8-.5-.7-1.2.4-2.5.7-3.9.7s-2.7-.3-3.9-.7c-.4-.1-.7.3-.5.7z"/></svg></a>
+      <a href="#" aria-label="X / Twitter"><svg viewBox="0 0 24 24"><path d="M18.9 2H22l-6.8 7.8L23.2 22h-6.3l-4.9-6.4L6.4 22H3.3l7.3-8.3L1.2 2h6.4l4.4 5.9L18.9 2zm-1.1 18h1.7L6.7 3.8H4.9L17.8 20z"/></svg></a>
+      <a href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24"><path d="M4.98 3.5C4.98 4.88 3.87 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1s2.48 1.12 2.48 2.5zM.24 8.31h4.52V23H.24V8.31zM8.34 8.31h4.33v2h.06c.6-1.14 2.08-2.34 4.28-2.34 4.58 0 5.43 3.01 5.43 6.93V23h-4.52v-7.1c0-1.7-.03-3.88-2.37-3.88-2.37 0-2.73 1.85-2.73 3.76V23H8.34V8.31z"/></svg></a>
+    </div>
+    <div class="scroll-hint">scroll</div>
+  </div></div>
+</header>
+
+<div class="proof"><div class="wrap">
+  <div><b>Production apps</b><span>Flutter · iOS · Android</span></div>
+  <div><b>AI systems from scratch</b><span>no pretrained crutches</span></div>
+  <div><b>Vector-collapse research</b><span>Lyapunov-stable engine</span></div>
+  <div><b>Research-grade core</b><span>ΣSW 486 · conserved · tested</span></div>
+</div></div>
+
+<main>
+<section id="services" class="wrap svc-screen">
+  <div class="sec-label">Services</div>
+  <div class="svc">
+    <ul class="svc-list" id="svcList"></ul>
+    <div class="svc-panel" id="svcPanel">
+      <h3 id="svcTitle"></h3>
+      <p id="svcBody"></p>
+      <div class="meta" id="svcMeta"></div>
+      <div class="svc-nav">
+        <button onclick="step(-1)" aria-label="previous">‹</button>
+        <button onclick="step(1)" aria-label="next">›</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="honesty">
+  <div class="wrap">
+    <blockquote>"The mathematics is <b>real and proven</b>. The early claim that it 'beats AI' is <b>not</b> —
+    it was tested directly. We keep the truth on both counts, on purpose."</blockquote>
+    <span class="src">— README.md · that honesty is the brand</span>
+  </div>
+</div>
+
+<section id="products" class="wrap">
+  <div class="sec-label">Products</div>
+  <div class="grid">
+
+    <div class="card">
+      <div class="top"><h3><a href="core.html">Livnium Core SDK</a></h3><span class="badge b-proven">Proven</span></div>
+      <p>The keeper. Zero-dependency Python: base-27 codec, exposure-weight conservation law,
+         the 24 cube rotations (S₄), nested-cube hierarchy. Fully tested, no ML claims.</p>
+      <div class="num">z + a = a0 · lossless &amp; reversible</div>
+      <div class="path">livnium_core/ · tests/</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Vector Collapse Engine</h3><span class="badge b-measured">Shipping</span></div>
+      <p>Standalone, configurable attention-free representation engine. Attractor dynamics,
+         basin fields, YAML config, verdict fixes baked in.</p>
+      <div class="num">Lyapunov-stable · energy descent on 100% of 12k steps</div>
+      <div class="path">vector_collapse/</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>NLI Collapse Classifier v1</h3><span class="badge b-measured">Measured</span></div>
+      <p>Supervised SNLI model with no transformer attention — geometric classification
+         by cosine against learned E/N/C anchors. Checkpoint shipped in-repo.</p>
+      <div class="num">68.87% SNLI test · beats 61.5% artifact baseline</div>
+      <div class="path">collapse_retrain/ · nli_epoch20.pt</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Chat-Brain · Premise Generator</h3><span class="badge b-measured">Measured</span></div>
+      <p>A 5.98M-parameter on-device model: type a hypothesis, it types back a premise
+         under a chosen label. Runs in NumPy on CPU.</p>
+      <div class="num">~4.5 ms / reply · classifier sibling 74.4% test</div>
+      <div class="path">chat/ · premise_from_hyp_align_53.pt</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Noun-Collapse Embeddings</h3><span class="badge b-measured">Measured</span></div>
+      <p>Word meaning from pure collapse: one 256-d well per word, a start state, two scalars.
+         No MLP, no attention, no output layer. Published on Hugging Face.</p>
+      <div class="num">94.75M noun occurrences · one pass · ~3.2h on a MacBook</div>
+      <div class="path">chat/noun_collapse_pure.py · hf.co/chetanxpatil/noun-collapse</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Ramsey Toolkit</h3><span class="badge b-proven">Proven</span></div>
+      <p>Cayley graphs on group symmetry reconstruct Ramsey lower bounds — including a witness
+         built from the cube's own rotation group. Plus COMPASS and the conserved 27-ary sum-tree.</p>
+      <div class="num">R(4,5) ≥ 25 witness on 24 vertices · exhaustively checked</div>
+      <div class="path">ramsey/</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Char-Collapse Typer</h3><span class="badge b-proven">Proven</span></div>
+      <p>Pure-geometry character encoder/decoder: learned anchors, a start state, two scalars —
+         nothing else. Decodes by nearest anchor with a dedicated EOS well.</p>
+      <div class="num">100% exact typing · trained and unseen words</div>
+      <div class="path">reached/code/char_collapse_pure.py</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Vision Collapse</h3><span class="badge b-research">Research</span></div>
+      <p>The same discipline applied to pixels: every attractor is a pixel-position well,
+         an image collapses through its own pixels in raster order. Readout is pure geometry.</p>
+      <div class="num">Smoke-tested at 64² · scaling via --size</div>
+      <div class="path">vision/img_collapse_pure.py</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Rule 30 Investigation</h3><span class="badge b-method">Case study</span></div>
+      <p>Can the collapse engine predict Rule 30's center column? A self-contained,
+         honest investigation — the fair test first, then every attempt, then the verdict.</p>
+      <div class="num">The honest test comes first, always</div>
+      <div class="path">rule30/</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Honest Benchmark Harness</h3><span class="badge b-method">Method</span></div>
+      <p>The rung ladder: beat the dumbest competent baseline, run a shuffled-label leakage
+         control every time, keep everything else identical. Nothing counts otherwise.</p>
+      <div class="num">Leakage control ≈ 33% (chance) · never cheats</div>
+      <div class="path">results/</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>The Written Record</h3><span class="badge b-method">Content</span></div>
+      <p>ORIGINS, FINDINGS, LIMITS, and two forensic verdict post-mortems. Every claim from a
+         year of work graded: proven, standard, partial, or falsified.</p>
+      <div class="num">Every claim → a number → a script</div>
+      <div class="path">docs/ · *_VERDICT.md · STATE_OF_THE_CORE.md</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h3>Commercial License</h3><span class="badge b-live">Live</span></div>
+      <p>Free for individuals, students, researchers, nonprofits, schools, and government.
+         Companies using Livnium commercially pay a simple annual fee, scaled to size and use.</p>
+      <div class="num">PolyForm NC 1.0 · no open-source escape hatch, on purpose</div>
+      <div class="path">LICENSE · COMMERCIAL.md</div>
+    </div>
+
+  </div>
+</section>
+
+<section id="numbers" class="wrap">
+  <div class="sec-label">Numbers</div>
+  <div class="numstrip">
+    <div><div class="v">24</div><div class="k">rotations, all reversible</div></div>
+    <div><div class="v">68.87%</div><div class="k">SNLI test, attention-free</div></div>
+    <div><div class="v">5.98M</div><div class="k">params, on-device generator</div></div>
+    <div><div class="v">4.5ms</div><div class="k">per reply on CPU</div></div>
+    <div><div class="v">R(4,5)≥25</div><div class="k">cube-group witness</div></div>
+    <div><div class="v">100%</div><div class="k">exact char typing</div></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="core-band">
+    <div>
+      <h2>Livnium <b>Core</b> — the part that's proven.</h2>
+      <p>27 cells, 24 rotations, and one invariant that never breaks. Every claim we make is backed
+         by numbers and reproducible scripts — pure Python, zero dependencies, every module tested.</p>
+    </div>
+    <a class="btn btn-white" href="core.html">Enter the Core →</a>
+  </div>
+</section>
+
+<section id="license" class="wrap">
+  <div class="sec-label">License &amp; Contact</div>
+  <div class="lic">
+    <div class="free">
+      <h3>Noncommercial — $0</h3>
+      <ul>
+        <li>Individuals, students, hobbyists</li>
+        <li>Researchers &amp; nonprofits</li>
+        <li>Schools &amp; government institutions</li>
+        <li>PolyForm Noncommercial 1.0.0</li>
+      </ul>
+    </div>
+    <div class="paid">
+      <h3>Commercial — annual license</h3>
+      <ul>
+        <li>Products or services you sell or operate</li>
+        <li>Internal for-profit R&amp;D pipelines</li>
+        <li>Bundling, embedding, redistribution</li>
+        <li>Training commercial models on it</li>
+      </ul>
+      <div class="num" style="margin-top:16px">Tell us what you're building — a short email is fine.</div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer><div class="wrap">
+  <div class="socials">
+    <a href="https://github.com/chetanxpatil/livnium" aria-label="GitHub"><svg viewBox="0 0 24 24"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.7.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6a11.5 11.5 0 0 0 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg></a>
+    <a href="https://huggingface.co/chetanxpatil/noun-collapse" aria-label="Hugging Face"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-3.5 7a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zm7 0a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zM7.6 13.5c1 1.6 2.6 2.5 4.4 2.5s3.4-.9 4.4-2.5c.2-.4-.1-.8-.5-.7-1.2.4-2.5.7-3.9.7s-2.7-.3-3.9-.7c-.4-.1-.7.3-.5.7z"/></svg></a>
+  </div>
+  <span>LIVNIUM · deep tech, honestly measured · PolyForm NC 1.0</span>
+</div></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="cube.js"></script>
+<script>
+  // nav scroll state
+  const nav = document.getElementById('nav');
+  addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 40), {passive:true});
+
+  // services rail
+  const SERVICES = [
+    ["Application Development",
+     "We build cross-platform mobile apps with Flutter — one codebase, iOS and Android, pixel-perfect. Built to carry our on-device models (4.5 ms per reply on CPU) into people's pockets.",
+     "flutter · dart · on-device AI"],
+    ["AI Model Training",
+     "We train attention-free models end-to-end on our own vector-collapse engine: word embeddings from 94.75M noun occurrences, NLI classifiers at 68.87% SNLI, and 5.98M-parameter generators that run in NumPy.",
+     "vector_collapse/ · collapse_retrain/ · chat/"],
+    ["Consultancy",
+     "Expert consultancy across product and engineering. We provide honest, measured advice — the same discipline we apply to our own claims: if it doesn't beat the boring baseline, we say so.",
+     "strategy · engineering · honest numbers"],
+    ["Research",
+     "Conserved geometric state spaces, collapse dynamics, and verified Ramsey results — including an R(4,5) ≥ 25 witness built from the cube's own rotation group. Every finding graded and reproducible.",
+     "livnium_core/ · ramsey/ · docs/"],
+    ["Open Source",
+     "The entire Livnium repository is public — the proven core, the models, and the failures, kept on purpose. Free for the curious under PolyForm NC; companies license commercially.",
+     "github.com/chetanxpatil/livnium"],
+  ];
+  const list = document.getElementById('svcList');
+  const elT = document.getElementById('svcTitle'), elB = document.getElementById('svcBody'), elM = document.getElementById('svcMeta');
+  let idx = 0;
+  SERVICES.forEach((s,i) => {
+    const li = document.createElement('li');
+    li.textContent = s[0];
+    li.onclick = () => show(i);
+    list.appendChild(li);
+  });
+  function show(i){
+    idx = (i + SERVICES.length) % SERVICES.length;
+    [...list.children].forEach((li,j) => li.classList.toggle('on', j===idx));
+    [elT,elB,elM].forEach(el => {el.classList.remove('fadein'); void el.offsetWidth; el.classList.add('fadein');});
+    elT.textContent = SERVICES[idx][0];
+    elB.textContent = SERVICES[idx][1];
+    elM.textContent = SERVICES[idx][2];
+  }
+  function step(d){ show(idx + d); }
+  show(0);
+</script>
+</body>
+</html>

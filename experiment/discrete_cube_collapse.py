@@ -55,9 +55,12 @@ TARGETS = {
 
 def run_trajectory(words, word_to_rot_idx, start_state):
     """Collapses the state through the words using discrete group rotations."""
+    assert start_state.ndim == 1 and start_state.shape[0] == 3, f"start_state must be 1D with length 3, got shape {start_state.shape}"
     h = start_state.copy()
     for w in words:
+        assert w in word_to_rot_idx, f"Word '{w}' not mapped in word_to_rot_idx mapping"
         rot_idx = word_to_rot_idx[w]
+        assert 0 <= rot_idx < len(ROTATIONS), f"Rotation index {rot_idx} out of range"
         R = ROTATIONS[rot_idx]
         h = R @ h  # Reversible matrix permutation multiplication
     return h

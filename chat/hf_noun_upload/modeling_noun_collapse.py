@@ -94,5 +94,9 @@ if __name__ == "__main__":
     import sys
     m = NounCollapse.from_pretrained(sys.argv[1] if len(sys.argv) > 1
                                      else "noun_collapse_pure.pt")
-    for w in ("cat", "physics", "war", "india"):
+    words = sys.argv[2:] or ("cat", "physics", "war", "india")
+    for w in words:
+        if m.vector(w) is None:
+            print(f"{w:10s} -> out of vocab")
+            continue
         print(f"{w:10s} ->", "  ".join(f"{n}({s:.2f})" for n, s in m.neighbors(w)))

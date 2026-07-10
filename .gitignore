@@ -62,3 +62,6 @@ reached/
 # Ramsey work (hidden)
 ramsey/
 livnium_core/ramsey/
+
+# Generated reconstruction outputs (vision experiments)
+recon_*.png

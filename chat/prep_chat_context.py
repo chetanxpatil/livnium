@@ -121,6 +121,8 @@ def canonical_turns(conv):
 
 def reply_target(text, max_words):
     """The reply's opening: whole sentences packed into the word budget."""
+    if max_words <= 0:
+        return " ".join(s for s in to_sentences(text) if s)
     out = []
     for s in to_sentences(text):
         w = s.split()
@@ -142,7 +144,7 @@ def build_context(turns, ctx_words):
             continue
         toks.append(YOU if role == "user" else ME)
         toks += t.split()
-    return " ".join(toks[-ctx_words:])
+    return " ".join(toks if ctx_words <= 0 else toks[-ctx_words:])
 
 
 def main():
@@ -153,8 +155,9 @@ def main():
                     help="how many turns of history feed each prediction")
     ap.add_argument("--ctx-words", type=int, default=256,
                     help="context word budget (oldest words drop first; big "
-                         "enough that a whole question survives intact)")
-    ap.add_argument("--reply-words", type=int, default=32)
+                         "enough that a whole question survives intact; 0 = no cap)")
+    ap.add_argument("--reply-words", type=int, default=32,
+                    help="reply word budget; 0 = no cap")
     ap.add_argument("--min-words", type=int, default=2)
     args = ap.parse_args()
 
@@ -189,7 +192,9 @@ def main():
 
     print(f"conversations : {len(convs)}")
     print(f"turns on canonical paths : {n_turns}")
-    print(f"examples kept : {len(out)}  (ctx {args.ctx_turns} turns / {args.ctx_words} words -> reply {args.reply_words} words)")
+    ctx_label = "uncapped" if args.ctx_words <= 0 else f"{args.ctx_words} words"
+    reply_label = "uncapped" if args.reply_words <= 0 else f"{args.reply_words} words"
+    print(f"examples kept : {len(out)}  (ctx {args.ctx_turns} turns / {ctx_label} -> reply {reply_label})")
     print(f"saved -> {args.out}")
 
 
