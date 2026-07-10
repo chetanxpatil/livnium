@@ -1,4 +1,4 @@
-**Title:** I replaced the neural network in a word-embedding model with a physics-style attractor system — no MLP, no attention, no output layer. It hits SimLex-999 ρ=0.36 on 7.5% of Wikipedia. Honest writeup.
+**Title:** I replaced the neural network in a word-embedding model with a physics-style attractor system — no MLP, attention, transformer block or separate learned output matrix. It hits SimLex-999 ρ=0.36 on 7.5% of Wikipedia. Honest writeup.
 
 ---
 
@@ -10,7 +10,7 @@ Posting the honest version. This is one instance of a general mechanism I've bee
 - a start state,
 - two scalars: a pull *strength* and a readout *temperature*.
 
-That's it. **No MLP, no attention, no output layer, no pretrained anything.** ~25.6M numbers total, ~99% of which are just the word table.
+That's it. **No MLP, attention, transformer block or separate learned output matrix — and no pretrained anything.** ~25.6M numbers total, ~99% of which are just the word table.
 
 **How it "reads."** One update rule, applied once per context word, pulls a moving state toward that word's well:
 
@@ -23,7 +23,7 @@ The strength is learned and ends up *weak* (~0.11), so no single word yanks the 
 **Training.** CBOW-style fill-in-the-blank, executed by the collapse dynamics instead of a network: for every noun occurrence, collapse a state through its ±5-word context and make the endpoint point at the missing noun (sampled-softmax cross-entropy over nouns). Gradient descent only reshapes the wells.
 
 - **Data:** English Wikipedia, ~5M lines (**~7.5% of the corpus**, ~300M tokens).
-- **Signal:** **94.75M noun occurrences**, single streaming pass.
+- **Signal:** **94.75M occurrences of WordNet noun-eligible tokens** (lexicon-matched, not contextually POS-tagged), single streaming pass.
 - **Vocab:** 100k context words, 23,758 noun targets (WordNet noun lexicon).
 - **Compute:** **~3.2 hours on an M-series MacBook** (MPS). No cluster.
 
@@ -57,7 +57,7 @@ Synonyms, hypernyms, sibling terms, geographic manifolds — none of it hand-spe
 | 1 | 43,863 | 5,174 |
 | 1024 | 1,464,201 | **2,311,023** |
 
-- Embed one 10-word context: **0.23 ms on CPU** — real-time, no GPU needed.
+- Embed one already-tokenized 10-word context: **0.23 ms on CPU** (encoder latency, not end-to-end application latency) — real-time, no GPU needed.
 - Bulk: **2.3M words/s** on GPU at batch 1024.
 - Nearest-noun query vs 23,758 wells: **0.48 ms**.
 
@@ -71,7 +71,7 @@ Same crossover as everything tiny: CPU wins single items (the collapse math is s
 - Whole-word vocab, no subwords: OOV words have no vector.
 - The apples-to-apples baseline (PPMI+SVD on the *same* 5M lines) is still running; comparing to *published* word2vec is suggestive, not a controlled win.
 
-**Why I think it's interesting anyway:** it's a fully inspectable alternative to attention for the "compress a sequence into meaning" job — a contraction toward learned point-attractors, with a directional Lyapunov energy you can actually measure (the state provably descends toward the wells on ~100% of sampled steps). It's the embedding-layer instance; the same engine also does NLI and text generation in the repo.
+**Why I think it's interesting anyway:** it's a fully inspectable alternative to attention for the "compress a sequence into meaning" job — a contraction toward learned point-attractors, with an empirical directional energy you can actually measure (the state descended toward the wells on 100% of 12k sampled steps; the chord force is non-conservative, so this is a measured property, not a proven Lyapunov energy). It's the embedding-layer instance; the same engine also does NLI and text generation in the repo.
 
 **Code, model card, benchmark, and the standalone loader:** https://github.com/chetanxpatil/livnium/tree/main/chat
 **Model on the Hub (loads in 3 lines of torch):** https://huggingface.co/chetanxpatil/noun-collapse

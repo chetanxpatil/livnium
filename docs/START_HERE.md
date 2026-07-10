@@ -60,19 +60,24 @@ python3 chat_reply.py --chat
 > Inference is motion through fixed geometry; learning is geometry being carved
 > by where motion missed.
 
-One update rule runs everything. A hidden state `h` is pulled toward a target vector `W` — a "well," one learned vector per word:
+The core rule (Livnium v1, chord-directed) pulls a hidden state `h` toward a target vector `W` — a "well," one learned vector per word:
 
 ```
 h ← h − strength · (1 − cos(h, W)) · norm(h − W)
 ```
 
+(The repo also contains three sibling rules — an exact cosine-energy-gradient
+variant (v2, `experiment/pure_reply.py`), a closed-form direct collapse and a
+learned MLP-residual collapse (both in `vector_collapse/`). They share the
+attractor idea but are distinct update laws; see the README's variant table.)
+
 - `(1 − cos(h, W))` — how misaligned the state is. Already at the well → factor ~0, nothing moves. Far away → strong pull.
 - `norm(h − W)` — the unit direction away from the well; subtracting it moves `h` toward it.
 - `strength` — one learned scalar. Norm clipped at 10 so nothing explodes.
 
-Each well is a **point attractor**. Collapsing through a sentence word-by-word traces a **trajectory**, and that trajectory is order-sensitive: reordering the words gives mean-pool cosine 1.000 but collapse cosine 0.072. Mean-pooling can't tell "dog bites man" from "man bites dog"; collapse can. Each step is O(1) — no attention matrix — which is where the CPU speed comes from.
+Each well is a **point attractor**. Collapsing through a sentence word-by-word traces a **trajectory**, and that trajectory is order-sensitive: reordering the words gives mean-pool cosine 1.000 but collapse cosine 0.072. Mean-pooling can't tell "dog bites man" from "man bites dog"; collapse can. Each step is constant in sequence length after pooling (for fixed dimension, anchors and collapse steps) — no attention matrix — which is where the CPU speed comes from.
 
-This sits in **dynamical systems, not physics**: the trained step admits an empirical Lyapunov candidate `V(h) = 1 − cos(h, target)` that was monotone non-increasing on 100% of 12,000 measured steps, with predominantly contracting Jacobians (mean singular value ≈ 0.89). Precise claims and caveats: `chat/LYAPUNOV_TEST.md`.
+This sits in **dynamical systems, not physics**: the noun dynamics are measurable and attractor-directed, but the chord force above is **non-conservative** — it is not the gradient of a global scalar potential (`experiment/findings.md`). The quantity `V(h) = 1 − cos(h, target)` is an *empirical* Lyapunov candidate: monotone non-increasing on 100% of 12,000 measured steps, predominantly contracting Jacobians (mean singular value ≈ 0.89) — an observation, not a proof. An exact cosine-gradient variant with a true closed-form potential is implemented separately. Precise claims and caveats: `chat/LYAPUNOV_TEST.md`.
 
 **How the models use it.** The neural parts only *pick* the next well; collapse *executes* the move.
 
@@ -86,7 +91,7 @@ This sits in **dynamical systems, not physics**: the trained step admits an empi
 | model | task | score | baseline it must beat |
 |---|---|---|---|
 | CollapseNLI + alignment | SNLI classification | **74.7% dev / 74.4% test** | hypothesis-only artifact 61.5%; GloVe avg 60.7%; same-footing BiLSTM 78.2% (gap = mechanism, not training) |
-| Supervised collapse (earlier) | SNLI | 68.9% | ablation: collapse layers add **+4.86%** over a linear head (68.9 vs 64.1) |
+| Supervised collapse (earlier) | SNLI | 68.9% | frozen-embedding probe: linear 64.1, collapse 68.9, MLP 70.1 — end-to-end ablation pending |
 | Premise generator | generative NLI | ~53% gold-label match | chance 33% |
 | Word typer (20k vocab) | type sentences back | 98.0% per-word; **100.0%** OOV-free exact | — |
 | Speed (premise model) | CPU, per reply | **~5 ms**, 1,630 tok/s | GPU is *slower* (13 ms) — decode is launch-bound |

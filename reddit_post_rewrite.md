@@ -1,4 +1,4 @@
-# I swapped the neural net in a word-embedding model for a physics-style attractor system. No MLP, no attention, no output layer. Gets ρ=0.36 on SimLex-999 using 7.5% of Wikipedia.
+# I swapped the neural net in a word-embedding model for a physics-style attractor system. No MLP, attention, transformer block or separate learned output matrix. Gets ρ=0.36 on SimLex-999 using 7.5% of Wikipedia.
 
 This is one piece of a larger thing I've been building (a "vector collapse" engine). Word embeddings were just a clean way to check whether the mechanism learns meaning on its own. Real numbers below, plus a list of what it can't do so we don't have to argue about it in the comments.
 
@@ -25,7 +25,7 @@ Strength is learned and comes out weak (~0.11), so no single word drags the stat
 CBOW-style fill-in-the-blank, but run by the collapse dynamics instead of a network. For every noun occurrence, collapse a state through its ±5-word context and make the endpoint point at the missing noun (sampled-softmax cross-entropy over nouns). Gradient descent only reshapes the wells.
 
 - Data: English Wikipedia, ~5M lines (~7.5% of the corpus, ~300M tokens)
-- Signal: 94.75M noun occurrences, single streaming pass
+- Signal: 94.75M occurrences of WordNet noun-eligible tokens (lexicon-matched, not POS-tagged), single streaming pass
 - Vocab: 100k context words, 23,758 noun targets (WordNet)
 - Compute: ~3.2 hrs on an M-series MacBook (MPS). No cluster.
 
@@ -63,7 +63,7 @@ Nothing there was hand-specified.
 - Whole-word vocab, no subwords, so OOV words have no vector.
 - The apples-to-apples baseline (PPMI+SVD on the same 5M lines) is still running. Comparing to published word2vec is suggestive, not a controlled win.
 
-**Why I think it's worth a look:** it's a fully inspectable alternative to attention for the "compress a sequence into meaning" job — a contraction toward learned point-attractors, with a Lyapunov energy you can actually measure (the state provably descends toward the wells on ~100% of sampled steps). This is the embedding-layer version; the same engine also does NLI and generation in the repo.
+**Why I think it's worth a look:** it's a fully inspectable alternative to attention for the "compress a sequence into meaning" job — a contraction toward learned point-attractors, with an empirical energy you can actually measure (the state descended toward the wells on 100% of 12k sampled steps; the force is non-conservative, so that's a measured property, not a proven Lyapunov energy). This is the embedding-layer version; the same engine also does NLI and generation in the repo.
 
 Code, model card, benchmark, loader: https://github.com/chetanxpatil/livnium/tree/main/chat
 Model on the Hub (loads in 3 lines of torch): https://huggingface.co/chetanxpatil/noun-collapse

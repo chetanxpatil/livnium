@@ -14,12 +14,14 @@ Two projects live in this folder:
 
 `noun_collapse_pure.py` trains word embeddings with **nothing but the collapse
 engine** — one 256-d well per word, a start state, and two scalars (strength,
-temp). No MLP, no attention, no output layer. The task is CBOW-style fill-in-
-the-blank: collapse a state through a noun's ±5-word ordered context and make
-the final state point at the missing noun (sampled-softmax CE over nouns).
+temp). No MLP, attention, transformer block or separate learned output matrix.
+The task is CBOW-style fill-in-the-blank: collapse a state through a noun's
+±5-word ordered context and make the final state point at the missing noun
+(sampled-softmax CE over nouns).
 
-Trained on ~5M lines of English Wikipedia (~7.5% of the corpus), **94.75M noun
-occurrences**, one streaming pass, ~3.2 h on an M-series MacBook (MPS).
+Trained on ~5M lines of English Wikipedia (~7.5% of the corpus), **94.75M
+occurrences of WordNet noun-eligible tokens** (lexicon-matched, not contextually
+POS-tagged), one streaming pass, ~3.2 h on an M-series MacBook (MPS).
 
 ## What it learned (probe)
 
@@ -41,8 +43,16 @@ prediction pressure alone, nothing told it what a noun means.
 | word2vec / GloVe (published) | full Wikipedia+Gigaword, billions of tokens | ~0.37–0.44 |
 | PPMI+SVD (reference) | full corpus | ~0.38 |
 
-Within the word2vec/GloVe band on a fraction of the data, with no neural
-network. Reproduce: `python3 embed_eval.py --model model/noun_collapse_pure.pt`.
+Within the word2vec/GloVe band on a fraction of the data, with no MLP,
+attention, transformer block or separate learned output matrix.
+ρ is computed with tie-aware `scipy.stats.spearmanr` (0.3616; SimLex gold
+ratings contain ties). Reproduce:
+`python3 embed_eval.py --model model/noun_collapse_pure.pt`.
+
+Caveat: the published word2vec/GloVe numbers come from different corpora and
+preprocessing. A matched-corpus baseline (identical Wikipedia subset, identical
+preprocessing, word2vec SGNS / PPMI+SVD, multiple seeds, SimLex-999 +
+WordSim-353 + MEN) is still required before claiming parity.
 
 ## Geometry — a curved ~20-d manifold, not a flat subspace
 
@@ -74,7 +84,8 @@ measurement, so these are pessimistic**)
 | 64 | 831,754 | 215,429 |
 | 1024 | 1,464,201 | **2,311,023** |
 
-- Embed one 10-word context: **0.23 ms on CPU** (real-time, no GPU needed).
+- Embed one already-tokenized 10-word context: **0.23 ms on CPU** (encoder
+  latency, not end-to-end application latency; real-time, no GPU needed).
 - Bulk throughput: **2.3M words/s** on MPS at batch 1024.
 - Nearest-noun query vs 23,758 wells: **0.48 ms** (CPU).
 

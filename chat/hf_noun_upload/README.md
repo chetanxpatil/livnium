@@ -22,7 +22,8 @@ metrics:
 # Noun-Collapse — Wikipedia word embeddings from pure vector collapse
 
 Word embeddings learned with **nothing but a collapse dynamical system** — no
-MLP, no attention, no output layer, no pretrained embeddings. The entire model
+MLP, attention, transformer block or separate learned output matrix, and no
+pretrained embeddings. The entire model
 is **one 256-d well per word, a start state, and two scalars** (pull strength,
 readout temperature). ~25.6M numbers total; ~99% of them are the well table.
 
@@ -44,7 +45,8 @@ h ← h − strength · (1 − cos(h, W)) · norm(h − W)
 ```
 
 - **Data:** English Wikipedia, ~5M lines (~7.5% of the corpus).
-- **Signal:** 94.75M noun occurrences, one streaming pass.
+- **Signal:** 94.75M occurrences of WordNet noun-eligible tokens
+  (lexicon-matched, not contextually POS-tagged), one streaming pass.
 - **Compute:** ~3.2 h on an Apple-silicon MacBook (MPS).
 - **Nouns:** WordNet noun lexicon; 100k-word context vocab, 23,758 noun targets.
 
@@ -59,11 +61,15 @@ word order is physically encoded — unlike CBOW/PPMI.
 | word2vec / GloVe (published) | full Wikipedia+Gigaword | ~0.37–0.44 |
 | PPMI+SVD (reference) | full corpus | ~0.38 |
 
-Within the word2vec/GloVe band on a fraction of the data, with no neural network.
+Near the published word2vec/GloVe band on a fraction of the data, with no MLP,
+attention, transformer block or separate learned output matrix. ρ is computed
+with tie-aware `scipy.stats.spearmanr` (0.3616). Published baselines use
+different corpora/preprocessing — a matched-corpus comparison is still pending.
 
 ## Speed (M-series MacBook)
 
-- Embed one 10-word context: **0.23 ms on CPU**.
+- Embed one already-tokenized 10-word context: **0.23 ms on CPU** (encoder
+  latency, not end-to-end application latency).
 - Bulk: **2.3M words/s** on MPS at batch 1024.
 - Nearest-noun query vs 23,758 wells: **0.48 ms**.
 

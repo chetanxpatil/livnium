@@ -68,7 +68,7 @@ python3 save_failures.py
 
 ## 4. Benchmark & Performance Statistics
 
-The model is highly efficient due to its attention-free architecture (linear $O(L)$ pooling and constant $O(1)$ collapse warping). Measured on macOS (Apple Silicon M-series):
+The model is efficient due to its attention-free architecture: linear $O(L)$ pooling, after which the collapse step is constant in sequence length (for fixed dimension, anchors and collapse layers). Figures below are already-tokenized encoder latency, not end-to-end application latency. Measured on macOS (Apple Silicon M-series):
 
 ### Throughput & Latency
 

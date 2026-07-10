@@ -80,12 +80,12 @@ Two ways of feeding text into the cube were tried, along with a learned vector c
 | **Letters → cube** (each letter is a symbol) | **43%** | Above random (33%), but far below word-counting (~59%). It only sees spelling, not words. |
 | **Words → cube** (each word gets its own cell) | **60%** | Jumps up to match plain word-counting — because now it's *doing* word-counting, dressed in geometry. |
 | The cube's *shape* alone (no words) | **38%** | Basically random. The geometry by itself carries almost no meaning. |
-| **Supervised Collapse Model** (learned embeddings + 4-layer attractor collapse) | **68.9%** | Clears the hypothesis-only artifact (61.5%) and GloVe avg (60.7%). Ablation proves the collapse engine contributes **+4.86%** over a plain linear head. |
+| **Supervised Collapse Model** (learned embeddings + 4-layer attractor collapse) | **68.9%** | Clears the hypothesis-only artifact (61.5%) and GloVe avg (60.7%). A post-hoc frozen-embedding probe favors collapse over a linear head (+4.86%), but a matched end-to-end ablation is still pending. |
 
 And on **ANLI** — a harder benchmark built specifically so you can't cheat with
 word-counting — Livnium scores at chance (~33%), like every word-counting method.
 
-*Note on the Supervised Collapse model:* By training word embeddings end-to-end with a 4-layer vector collapse engine (`VectorCollapseEngine`) that warps difference vectors toward three learned point-attractors (Entailment, Neutral, Contradiction), the model reaches **68.87% test accuracy** on SNLI. An ablation study confirms that the collapse dynamics provide a **+4.86%** gain over a plain linear projection head (68.92% vs 64.06%), representing features in a geometry-native point-attractor space. It is highly efficient, processing single-pair inference in **0.33 ms** on CPU and scaling to over **215,000 pairs/sec** throughput on Apple Silicon GPU (MPS) thanks to its $O(L)$ linear embedding pooling and $O(1)$ constant-time collapse mechanics. See [results/RESULTS.md](results/RESULTS.md) and [docs/COLLAPSE_VISUALIZATION.md](docs/COLLAPSE_VISUALIZATION.md) for details.
+*Note on the Supervised Collapse model:* By training word embeddings end-to-end with a 4-layer vector collapse engine (`VectorCollapseEngine`) that warps difference vectors toward three learned point-attractors (Entailment, Neutral, Contradiction), the model reaches **68.87% test accuracy** on SNLI. On the ablation: a post-hoc frozen-embedding probe scores 64.06% with a linear head, 68.92% with collapse and 70.13% with an MLP. Because the embeddings were originally optimized for collapse, a matched end-to-end multi-seed ablation is still required before attributing the gain to the collapse dynamics. On speed: single-pair inference runs in **0.33 ms** on CPU and over **215,000 pairs/sec** on Apple Silicon GPU (MPS) — these figures measure already-tokenized encoder latency, not end-to-end application latency, and the collapse step is constant in sequence length after $O(L)$ pooling, for fixed dimension, anchors and collapse steps. See [results/RESULTS.md](results/RESULTS.md) and [docs/COLLAPSE_VISUALIZATION.md](docs/COLLAPSE_VISUALIZATION.md) for details.
 
 ## The collapse engine, stated once
 
@@ -99,20 +99,38 @@ word-counting — Livnium scores at chance (~33%), like every word-counting meth
 > physically encoded in the path.) Inference is motion through fixed geometry;
 > **learning is geometry being carved by where motion missed.**
 
-One update rule runs every model in this repo, from letters to conversations:
+The family shares one idea — pull the state toward a well, harder when
+misaligned — but the repo now contains **four distinct collapse rules**, and
+they are not interchangeable:
 
-```
-h ← h − strength · (1 − cos(h, W)) · norm(h − W)
-```
+| Variant | Rule | Character |
+|---|---|---|
+| **Livnium v1** (chord-directed) | `h ← h − s · (1 − cos(h, W)) · norm(h − W)` | Hand-designed; **non-conservative** (no exact global scalar potential — see `experiment/findings.md`) |
+| **Livnium v2** (exact energy gradient) | `h ← h + s · (W − cos(h, W)·ĥ)/‖h‖` | Exact gradient of `V(h) = −cos(h, W)`; conservative |
+| **Direct collapse** | closed-form step (`vector_collapse`, `mode="direct_collapse"`) | Closed-form approximation, no iteration |
+| **MLP collapse** | learned residual + away-force (`mode="mlp_collapse"`) | Learned variant; not a fixed physical law |
+
+On stability: the noun dynamics are measurable and attractor-directed, but the
+current chord force (v1) is **non-conservative** — it is not the gradient of a
+global scalar potential, so earlier statements about a proven Lyapunov energy
+for that exact rule are withdrawn. The empirical energy-descent measurements in
+`chat/LYAPUNOV_TEST.md` remain valid as *empirical* observations of a Lyapunov
+candidate on sampled trajectories. An exact cosine-gradient variant (v2) with a
+true closed-form potential is implemented separately in
+`experiment/pure_reply.py`.
 
 For the full mechanics, reading order, and how to run it in two minutes, see
 [`docs/START_HERE.md`](docs/START_HERE.md).
 
-**Latest result — word embeddings from pure collapse.** The same engine, pointed
-at Wikipedia (94.75M noun occurrences, ~7.5% of the corpus), learns real word
-meaning with *no MLP, no attention, no output layer* — just one well per word and
-two scalars. It scores **SimLex-999 ρ = 0.362**, inside the word2vec/GloVe band
-(~0.37–0.44) on a fraction of the data, and embeds at 0.23 ms/context on CPU. The
+**Latest result — word embeddings from pure collapse.** The v1 engine, pointed
+at Wikipedia (94.75M occurrences of WordNet noun-eligible tokens — lexicon-matched,
+not contextually POS-tagged — ~7.5% of the corpus), learns real word meaning with
+*no MLP, attention, transformer block or separate learned output matrix* — just
+one well per word and two scalars. It scores **SimLex-999 ρ = 0.362** (tie-aware
+`scipy.stats.spearmanr`), near the published word2vec/GloVe band (~0.37–0.44)
+though on different corpora — a matched-corpus baseline is still pending — and
+embeds one already-tokenized context in 0.23 ms on CPU (encoder latency, not
+end-to-end application latency). The
 model is live on the Hub: [🤗 chetanxpatil/noun-collapse](https://huggingface.co/chetanxpatil/noun-collapse).
 Details in [`chat/README.md`](chat/README.md).
 

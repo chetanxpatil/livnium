@@ -20,7 +20,7 @@ experimental `collapse_retrain/` line. Given two sentences — a **premise** and
 | Clears | majority 34.3, bag-of-words 59.4, GloVe-avg 60.7, **hyp-only artifact 61.5** |
 | Does **not** reach | attention/BERT-class NLI (~86–91%) |
 | Size | ~12.9M params (50k-word × 256-d embedding table + collapse engine) |
-| Honest caveat | The gain over a plain embedding classifier is **not yet ablated** — see Limitations. |
+| Honest caveat | A post-hoc frozen-embedding probe scores 64.06% (linear head), 68.92% (collapse), 70.13% (MLP). Because the embeddings were optimized for collapse, a matched end-to-end multi-seed ablation is **still required** — see Limitations. |
 
 The number that matters: clearing the **hypothesis-only artifact (61.5)** by ~7
 points is the bar the project's earlier static-embedding runs *failed* to clear
@@ -156,11 +156,15 @@ train/test gap (~78% vs ~69%) is healthy.
 - **Not attention-class.** Mean-pooling discards word order and cross-sentence
   interaction, which is exactly what caps SNLI around the high 60s. ~69% is a
   respectable *non-attention* baseline, not state of the art.
-- **Geometry vs. embeddings is unablated.** The model improved, but we have not
-  yet isolated whether the **collapse engine** earned the points or whether the
-  **supervised embeddings + `u - v` feature** would do as well alone. Until that
-  ablation runs (same embeddings, engine removed/replaced by a linear head), do
-  not claim the *geometry* is the cause. This is the next experiment.
+- **Geometry vs. embeddings is only partially ablated.** A post-hoc probe on
+  the *frozen* trained embeddings scores **64.06%** with a plain linear head,
+  **68.92%** with the collapse engine and **70.13%** with an MLP head. That
+  favors collapse over a linear readout, but the embeddings were originally
+  optimized *for* collapse, so the comparison is biased toward it — and the MLP
+  outscoring collapse shows the geometry is not uniquely responsible. A matched
+  end-to-end multi-seed ablation (train each head from scratch, same budget,
+  several seeds) is still required. Do **not** claim the probe proves the
+  geometry is the cause.
 - **Out-of-vocabulary.** Words outside the 50k SNLI vocab become `<unk>`; the
   model is not robust to very different domains (e.g. code, or technical text).
 - **SNLI only.** No ANLI / MultiNLI / adversarial numbers yet; expect those to be

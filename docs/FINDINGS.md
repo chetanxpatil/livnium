@@ -22,7 +22,7 @@ including the wins that didn't survive. Status legend:
 | 6 | **T13 orientation-independence** — a rotation's class-response is identical from all 24 start orientations → simulation reduces to 24 constants (≈497× speedup) | ✅ | verified; see note below |
 | 7 | **Hierarchy / wreath product** — macro-N hosting micro-M; additive global ledger; G_M≀G_N | ✅ | `hierarchy.py`, `test_hierarchy.py` |
 | 8 | **Supervised Collapse NLI** — reaches **68.92%** SNLI test accuracy (clearing the 61.5% artifact) when properly trained | ✅ | `train_collapse_embeddings.py` |
-| 9 | **Collapse-engine contribution** — contributes **+4.86%** test accuracy over a plain linear projection head (68.92% vs 64.06%) | ✅ | `ablate_nli.py` |
+| 9 | **Collapse-engine contribution** — post-hoc frozen-embedding probe: linear head 64.06%, collapse 68.92%, MLP 70.13%. Embeddings were optimized for collapse, so a matched end-to-end multi-seed ablation is still required before claiming causality | ⚠️ partial | `ablate_nli.py` |
 
 *Note on #6:* the orientation-independence property is verified here (one distinct
 response pattern across all 24 orientations). The specific 497× engineering
