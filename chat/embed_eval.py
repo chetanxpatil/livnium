@@ -63,10 +63,9 @@ def load_vectors(path):
 
 
 def spearman(a, b):
-    ra = np.argsort(np.argsort(a)).astype(float)
-    rb = np.argsort(np.argsort(b)).astype(float)
-    ra -= ra.mean(); rb -= rb.mean()
-    return float((ra * rb).sum() / np.sqrt((ra * ra).sum() * (rb * rb).sum()))
+    """Tie-aware Spearman correlation (SimLex gold ratings contain ties)."""
+    from scipy.stats import spearmanr
+    return float(spearmanr(a, b).statistic)
 
 
 def main():

@@ -207,6 +207,9 @@ def main():
             pos = (h * A[tgt_ids]).sum(-1, keepdim=True) / temp
             neg = noun_ids_t[torch.randint(0, len(noun_ids), (args.neg,), device=device)]
             ng = (h @ A[neg].t()) / temp
+            # mask false negatives: a sampled negative that equals the true
+            # target must not be penalized as a negative
+            ng = ng.masked_fill(neg.unsqueeze(0) == tgt_ids.unsqueeze(1), float("-inf"))
             cand = torch.cat([pos, ng], dim=1)
             return F.cross_entropy(cand, torch.zeros(cand.size(0), dtype=torch.long,
                                                      device=device))
