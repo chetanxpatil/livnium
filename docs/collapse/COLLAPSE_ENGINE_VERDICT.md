@@ -79,7 +79,7 @@ entanglement scenarios.
     * **Fix:** A relative renormalization rescale (`sqrt(total/kept)`) preserves unitarity
       locally without requiring full canonicalization sweeps. Verified: all long-range CNOTs
       now hold norm 1.0 and match the exact statevector to `1e-9`. Guarded by
-      `research/archive/cortex-v2/test_regressions.py`; the original `selftest.py` still passes 13/13.
+      `archive/cortex-v2/test_regressions.py`; the original `selftest.py` still passes 13/13.
 * **Hash Randomization:** Replaced Python's process-dependent `hash()` with an MD5 digest so
   `word_to_rotation` is genuinely deterministic across parallel launches.
 
@@ -173,6 +173,6 @@ checkpoint on `data/snli_1.0_test.jsonl` for held-out accuracy (Test 2).
 The offline NumPy verifications (MPS norm, divergence-law fixed point/contraction, loss
 gradient behavior) remain valid and were the predictors of the above.
 
-**Files touched:** `research/archive/cortex-v2/mps.py`, `research/archive/cortex-v2/lattice.py`, `research/archive/cortex-v2/test_regressions.py`
-(new), `research/nli/supervised-collapse/train_collapse_embeddings.py`, `research/nli/supervised-collapse/vector_collapse.py`,
-`research/nli/supervised-collapse/basin_field.py`, `research/nli/supervised-collapse/text_encoder_collapse.py`.
+**Files touched:** `archive/cortex-v2/mps.py`, `archive/cortex-v2/lattice.py`, `archive/cortex-v2/test_regressions.py`
+(new), `models/collapse-nli/train_collapse_embeddings.py`, `models/collapse-nli/vector_collapse.py`,
+`models/collapse-nli/basin_field.py`, `models/collapse-nli/text_encoder_collapse.py`.

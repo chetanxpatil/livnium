@@ -1,7 +1,7 @@
 # Livnium Core — All Formulas & Logic
 
 Every formula in the system, with the reasoning behind it. All entries verified
-by the test suite (`tests/`) and re-derived from scratch. Notation: `N` is an
+by the test suite (`packages/livnium-core/tests/`) and re-derived from scratch. Notation: `N` is an
 odd integer ≥ 3 (the lattice dimension); a "cell" is one unit of the lattice.
 
 ---
@@ -190,6 +190,7 @@ inside blocks **and** rotate the blocks themselves." Verified: e.g. `N=M=3` →
 > response is orientation-independent (24 constants); and lattices nest under a
 > wreath product with a strictly additive ledger.
 
-*Every boxed/closed-form result above is checked in `tests/`. See `FINDINGS.md`
-for the complete win/partial/falsified inventory, and `BENCHMARKS.md` for the
-honest NLI results.*
+*Every boxed/closed-form result above is checked in
+`packages/livnium-core/tests/`. See `docs/history/FINDINGS.md` for the complete
+win/partial/falsified inventory, and `docs/results/BENCHMARKS.md` for the honest
+NLI results.*

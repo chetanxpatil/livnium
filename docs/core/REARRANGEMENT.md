@@ -2,7 +2,8 @@
 
 *The math behind the intuition: "allowed change in the cube — it can rearrange
 the nodes inside; the box around the core defines how each node processes energy."*
-All claims below are validated in `tests/test_moves.py` (20/20 passing repo suite).
+All claims below are validated in
+`packages/livnium-core/tests/test_moves.py` as part of the passing core suite.
 
 ## Two move sets
 

@@ -20,7 +20,7 @@ import numpy as np
 warnings.filterwarnings("ignore")
 
 HERE = Path(__file__).resolve().parent
-SNLI_DIR = HERE / "livnium-sacred-v2" / "data" / "snli"
+SNLI_DIR = HERE / "data" / "snli"
 ANLI_DIR = HERE / "anli_data"
 EMB_NPZ = HERE / "_rung2_emb.npz"
 EMB_VOC = HERE / "_rung2_vocab.json"

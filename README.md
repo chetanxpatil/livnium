@@ -8,12 +8,13 @@
 
 **A small, honest piece of mathematics that began with a Rubik's cube.**
 
-This repository is three things, kept deliberately separate:
+This repository is four things, kept deliberately separate:
 
 ```
 Livnium Core       — proven cube mathematics
 Collapse Engine    — attractor dynamics
-Research Models    — nouns, SNLI, generation and vision
+Trained Models     — nouns, SNLI and premise generation
+Active Research    — chat, Ramsey, language probes and vision
 ```
 
 It started as one person's year-long obsession, went through a phase of big
@@ -59,7 +60,8 @@ Everything in it is proven and checked:
 ```bash
 git clone https://github.com/chetanxpatil/livnium.git
 cd livnium
-python -m pytest -q          # the whole proven core, verified on your machine
+python -m pip install -e "packages/livnium-core[test]"
+python -m pytest packages/livnium-core/tests -q
 ```
 
 ```python
@@ -93,7 +95,7 @@ they are not interchangeable:
 
 | Variant | Rule | Character |
 |---|---|---|
-| **Livnium v1** (chord-directed) | `h ← h − s · (1 − cos(h, W)) · norm(h − W)` | Hand-designed; **non-conservative** (no exact global scalar potential — see `research/generation/discrete-chat/findings.md`) |
+| **Livnium v1** (chord-directed) | `h ← h − s · (1 − cos(h, W)) · norm(h − W)` | Hand-designed; **non-conservative** (no exact global scalar potential — see `research/discrete-chat/findings.md`) |
 | **Livnium v2** (exact energy gradient) | `h ← h + s · (W − cos(h, W)·ĥ)/‖h‖` | Exact gradient of `V(h) = −cos(h, W)`; conservative |
 | **Direct collapse** | closed-form step (`vector_collapse`, `mode="direct_collapse"`) | Closed-form approximation, no iteration |
 | **MLP collapse** | learned residual + away-force (`mode="mlp_collapse"`) | Learned variant; not a fixed physical law |
@@ -102,22 +104,23 @@ On stability: the noun dynamics are measurable and attractor-directed, but the
 current chord force (v1) is **non-conservative** — it is not the gradient of a
 global scalar potential, so earlier statements about a proven Lyapunov energy
 for that exact rule are withdrawn. The empirical energy-descent measurements in
-`research/generation/chat-brain/LYAPUNOV_TEST.md` remain valid as *empirical* observations of a Lyapunov
+`models/premise-generator/LYAPUNOV_TEST.md` remain valid as *empirical* observations of a Lyapunov
 candidate on sampled trajectories. An exact cosine-gradient variant (v2) with a
 true closed-form potential is implemented separately in
-`research/dynamics/exact-gradient/pure_reply.py`.
+`research/exact-gradient/pure_reply.py`.
 
 The standalone, configurable engine lives in [`packages/vector-collapse/src/vector_collapse/`](packages/vector-collapse/src/vector_collapse/)
-(installable; requires the `[experimental]` extra). For the full mechanics,
+(installable; use the `[runtime]` extra for NumPy, Torch, tqdm, and YAML support). For the full mechanics,
 reading order, and how to run it in two minutes, see
 [`docs/START_HERE.md`](docs/START_HERE.md).
 
 ---
 
-## Part 3 — Research Models: nouns, SNLI, generation and vision
+## Part 3 — Trained models and active research
 
-These are experiments, not the proven core. Checkpoints are published
-externally — see [`artifacts/checkpoints.md`](artifacts/checkpoints.md) for URLs and SHA-256 hashes.
+These are experiments, not the proven core. Checkpoints are not tracked in Git;
+see [`artifacts/checkpoints.md`](artifacts/checkpoints.md) for availability status,
+expected local paths, and SHA-256 hashes. Some uploads are still pending.
 
 ### The honest NLI results, in plain language
 
@@ -150,13 +153,18 @@ corpora — a matched-corpus baseline is still pending — and embeds one
 already-tokenized context in 0.23 ms on CPU (encoder latency, not end-to-end
 application latency). The model is live on the Hub:
 [🤗 chetanxpatil/noun-collapse](https://huggingface.co/chetanxpatil/noun-collapse).
-Details in [`research/generation/chat-brain/README.md`](research/generation/chat-brain/README.md).
+Details in [`models/noun-collapse/README.md`](models/noun-collapse/README.md).
 
 ### Generation and vision
 
-- **Premise generator / chat-brain** (`research/generation/chat-brain/`): a 5.98M-param on-device sequence
-  model — type a hypothesis, it types back a premise (~53% gold-label match,
-  chance 33%). See [`docs/START_HERE.md`](docs/START_HERE.md).
+- **Premise generator** (`models/premise-generator/`): a 5.98M-param on-device
+  sequence model — type a hypothesis, it types back a premise (~53% recorded
+  token accuracy). Context generation works; reliable NLI label control remains
+  weak.
+- **Chat brain** (`research/chat-brain/`): the active personal
+  char→word→conversation ladder, kept separate from the promoted models.
+- **Ramsey** (`research/ramsey/`): exhaustively verified known R(4,5) witnesses,
+  an independent checker, and a measured conserved sum-tree niche.
 - **Vision collapse** (`research/vision/`): every attractor is a pixel; images collapse
   through their own pixels. Smoke-tested at 64², not yet trained at full scale.
 
@@ -196,19 +204,25 @@ livnium/
 │   ├── livnium-core/              ←   Part 1: proven math (pure Python, no deps) + tests
 │   └── vector-collapse/           ←   Part 2: reusable collapse engine + tests
 │
-├── research/                      ← Part 3: research models (one folder per model)
-│   ├── embeddings/noun-collapse/  ←   pure-collapse noun embeddings (+ HF upload)
-│   ├── nli/supervised-collapse/   ←   supervised collapse NLI (~68.9% SNLI)
-│   ├── nli/premise-generator/     ←   the on-device premise demo
-│   ├── generation/chat-brain/     ←   personal char→word→sentence ladder
-│   ├── generation/discrete-chat/  ←   discrete-cube chat experiments
-│   ├── dynamics/exact-gradient/   ←   v2 exact-gradient collapse
-│   ├── dynamics/qwen-hook/        ←   Qwen probe
-│   ├── vision/                    ←   vision collapse (pixel color, image state, fovea)
-│   └── archive/                   ←   superseded work, each with STATUS.md
-│       ├── cortex-v2/             ←     MPS simulator + collapse prototype (post-mortem'd)
-│       ├── experiments/           ←     loose standalone scripts
-│       └── rule30/                ←     the Rule-30 prediction investigation
+├── models/                        ← trained systems with checkpoints + evaluation
+│   ├── noun-collapse/             ←   pure-collapse noun embeddings (grade A+)
+│   ├── premise-generator/         ←   contextual SNLI premise generator
+│   └── collapse-nli/              ←   supervised collapse NLI (~68.9% SNLI)
+│
+├── research/                      ← active questions, one responsibility per folder
+│   ├── ramsey/                    ←   verified Cayley witnesses + COMPASS race
+│   ├── chat-brain/                ←   personal char→word→conversation ladder
+│   ├── language-probes/           ←   ordered/relational/gravity/ping tests
+│   ├── exact-gradient/            ←   v2 exact-gradient collapse
+│   ├── vision/                    ←   pixel/image/foveal collapse
+│   ├── discrete-chat/             ←   discrete-cube generation
+│   └── qwen-hook/                 ←   external-model integration probe
+│
+├── archive/                       ← superseded work, separated from active code
+│   ├── cortex-v2/                 ←   MPS simulator + early collapse bridge
+│   ├── experiments/               ←   loose standalone scripts
+│   ├── rule30/                    ←   Rule-30 investigation
+│   └── chat-legacy/               ←   flattened-conversation preprocessing
 │
 ├── benchmarks/                    ← controlled comparisons, never beside training code
 │   ├── embeddings/matched-corpus/ ←   collapse vs SGNS vs PPMI-SVD, one frozen corpus
@@ -233,6 +247,8 @@ livnium/
 > research prototype, not part of the proven core. They depend on `numpy`
 > and `torch` and are kept for transparency — see `docs/collapse/COLLAPSE_ENGINE_VERDICT.md`
 > for an honest account of what worked and what didn't.
+
+The complete evidence-based grade table is in [`INDEX.md`](INDEX.md).
 
 ---
 

@@ -19,18 +19,20 @@ low-frequency reconstruction — the interesting result is HOW MUCH survives,
 measured against the positional prior (predict each position's most common
 color across the dataset, no H at all).
 
-    python3 vision/img_from_state_pure.py --train --device mps            # S=64
-    python3 vision/img_from_state_pure.py --train --size 16 --steps 500   # smoke
-    python3 vision/img_from_state_pure.py --recon 0 3 7   # side-by-side PNGs
+    python3 research/vision/img_from_state_pure.py --train --device mps            # S=64
+    python3 research/vision/img_from_state_pure.py --train --size 16 --steps 500   # smoke
+    python3 research/vision/img_from_state_pure.py --recon 0 3 7   # side-by-side PNGs
 """
 
 import argparse
 import os
 import sys
 
-OUT = "vision/model/img_from_state_pure.pt"
-L1 = "vision/model/pixel_color_pure.pt"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # for pixel_color_pure
+from vision_paths import COCO_IMAGES, model_path  # noqa: E402
+
+OUT = model_path("img_from_state_pure.pt")
+L1 = model_path("pixel_color_pure.pt")
 
 
 def keep_awake():
@@ -93,7 +95,7 @@ def label_pixels(imgs, l1_path, device):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--images", default="images/coco/val2017")
+    ap.add_argument("--images", default=COCO_IMAGES)
     ap.add_argument("--size", type=int, default=64)
     ap.add_argument("--dim", type=int, default=256)
     ap.add_argument("--max-images", type=int, default=1000)
@@ -315,7 +317,7 @@ def main():
         if args.save_every and step % args.save_every == 0:
             save()
     save()
-    print(f"saved -> {args.out}\nrecon:  python3 vision/img_from_state_pure.py "
+    print(f"saved -> {args.out}\nrecon:  python3 research/vision/img_from_state_pure.py "
           f"--size {S} --recon 0 1 2")
 
 

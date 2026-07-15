@@ -53,7 +53,7 @@ jobs:
       - name: Run research tests (deps required — missing torch/scipy fails, never skips)
         env:
           LIVNIUM_REQUIRE_RESEARCH_DEPS: "1"
-        run: python -m pytest research/embeddings/noun-collapse/test_research.py packages/vector-collapse/tests -q
+        run: python -m pytest models/noun-collapse/test_research.py packages/vector-collapse/tests -q
 
   lint:
     name: lint & format

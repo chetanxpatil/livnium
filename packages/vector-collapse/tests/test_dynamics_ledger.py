@@ -131,6 +131,48 @@ def test_dynamic_ledger_records_seed_and_selection():
     assert ledger.meta["dynamic"] is True
 
 
+def test_dynamic_ledger_alignment_matches_recorded_post_step_state():
+    cfg = CollapseConfig(dim=2, num_layers=1, mode="gradient_collapse")
+    engine = VectorCollapseEngine(cfg)
+    field = engine.make_basin_field()
+    field.add_basin(0, torch.tensor([1.0, 0.0]), step=0)
+    x = torch.tensor([[0.0, 1.0]])
+    ledger = DynamicsLedger()
+
+    with torch.no_grad():
+        h, _ = engine.collapse_dynamic(
+            x,
+            torch.tensor([0]),
+            field,
+            spawn_new=False,
+            update_anchors=False,
+            ledger=ledger,
+        )
+
+    expected = torch.nn.functional.cosine_similarity(h, field.centers[0, 0].unsqueeze(0))
+    assert ledger.steps[0].align[0] == pytest.approx(float(expected.item()))
+
+
+def test_dynamic_anchor_update_never_writes_to_inactive_slot():
+    cfg = CollapseConfig(dim=2, num_layers=1, mode="gradient_collapse")
+    engine = VectorCollapseEngine(cfg)
+    field = engine.make_basin_field()
+    field.add_basin(0, torch.tensor([-1.0, 0.0]), step=0)
+
+    with torch.no_grad():
+        engine.collapse_dynamic(
+            torch.tensor([[1.0, 0.0]]),
+            torch.tensor([0]),
+            field,
+            spawn_new=False,
+            update_anchors=True,
+        )
+
+    assert field.active[0, 0]
+    assert not field.active[0, 1]
+    assert torch.equal(field.centers[0, 1], torch.zeros(2))
+
+
 def test_dynamic_direct_mode_closed_form():
     ledger = DynamicsLedger()
     dynamic_run("direct_collapse", ledger=ledger)

@@ -164,7 +164,7 @@ neutral      684    1907     628
 
 ## Verdict & Ablation Results (Run 2026-06-18)
 
-We executed the ablation script `research/nli/supervised-collapse/ablate_nli.py` on the properly trained NLI checkpoint `nli_epoch20.pt` where the collapse engine optimizer connection was active. The frozen embeddings were evaluated on SNLI dev and test sets:
+We executed the ablation script `models/collapse-nli/ablate_nli.py` on the properly trained NLI checkpoint `nli_epoch20.pt` where the collapse engine optimizer connection was active. The frozen embeddings were evaluated on SNLI dev and test sets:
 
 | Model Configuration | Dev Acc % | Test Acc % |
 |---|---|---|

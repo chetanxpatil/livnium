@@ -18,7 +18,7 @@ layer.
 
 ## Measured results
 
-*Reproduce:* `python3 research/archive/experiments/geometry_discriminator_test.py`
+*Reproduce:* `python3 archive/experiments/geometry_discriminator_test.py`
 
 A complex-amplitude reference is run alongside the core as a control. It lands on
 the textbook values (null = 0, CHSH = 2√2 ≈ 2.8284), which confirms the core's
@@ -50,5 +50,5 @@ algebra, not the geometry.
 - The cube rotations `ROT_X / ROT_Y / ROT_Z` have eigenvalues `{1, i, −i}` —
   genuine 4th roots of unity. The geometry carries **latent phase**.
 - The complex-amplitude layer already exists in the repo:
-  `research/archive/cortex-v2/mps_qudit.py` (Fourier gate, SUM gate, complex tensors). Amplitude
+  `archive/cortex-v2/mps_qudit.py` (Fourier gate, SUM gate, complex tensors). Amplitude
   behavior is the job of that layer, not the conserved-ledger core.

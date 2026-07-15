@@ -15,8 +15,8 @@ learns beyond that is what raw RGB buys.
 DECODE is unchanged (13 colors at 4096 positions from H alone), so recon
 accuracy is directly comparable to img_from_state_pure's (~0.56 vs prior 0.38).
 
-    python3 vision/img_from_state_rgb.py --train --device mps
-    python3 vision/img_from_state_rgb.py --recon 0 1 2
+    python3 research/vision/img_from_state_rgb.py --train --device mps
+    python3 research/vision/img_from_state_rgb.py --recon 0 1 2
 """
 
 import argparse
@@ -25,14 +25,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from img_from_state_pure import build_rgb_cache, keep_awake, label_pixels  # noqa: E402
+from vision_paths import COCO_IMAGES, model_path
 
-BASE = "vision/model/img_from_state_pure.pt"
-OUT = "vision/model/img_from_state_rgb.pt"
+BASE = model_path("img_from_state_pure.pt")
+OUT = model_path("img_from_state_rgb.pt")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--images", default="images/coco/val2017")
+    ap.add_argument("--images", default=COCO_IMAGES)
     ap.add_argument("--base", default=BASE, help="warm-start checkpoint")
     ap.add_argument("--max-images", type=int, default=1000)
     ap.add_argument("--steps", type=int, default=4000)
@@ -95,7 +96,7 @@ def main():
     cache = os.path.join(os.path.dirname(args.out) or ".", f"img_cache_rgb_{S}.pt")
     imgs = build_rgb_cache(args.images, S, args.max_images, cache)
     print("labeling pixels with frozen pixel_color_pure ...", flush=True)
-    labels, names = label_pixels(imgs, "vision/model/pixel_color_pure.pt", device)
+    labels, names = label_pixels(imgs, model_path("pixel_color_pure.pt"), device)
     N = labels.size(0)
     labels = labels.to(device)
     rgb_all = imgs.view(N, SS, 3).to(device)                      # uint8, tiny

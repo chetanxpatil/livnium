@@ -1,119 +1,82 @@
-# State of the Core
+# State of the core
 
-A measured status of Livnium. Every claim below has a number behind it and a
-script that reproduces it. The method throughout: *prune until truth survives* —
-take each claim, test it against the dumb baseline, and keep only the version the
-data defends. Inflated claims were not deleted; they were **scoped**.
+Current checkout-verifiable status, updated 2026-07-15.
 
----
+## 1. Livnium Core — maintained and reproducible
 
-## 1. Collapse engine (NLI) — `research/generation/chat-brain/`
+`packages/livnium-core/` is dependency-free and contains the base-27 codec,
+odd-cube exposure geometry, 24 orientation-preserving rotations, face turns,
+hierarchy bookkeeping, multipole summaries, layer language, and ping/path
+geometry.
 
-A 5.98M-parameter sequence model trained only on SNLI, no pretrained embeddings.
-
-| claim | measured | status |
-|---|---|---|
-| parameters | 5.975M (read from checkpoint) | ✓ |
-| generative-classifier accuracy | 52.9% on 1,500 SNLI dev pairs (chance 33%) | ✓ |
-| CPU latency | ~4.5 ms / reply (NumPy reimpl of trained weights) | ✓ |
-| classifier sibling w/ alignment | 74.7% dev / 74.4% test | ✓ |
-| collapse dynamics | measurable and attractor-directed: monotone empirical energy descent on 100% of 12,000 sampled steps; ~99.8% of directions contracting; worst S_max ≈ 1.007. The chord force is **non-conservative** (no exact global scalar potential — `research/generation/discrete-chat/findings.md`), so this is an empirical Lyapunov *candidate*, not a proven Lyapunov energy | ⚠️ empirical |
-
-**Scope (pruned):** not a chatbot, no understanding. "Attention-free" → *no
-transformer self-attention; one lightweight cross-attention alignment step*. Not a
-strict global contraction, and not a proven Lyapunov energy → *empirically
-non-expansive with monotone energy descent on sampled trajectories; an exact
-cosine-gradient (conservative) variant exists separately*. See
-`research/generation/chat-brain/LYAPUNOV_TEST.md`, `research/generation/chat-brain/CLAIMS_CHECKPOINT_MAP.md`, `research/generation/discrete-chat/findings.md`.
-
----
-
-## 2. Cube geometry → Ramsey — `ramsey/`
-
-### 2a. Cayley graphs on group symmetry reconstruct lower bounds
-
-Verified Ramsey witnesses built as Cayley graphs, exhaustively checked:
-
-| Ramsey | n | group | verified |
-|---|---|---|---|
-| R(3,3)=6 | 5 | Z₅ (pentagon) | red/blue K₃ = 0/0 |
-| R(4,4)=18 | 17 | Z₁₇ (Paley) | red/blue K₄ = 0/0 |
-| **R(4,5)=25** | **24** | **cube rotation group (S₄)** | red K₄ = 0, blue K₅ = 0 |
-
-The cube's rotation group has order 24 = R(4,5)−1, so its 24 rotations *are* the
-vertices; symmetry collapsed the search to 16 bits. **Scope:** reconstructs known
-exact values, not new bounds; the cube group is *a* working order-24 group.
-(`cayley_cube_ramsey.py`)
-
-### 2b. Compass solver — locality + compass + branching
-
-On R(4,4), n=17 (the witness size), raced wall-clock, solutions verified:
-
-| solver | solved | median time |
-|---|---|---|
-| tuned SA | 3–4 / 8 | ~1.2 s |
-| canonical WalkSAT | 8/8 | ~0.25 s |
-| **COMPASS** (net-delta move) | **8/8** | **~0.07 s** |
-
-Reach: solves K₄ to n=17, K₅ to n≈35, then hits the glassy wall. **Scope:**
-COMPASS is a WalkSAT/min-conflicts variant; its edge is the *net-delta* move rule
-(fix-most, not break-least). R(5,5) is **not reachable** by generic search — its
-records need algebraic construction + symmetry, not a faster walker.
-(`compass_solver.py`)
-
----
-
-## 3. Recursive conservation = exact conserved sum-tree — `ramsey/`
-
-Forcing each parent node to equal the sum of its 27 children turns the nested
-geometry into a self-maintaining cache: aligned sub-region aggregates are read
-straight off a macro-node, never by traversing leaves. Benchmarked vs four
-standard structures (n = 27⁴ = 531,441):
-
-| structure | global | aligned region | arbitrary region | point update | mixed (update+aligned ×5000) |
-|---|---|---|---|---|---|
-| flat+cached total | 0.02µs | 0.71µs | 93µs | 0.15µs | (no cheap region) |
-| prefix-sum | 0.11µs | 0.11µs | **0.11µs** | 435µs | 218 ms |
-| Fenwick/BIT | 0.82µs | 1.11µs | 1.02µs | 2.4µs | 18.7 ms |
-| **recursive 27-tree** | 0.07µs | **0.07µs** | 55µs | **1.2µs** | **9.9 ms** |
-
-Memory overhead: 0.0385× (≈ 27/26). **Verdict:** the recursive layer is **not a
-universal accelerator** — it is an exact conserved sum-tree matched to a 27-ary
-nested geometry. Its niche is update-heavy, hierarchically aligned, conserved
-multiscale aggregation: O(1) global/aligned-region queries, O(depth) updates,
-~3.8% overhead. It loses to prefix-sum on arbitrary regions and ties a cached
-scalar on bare totals, but wins where the cube geometry naturally asks aligned
-questions. *The recursion didn't create magic — it created native addressability
-for its own geometry.* (`recursive_sumtree_bench.py`, `FINDINGS.md`)
-
----
-
-## 4. What was pruned (overclaims dropped, with the reason)
-
-- **"amplitude-like computer / 500 qubits"** → the simulator is correct amplitude-like math
-  (unitary gates, real entanglement, Born rule) but full state-vector, capped at
-  ~25–30 qubits by memory; 500 qubits needs ~5×10¹⁵¹ bytes (≈10⁷¹× the atoms in
-  the universe). Kept: a correct small-scale amplitude-like simulator. Dropped: the scale
-  and the "advantage" claim.
-- **"universal geometry engine"** → kept the measured sum-tree niche; dropped
-  "universal."
-- **"attention-free"** → kept "no self-attention"; dropped the absolute.
-- **"72.7%"** → corrected to the better, real 74.4%.
-- **"R(5,5) is reachable"** → it isn't, by generic search; records need structure.
-
-The pattern: each prune traded an unprovable assertion for a smaller,
-unassailable, *measured* result.
-
----
-
-## Reproduce
+- 67 focused tests run on Python 3.8–3.12 in CI.
+- Ping frames are validated as members of the cube rotation group.
+- Public operations preserve their documented reversible/conserved invariants.
 
 ```bash
-# Ramsey
-python3 ramsey/cayley_cube_ramsey.py        # Cayley ladder incl. R(4,5)>=25 on cube group
-python3 ramsey/compass_solver.py 17 12 4    # COMPASS vs SA vs WalkSAT on R(4,4) witness
-python3 ramsey/recursive_sumtree_bench.py   # 5-structure aggregation benchmark
-# Collapse engine
-python3 research/generation/chat-brain/verify_lyapunov.py             # Lyapunov / contraction verification
-python3 research/generation/chat-brain/chat_bench.py                  # latency
+python3 -m pip install -e "packages/livnium-core[test]"
+python3 -m pytest packages/livnium-core/tests -q
 ```
+
+## 2. Vector Collapse Engine — maintained experimental package
+
+`packages/vector-collapse/` separates three update laws:
+
+| mode | claim |
+|---|---|
+| `gradient_collapse` | exact gradient of a cosine potential |
+| `direct_collapse` | closed-form approximation; no iterative energy claim |
+| `mlp_collapse` | learned residual; observations are empirical |
+
+Dynamic basin routing and the ledger are regression-tested. Post-step alignment
+is recorded beside the post-step state, and inactive basin slots are masked.
+
+## 3. Trained models — measured, checkpoint-dependent
+
+Promoted models now live under `models/`:
+
+- `noun-collapse/` — strongest result, SimLex noun ρ = 0.3616.
+- `premise-generator/` — working contextual generator, label control still weak.
+- `collapse-nli/` — 68.87% SNLI, matched end-to-end ablation pending.
+
+Weights are intentionally excluded from Git. `artifacts/checkpoints.md` records
+canonical local paths, byte sizes, SHA-256 hashes, and publication status.
+
+## 4. Ramsey and conserved sum trees — reproducible research
+
+`research/ramsey/` is present and contains the scripts, witness, race table, and
+independent checker. The R(4,5) coloring is a reconstruction of a known bound,
+not a new Ramsey number. Its verification is nevertheless exhaustive: every red
+K4 and blue K5 is checked.
+
+```bash
+cd research/ramsey
+python3 cayley_cube_ramsey.py
+python3 independent_check.py
+python3 recursive_sumtree_bench.py
+```
+
+The COMPASS-vs-WalkSAT-vs-SA result is a measured heuristic comparison under a
+fixed budget, with an n=25 unsatisfiable control. It is not a universal solver
+claim.
+
+## 5. Active research and archive
+
+Active work lives in `research/`; superseded work lives in `archive/`. Active
+scripts may depend on Torch, NumPy, datasets, or local checkpoints and do not
+receive package-level API guarantees. Archived code is retained for auditability
+and must not be a dependency of maintained code.
+
+## 6. Withdrawn or narrowed claims
+
+- “Amplitude-like computer / 500 qubits” was narrowed to a classical small-scale
+  state-vector simulator.
+- “Universal geometry engine” was dropped.
+- “Attention-free” is used only where accurate; the shipped premise checkpoint
+  has lightweight cross-attention but no transformer self-attention.
+- The chord-directed v1 force is non-conservative. Its sampled descent is an
+  empirical observation, not proof of a global Lyapunov potential.
+- Geometry-only language claims were rejected by fair NLI benchmarks.
+
+The maintenance rule is simple: a current claim needs current code, a runnable
+command, and an identified artifact when weights or data are required.

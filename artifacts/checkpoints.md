@@ -16,8 +16,8 @@ The hash must match this table exactly.
 | Checkpoint | Model | Size | SHA-256 | Where |
 |---|---|---:|---|---|
 | `noun_collapse_pure.pt` (**v1**) | Wikipedia noun embeddings (pure collapse) | 104,704,445 B | `537707dfdd82a6caffacadfa683a88f32029e0bfbdcb8edb380a4f429953a4ea` | [🤗 chetanxpatil/noun-collapse](https://huggingface.co/chetanxpatil/noun-collapse) |
-| `nli_epoch20.pt` | Supervised Collapse NLI v1 (`research/nli/supervised-collapse/`) | 52,614,341 B | `2ae8026dc25deaeb7a904b3980ed1fc6b95312874304d05b201bf645b796958d` | ⚠️ _upload pending — see below_ |
-| `premise_from_hyp_align_53.pt` | SNLI premise generator (`research/generation/chat-brain/`) | 24,306,725 B | `a5ba5abcd140d80d8bbf19c7a1fdb5129bb733b57154d82fee49d2de8251001a` | ⚠️ _upload pending — see below_ |
+| `nli_epoch20.pt` | Supervised Collapse NLI v1 (`models/collapse-nli/`) | 52,614,341 B | `2ae8026dc25deaeb7a904b3980ed1fc6b95312874304d05b201bf645b796958d` | ⚠️ _upload pending — see below_ |
+| `premise_from_hyp_align_53.pt` | SNLI premise generator (`models/premise-generator/`) | 24,306,725 B | `a5ba5abcd140d80d8bbf19c7a1fdb5129bb733b57154d82fee49d2de8251001a` | ⚠️ _upload pending — see below_ |
 
 **Pending uploads** — the two ⚠️ rows have no download URL yet. Until they are
 uploaded, these checkpoints exist only on the author's machine. To publish them
@@ -25,8 +25,8 @@ as a GitHub Release and make this manifest fully verifiable:
 
 ```bash
 gh release create checkpoints-v1 \
-  research/nli/supervised-collapse/model_nli_v1/nli_epoch20.pt \
-  research/generation/chat-brain/model/premise_from_hyp_align_53.pt \
+  models/collapse-nli/model_nli_v1/nli_epoch20.pt \
+  models/premise-generator/model/premise_from_hyp_align_53.pt \
   --title "Model checkpoints v1" \
   --notes "SHA-256 hashes in artifacts/checkpoints.md"
 ```
@@ -39,7 +39,7 @@ then replace the ⚠️ cells with
 **`noun_collapse_pure.pt` v1**: the published v1 checkpoint used the original
 sampled-softmax implementation, *without* false-negative masking. Masking (a
 sampled negative equal to the true target is now excluded with `-inf`) was
-added to `research/embeddings/noun-collapse/noun_collapse_pure.py` afterward; a **v2 retrain is pending**.
+added to `models/noun-collapse/noun_collapse_pure.py` afterward; a **v2 retrain is pending**.
 Consequence: retraining with the current code will not exactly reproduce the
 v1 checkpoint or its SimLex ρ = 0.362. The v1 *evaluation* is unaffected
 (masking only changes training).
@@ -49,9 +49,9 @@ v1 checkpoint or its SimLex ρ = 0.362. The v1 *evaluation* is unaffected
 Scripts expect checkpoints at these paths (all gitignored):
 
 ```
-research/generation/chat-brain/model/noun_collapse_pure.pt
-research/generation/chat-brain/model/premise_from_hyp_align_53.pt
-research/nli/supervised-collapse/model_nli_v1/nli_epoch20.pt
+models/noun-collapse/model/noun_collapse_pure.pt
+models/premise-generator/model/premise_from_hyp_align_53.pt
+models/collapse-nli/model_nli_v1/nli_epoch20.pt
 ```
 
 ## Publishing a new checkpoint

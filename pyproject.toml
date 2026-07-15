@@ -8,13 +8,13 @@ line-length = 100
 target-version = ["py38"]
 # Lint/format applies to the proven packages only. Research prototypes keep
 # their deliberate compact style.
-extend-exclude = '/(research|benchmarks|apps|scratch|reached|ramsey|images)/'
+extend-exclude = '/(models|research|archive|benchmarks|apps|scratch)/'
 
 [tool.ruff]
 line-length = 100
 target-version = "py38"
 # Same scope as black: packages are held to lint; research folders are not.
-extend-exclude = ["research", "benchmarks", "apps", "scratch", "reached", "ramsey", "images"]
+extend-exclude = ["models", "research", "archive", "benchmarks", "apps", "scratch"]
 # src layout: tell ruff where the first-party packages live so import
 # sorting keeps grouping them separately from pytest/torch.
 src = ["packages/livnium-core/src", "packages/vector-collapse/src"]
@@ -33,5 +33,5 @@ ignore = ["E741"]
 testpaths = [
     "packages/livnium-core/tests",
     "packages/vector-collapse/tests",
-    "research/embeddings/noun-collapse",
+    "models/noun-collapse",
 ]
