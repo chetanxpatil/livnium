@@ -46,6 +46,12 @@ anli_data/
 # Raw personal ChatGPT export used by chat-brain preprocessing. Never commit it.
 conversations.json
 
+# Private chat datasets and generated chat models
+/archive/chat-legacy/data/
+/research/chat-brain/data/
+/research/chat-brain/model/
+/research/exact-gradient/model/
+
 # Python / OS noise
 __pycache__/
 *.pyc
@@ -63,3 +69,10 @@ recon_*.png
 
 # Local scratch (never committed)
 scratch/
+
+# Website source and local Firebase deployment state
+/apps/website/
+/.firebase/
+/.firebaserc
+/firebase.json
+/firepit-log.txt
