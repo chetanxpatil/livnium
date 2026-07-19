@@ -63,7 +63,7 @@ import statistics
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
-from .rotations import I, Matrix, apply, matmul
+from .rotations import I, Matrix, apply, matmul, rotation_group
 
 Vec = Tuple[int, int, int]
 
@@ -71,6 +71,7 @@ Vec = Tuple[int, int, int]
 CELLS_26: Tuple[Vec, ...] = tuple(
     c for c in itertools.product((-1, 0, 1), repeat=3) if c != (0, 0, 0)
 )
+_ROTATIONS_24 = frozenset(rotation_group())
 
 
 # --------------------------------------------------------------------------- #
@@ -107,6 +108,12 @@ class Step:
             raise ValueError("a doorway cannot be the Om/core (0,0,0)")
         if self.cell not in CELLS_26:
             raise ValueError(f"{self.cell!r} is not one of the 26 doorways")
+        try:
+            valid_frame = self.frame in _ROTATIONS_24
+        except TypeError:
+            valid_frame = False
+        if not valid_frame:
+            raise ValueError("frame must be one of the 24 orientation-preserving cube rotations")
 
 
 @dataclass(frozen=True)
@@ -115,6 +122,10 @@ class Ping:
 
     steps: Tuple[Step, ...] = field(default_factory=tuple)
     d_local: Vec = (1, 0, 0)
+
+    def __post_init__(self) -> None:
+        if self.d_local not in CELLS_26:
+            raise ValueError("d_local must be one of the 26 non-core cell directions")
 
     @property
     def depth(self) -> int:
@@ -294,7 +305,10 @@ def meaning_match(p: Ping, q: Ping) -> Match:
     wp, wq = world_doorways(p), world_doorways(q)
     d = min(len(wp), len(wq))
     cos_levels = tuple(cosine(wp[i], wq[i]) for i in range(d))
-    score = 1.0 if d == 0 else sum(cos_levels) / d
+    if d == 0:
+        score = 1.0 if p.depth == 0 and q.depth == 0 else 0.0
+    else:
+        score = sum(cos_levels) / d
     return Match(prefix_agreement=pa, shared_depth=d, cos_levels=cos_levels, score=score)
 
 
@@ -391,8 +405,8 @@ def _selfcheck() -> None:
     assert all(abs(a) < 1e-9 for a in ts)
     assert all(a > 1e-6 for a in tc)
     print("5. straight vs curved (identical local doorways):")
-    print(f"     straight path = {world_path(straight)}  turns={[round(a,3) for a in ts]}")
-    print(f"     curved   path = {world_path(curved)}  turns={[round(a,3) for a in tc]}")
+    print(f"     straight path = {world_path(straight)}  turns={[round(a, 3) for a in ts]}")
+    print(f"     curved   path = {world_path(curved)}  turns={[round(a, 3) for a in tc]}")
 
     # 6) path signature: classify the four canonical descent shapes.
     catalogue = {

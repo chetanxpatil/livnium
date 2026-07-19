@@ -1,7 +1,7 @@
 # vector_collapse
 
 Standalone, configurable vector collapse engine. Extracted from
-`research/nli/supervised-collapse/` (which stays untouched) with the verdict fixes baked in:
+`models/collapse-nli/`, with the verdict fixes baked in:
 attractive divergence law (`div = 1 - align`) and identity-init residual MLP.
 See `docs/collapse/COLLAPSE_ENGINE_VERDICT.md` at repo root for the derivations.
 
@@ -64,7 +64,7 @@ hyperparameters (spawn thresholds, anchor lr, prune/merge rules).
 Label integer encoding follows `labels` order — default `[E, C, N]` = 0/1/2,
 matching the trained NLI models.
 
-## Differences from research/nli/supervised-collapse/vector_collapse.py
+## Differences from models/collapse-nli/vector_collapse.py
 
 - All hyperparameters come from `CollapseConfig` instead of constructor kwargs.
 - Static anchors are one `(num_labels, dim)` parameter `anchors` instead of

@@ -19,9 +19,9 @@ Stage 2 starts as the IDENTITY on H1 (its strength initializes near zero —
 the zero-init lesson from COLLAPSE_ENGINE_VERDICT.md), so step 1 scores what
 frozen stage 1 scores, and every point gained is what the loop bought.
 
-    python3 vision/img_refine_loop.py --train --device mps
-    python3 vision/img_refine_loop.py --train --device mps --loops 2
-    python3 vision/img_refine_loop.py --recon 0 1 2
+    python3 research/vision/img_refine_loop.py --train --device mps
+    python3 research/vision/img_refine_loop.py --train --device mps --loops 2
+    python3 research/vision/img_refine_loop.py --recon 0 1 2
 """
 
 import argparse
@@ -30,14 +30,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from img_from_state_pure import build_rgb_cache, keep_awake, label_pixels  # noqa: E402
+from vision_paths import COCO_IMAGES, model_path
 
-BASE = "vision/model/img_from_state_pure.pt"
-OUT = "vision/model/img_refine_loop.pt"
+BASE = model_path("img_from_state_pure.pt")
+OUT = model_path("img_refine_loop.pt")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--images", default="images/coco/val2017")
+    ap.add_argument("--images", default=COCO_IMAGES)
     ap.add_argument("--base", default=BASE, help="frozen stage-1 checkpoint")
     ap.add_argument("--max-images", type=int, default=1000)
     ap.add_argument("--steps", type=int, default=4000)
@@ -131,7 +132,7 @@ def main():
     cache = os.path.join(os.path.dirname(args.out) or ".", f"img_cache_rgb_{S}.pt")
     imgs = build_rgb_cache(args.images, S, args.max_images, cache)
     print("labeling pixels with frozen pixel_color_pure ...", flush=True)
-    labels, names = label_pixels(imgs, "vision/model/pixel_color_pure.pt", device)
+    labels, names = label_pixels(imgs, model_path("pixel_color_pure.pt"), device)
     N = labels.size(0)
     labels = labels.to(device)
     rgb_all = imgs.view(N, SS, 3).to(device)
@@ -227,7 +228,7 @@ def main():
         if args.save_every and step % args.save_every == 0:
             save()
     save()
-    print(f"saved -> {args.out}\nrecon:  python3 vision/img_refine_loop.py --recon 0 1 2")
+    print(f"saved -> {args.out}\nrecon:  python3 research/vision/img_refine_loop.py --recon 0 1 2")
 
 
 if __name__ == "__main__":

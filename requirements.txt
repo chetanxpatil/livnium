@@ -1,15 +1,19 @@
 # Core library (livnium_core) has ZERO dependencies — pure Python standard library.
-# The packages below are only needed to reproduce the results in results/.
-# (Equivalent to: pip install "livnium-core[results]")
+# The packages below are used by benchmark and research scripts. They are not
+# dependencies of livnium-core. Install the maintained packages for development
+# with:
+#   pip install -e "packages/livnium-core[dev]" \
+#       -e "packages/vector-collapse[test]" scipy
 #
 # The experimental prototypes are NOT covered here — they are not part of the
 # proven core and have their own heavy deps:
-#   cortex_v2/         -> numpy
-#   collapse_retrain/  -> torch, tqdm
-# Install them with:  pip install "livnium-core[experimental]"
+#   archive/cortex-v2/  -> numpy
+#   models/collapse-nli/ -> torch, tqdm
+# The reusable vector engine's runtime dependencies are available through:
+#   pip install -e "packages/vector-collapse[runtime]"
 numpy
 pandas
 scikit-learn
 scipy
 pyarrow
-gensim      # only for the GloVe baseline in results/rung2_lib.py
+gensim      # only for the GloVe baseline in benchmarks/nli/rung2_lib.py

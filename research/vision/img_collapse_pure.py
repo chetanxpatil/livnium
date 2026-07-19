@@ -29,11 +29,11 @@ Compute notes (smarter/faster/cleaner):
       pixel chunks instead of storing every step.
 
 Usage (from repo root):
-    python3 vision/img_collapse_pure.py --train
-    python3 vision/img_collapse_pure.py --probe images/coco/val2017/000000179765.jpg
-    python3 vision/img_collapse_pure.py --render dog --render-out dog_map.png
+    python3 research/vision/img_collapse_pure.py --train
+    python3 research/vision/img_collapse_pure.py --probe research/vision/data/coco/val2017/000000179765.jpg
+    python3 research/vision/img_collapse_pure.py --render dog --render-out dog_map.png
 
-Output: vision/model/img_collapse_pure.pt
+Output: research/vision/model/img_collapse_pure.pt
     { pix_wells, noun_wells, nouns, start, strength, temp, config }
 """
 
@@ -44,7 +44,9 @@ import re
 import sys
 from collections import Counter, defaultdict
 
-OUT = "vision/model/img_collapse_pure.pt"
+from vision_paths import COCO_CAPTIONS, COCO_IMAGES, model_path
+
+OUT = model_path("img_collapse_pure.pt")
 _WORD = re.compile(r"[a-z]+")
 
 # WordNet's noun lexicon technically contains "a" (the letter), "in" (inch),
@@ -154,9 +156,8 @@ def build_image_cache(img_dir, ids, fname, size, cache_path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--images", default="images/coco/val2017")
-    ap.add_argument("--captions",
-                    default="images/coco/annotations/captions_val2017.json")
+    ap.add_argument("--images", default=COCO_IMAGES)
+    ap.add_argument("--captions", default=COCO_CAPTIONS)
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--size", type=int, default=64,
                     help="fixed image size S: the wells table is S*S attractors")
@@ -349,8 +350,8 @@ def main():
                 save(); print(f"saved -> {args.out}"); return
     save()
     print(f"done: {step:,} steps\nsaved -> {args.out}")
-    print("probe:   python3 vision/img_collapse_pure.py --probe <image.jpg>")
-    print("render:  python3 vision/img_collapse_pure.py --render dog")
+    print("probe:   python3 research/vision/img_collapse_pure.py --probe <image.jpg>")
+    print("render:  python3 research/vision/img_collapse_pure.py --render dog")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ anything that lands in `packages/livnium-core/src/livnium_core/` is the same as 
 
 - The core (`packages/livnium-core/src/livnium_core/`) is pure Python with **zero runtime dependencies**.
   Keep it that way — anything needing `numpy`, `torch`, etc. belongs in the
-  experimental folders (`research/archive/cortex-v2/`, `research/nli/supervised-collapse/`) or in `benchmarks/nli/`.
+  experimental folders (`archive/cortex-v2/`, `models/collapse-nli/`) or in `benchmarks/nli/`.
 - Every change to the core must come with tests, and every existing test must
   stay green.
 - Honesty over hype. If something doesn't work, we write down that it doesn't
@@ -19,7 +19,8 @@ anything that lands in `packages/livnium-core/src/livnium_core/` is the same as 
 ```bash
 git clone https://github.com/chetanxpatil/livnium.git
 cd livnium
-python -m pip install -e ".[dev]"
+python -m pip install -e "packages/livnium-core[dev]" \
+    -e "packages/vector-collapse[test]" scipy
 ```
 
 ## Before you open a pull request

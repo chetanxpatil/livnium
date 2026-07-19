@@ -6,10 +6,10 @@ CPU and MPS, single-image latency, and nearest-noun query time. Pure
 inference — same collapse math as img_collapse_pure.py, no grad, no cache.
 
 Usage (from repo root):
-    python3 vision/img_bench.py                     # CPU + MPS if available
-    python3 vision/img_bench.py --device cpu        # one device only
-    python3 vision/img_bench.py --batches 1 64 1024
-    python3 vision/img_bench.py --iters 20 --warmup 3
+    python3 research/vision/img_bench.py                     # CPU + MPS if available
+    python3 research/vision/img_bench.py --device cpu        # one device only
+    python3 research/vision/img_bench.py --batches 1 64 1024
+    python3 research/vision/img_bench.py --iters 20 --warmup 3
 """
 
 import argparse
@@ -18,7 +18,9 @@ import time
 import torch
 import torch.nn.functional as F
 
-OUT = "vision/model/img_collapse_pure.pt"
+from vision_paths import model_path
+
+OUT = model_path("img_collapse_pure.pt")
 
 
 def collapse_span(h, wells_raw, vals, s):

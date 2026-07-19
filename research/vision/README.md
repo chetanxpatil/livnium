@@ -1,4 +1,4 @@
-# research/vision/ — pure vector collapse over pixels
+# Vision collapse — grade B−
 
 `img_collapse_pure.py` — the noun_collapse_pure.py discipline applied to MS COCO
 Captions: **every attractor is a pixel of a fixed-size image**. The wells table
@@ -17,13 +17,14 @@ prove it at 64² (4,096 attractors) first and scale via `--size`.
 python3 research/vision/img_collapse_pure.py --train
 
 # top-8 caption nouns for an image
-python3 research/vision/img_collapse_pure.py --probe images/coco/val2017/000000179765.jpg
+python3 research/vision/img_collapse_pure.py --probe \
+  research/vision/data/coco/val2017/000000179765.jpg
 
 # where does a noun live on the pixel grid?
 python3 research/vision/img_collapse_pure.py --render dog --render-out dog_map.png
 ```
 
-Data: `images/coco/` (val2017 + caption annotations, downloaded 2026-07-05).
+Data: `research/vision/data/coco/` (val2017 + caption annotations, downloaded 2026-07-05).
 Images are resized once to S×S grayscale uint8 and cached
 (`research/vision/model/img_cache_{S}.pt`); backprop memory through the S² sequential
 steps is bounded by gradient checkpointing (`--ckpt-chunk`).
@@ -90,21 +91,16 @@ via --l1 (path saved in the checkpoint), decode no longer hardcodes 13
 colors, dead fourier init removed (the add-binding failure is structural,
 not init-dependent).
 
-Trained 2026-07-07 (S=64, dim=256, 4k steps, mps): recon acc ~0.52 avg
-(imgs 0/1/2: 0.56/0.28/0.51) vs free wells 0.56 and prior 0.38 — with
-28,931 numbers instead of ~1.05M position parameters. Selftest verdict:
-mechanism stores (structured maps 0.50 vs prior 0.20); the live finding is
-that CE training RE-CORRELATES the addresses (mean|cos| 0.27 -> 0.37),
-eroding mul binding's orthogonality — likely what caps full scale below
-free wells. Hence `--addr-reg` (try 0.1) and `--inspect` to measure drift
-on any checkpoint. `--selftest` is the 1-minute no-images mechanics gate.
+Current local checkpoint (S=64, dim=256, energy-gradient, outside-in spiral):
+Torch reconstruction for images 0/1/2 is **0.363 / 0.178 / 0.510**. Every
+prediction uses only **1 of 13 colors**, so the apparent 0.510 result is a
+dominant-color shortcut rather than faithful image reconstruction. The global
+position-only prior is 0.380.
 
-Cross-verified 2026-07-07 (`research/vision/test_levels.py`, numpy-only — reads the
-.pt checkpoints without torch and re-implements both forwards): L1 anchors
-13/13, 20k random RGBs 0.970 vs nearest-anchor; L2 numpy recon accs match
-the torch run to 3 decimals (0.560/0.278/0.510) — no implementation bug at
-either level. BUT the trained L2 checkpoint's addresses sit at mean|cos|
-0.291 (free-well ref 0.062) and its predictions use only 1–5 of 13 colors
-per image: the 0.51 on img 2 is a one-color prediction matching brown's
-51% share. Recon acc alone flatters; watch uniq-colors. Address drift is
-THE bottleneck -> retrain with --addr-reg.
+Cross-verified 2026-07-15 with `test_levels.py`: the NumPy implementation reads
+the `.pt` files without Torch and matches the Torch reconstruction to three
+decimals. Level 1 still passes 13/13 anchor checks and scores 0.970 on 20k random
+RGB samples. The trained level-2 addresses have mean absolute cosine 0.245
+(free-well reference 0.062), confirming address drift. The mechanism runs; the
+current full-scale representation is degenerate. That is why this component is
+graded B− rather than promoted to `models/`.

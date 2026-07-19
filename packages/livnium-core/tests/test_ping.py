@@ -32,6 +32,21 @@ def test_doorway_cannot_be_core():
         Step((0, 0, 0))
 
 
+def test_step_rejects_non_rotation_frame():
+    import pytest
+
+    scaling = ((2, 0, 0), (0, 2, 0), (0, 0, 2))
+    with pytest.raises(ValueError, match="24 orientation-preserving"):
+        Step((1, 0, 0), scaling)
+
+
+def test_ping_rejects_core_as_local_direction():
+    import pytest
+
+    with pytest.raises(ValueError, match="26 non-core"):
+        Ping(d_local=(0, 0, 0))
+
+
 def test_cosine_basic():
     assert math.isclose(cosine((1, 0, 0), (1, 0, 0)), 1.0)
     assert math.isclose(cosine((1, 0, 0), (-1, 0, 0)), -1.0)
@@ -101,6 +116,15 @@ def test_meaning_match_identical_is_full():
     m = meaning_match(p, p)
     assert m.prefix_agreement == p.depth
     assert math.isclose(m.score, 1.0)
+
+
+def test_meaning_match_without_shared_depth_is_not_full_agreement():
+    empty = Ping()
+    nonempty = Ping(steps=(Step((1, 0, 0)),))
+
+    assert meaning_match(empty, empty).score == 1.0
+    assert meaning_match(empty, nonempty).score == 0.0
+    assert meaning_match(nonempty, empty).score == 0.0
 
 
 def test_world_doorways_count():

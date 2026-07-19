@@ -281,9 +281,10 @@ class VectorCollapseEngine(nn.Module):
         trace: Dict[str, List[torch.Tensor]] = {"align": [], "div": [], "tens": []}
         strengths = strengths.unsqueeze(-1)  # (B, 1)
 
-        def record(step, h_new, h_old, align_col, force=None):
-            """Fill the returned trace and, if present, the ledger."""
-            a = align_col.squeeze(-1).detach()
+        def record(step, h_new, h_old, force=None):
+            """Record post-step alignment beside the post-step state."""
+            h_new_n = F.normalize(h_new, dim=-1)
+            a = (h_new_n * target_centers).sum(dim=1).detach()
             d = divergence_from_alignment(a)
             trace["align"].append(a)
             trace["div"].append(d)
@@ -310,12 +311,12 @@ class VectorCollapseEngine(nn.Module):
                 # Analytical gradient of V(h) = -cos(h, T)
                 grad = -(target_centers - h_n * align) / (h_norm + 1e-8)
                 h_new = self._clamp_norm(h - self.cfg.alpha * grad)
-                record(i, h_new, h, align, force=grad)
+                record(i, h_new, h, force=grad)
                 h = h_new
             elif self.cfg.mode == "direct_collapse":
                 # O(1) direct collapse
                 h_new = F.normalize(target_centers, dim=-1) * self.cfg.max_norm
-                record(i, h_new, h, align)
+                record(i, h_new, h)
                 h = h_new
                 closed_form = True
                 break
@@ -325,7 +326,7 @@ class VectorCollapseEngine(nn.Module):
                 div = divergence_from_alignment(align.squeeze(-1))
                 force = strengths * div.unsqueeze(-1) * away
                 h_new = self._clamp_norm(h + delta - force)
-                record(i, h_new, h, align, force=force)
+                record(i, h_new, h, force=force)
                 h = h_new
             else:
                 raise ValueError(f"Unknown collapse mode: {self.cfg.mode}")
@@ -338,7 +339,9 @@ class VectorCollapseEngine(nn.Module):
                 mask_l = labels == l_idx
                 all_centers = basin_field.centers[l_idx]  # (K, dim)
                 h_final_n = F.normalize(h[mask_l].detach(), dim=-1)
-                best = torch.argmax(torch.matmul(h_final_n, all_centers.t()), dim=1)
+                sims = torch.matmul(h_final_n, all_centers.t())
+                sims[:, ~basin_field.active[l_idx]] = float("-inf")
+                best = torch.argmax(sims, dim=1)
                 for k in torch.unique(best):
                     mean_vec = h_final_n[best == k].mean(dim=0)
                     all_centers[k] = F.normalize((1 - lr) * all_centers[k] + lr * mean_vec, dim=0)
@@ -360,7 +363,7 @@ class VectorCollapseEngine(nn.Module):
     # ---- legacy checkpoint support ----
 
     def load_legacy_state_dict(self, state_dict: dict) -> None:
-        """Load weights saved by research/nli/supervised-collapse/vector_collapse.py
+        """Load weights saved by models/collapse-nli/vector_collapse.py
         (anchor_entail/anchor_contra/anchor_neutral -> anchors rows E/C/N)."""
         sd = dict(state_dict)
         legacy = ("anchor_entail", "anchor_contra", "anchor_neutral")

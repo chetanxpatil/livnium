@@ -21,15 +21,17 @@ Data is synthetic and infinite: sample RGB uniform in [0,1]^3, label = nearest
 canonical color anchor. A pixel either lands in the right basin or the
 mechanism can't separate the RGB cube — there is nothing else to blame.
 
-    python3 vision/pixel_color_pure.py            # train + report accuracy
-    python3 vision/pixel_color_pure.py --probe 255 40 40   # classify one RGB
+    python3 research/vision/pixel_color_pure.py            # train + report accuracy
+    python3 research/vision/pixel_color_pure.py --probe 255 40 40   # classify one RGB
 """
 
 import argparse
 import os
 import sys
 
-OUT = "vision/model/pixel_color_pure.pt"
+from vision_paths import model_path
+
+OUT = model_path("pixel_color_pure.pt")
 
 # canonical anchors: name -> RGB in [0,1]
 COLORS = {

@@ -21,12 +21,12 @@ Lessons burned in (2026-07-07, see README):
     orthogonal; --inspect measures drift on any checkpoint
   * recon acc flatters on dominant-color images -> watch uniq-colors
 
-    python3 vision/img_fovea.py --selftest                # 1-min mechanics gate
-    python3 vision/img_fovea.py --train --addr-reg 0.1 --device mps
-    python3 vision/img_fovea.py --recon 0 1 2             # side-by-side PNGs
-    python3 vision/img_fovea.py --inspect                 # address drift check
+    python3 research/vision/img_fovea.py --selftest                # 1-min mechanics gate
+    python3 research/vision/img_fovea.py --train --addr-reg 0.1 --device mps
+    python3 research/vision/img_fovea.py --recon 0 1 2             # side-by-side PNGs
+    python3 research/vision/img_fovea.py --inspect                 # address drift check
 
-Level 1 is pluggable: --l1 vision/model/pixel_color_group.pt labels pixels
+Level 1 is pluggable: --l1 research/vision/model/pixel_color_group.pt labels pixels
 with the group-aware model (drop-in keys) and recon then also reports color-
 GROUP shares (neutral/warm/cool) for the whole image and fovea vs periphery.
 """
@@ -38,9 +38,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from img_from_state_pure import build_rgb_cache, keep_awake, label_pixels  # noqa: E402
+from vision_paths import COCO_IMAGES, model_path
 
-OUT = "vision/model/img_fovea.pt"
-L1 = "vision/model/pixel_color_pure.pt"
+OUT = model_path("img_fovea.pt")
+L1 = model_path("pixel_color_pure.pt")
 
 
 def polar_geometry(S, rings, angles, focal, device):
@@ -77,7 +78,7 @@ def smooth_wells(n, dim, device, sigma=1.5, circular=False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--images", default="images/coco/val2017")
+    ap.add_argument("--images", default=COCO_IMAGES)
     ap.add_argument("--l1", default=L1,
                     help="level-1 pixel labeler (pixel_color_pure.pt or the "
                          "drop-in pixel_color_group.pt)")
@@ -150,6 +151,10 @@ def main():
         args.bind, args.pixel_chunk = cfg.get("bind", "add"), cfg["pixel_chunk"]
         args.rgb = cfg.get("rgb", False)
         args.l1 = cfg.get("l1", args.l1)
+        # Older checkpoints stored a cwd-relative ``vision/model/...`` path.
+        # Resolve the same filename inside this component after the repo move.
+        if not os.path.exists(args.l1):
+            args.l1 = model_path(os.path.basename(args.l1))
         args.energy_grad = cfg.get("energy_grad", False)
         args.h_reg = cfg.get("h_reg", 0.0)
         args.outside_in = cfg.get("outside_in", False)
@@ -431,7 +436,7 @@ def main():
               f"prior {prior_acc:.3f}  |  random {rd:.3f} (capacity probe: "
               f"{SS} symbols in {D} dims, not gated)", flush=True)
         sys.exit(0 if ok else 1)
-    print(f"saved -> {args.out}\nrecon:  python3 vision/img_fovea.py "
+    print(f"saved -> {args.out}\nrecon:  python3 research/vision/img_fovea.py "
           f"--out {args.out} --recon 0 1 2")
 
 

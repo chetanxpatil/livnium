@@ -1,7 +1,7 @@
 """freeze_corpus.py — stage 1: freeze the EXACT corpus every model trains on.
 
 Reads the same source the noun model used (wiki .xml.bz2 / txt / folder),
-applies the SAME clean() from prep_chat_context, and writes one cleaned line
+applies the SAME clean() used by noun-collapse, and writes one cleaned line
 per line to work/corpus.txt. Records SHA-256 + line/token counts in
 work/corpus_manifest.json. Every downstream stage reads ONLY corpus.txt.
 
@@ -15,9 +15,9 @@ import argparse
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "research", "embeddings", "noun-collapse"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "models", "noun-collapse"))
 from noun_embed import iter_lines            # noqa: E402
-from prep_chat_context import clean          # noqa: E402
+from text import clean                       # noqa: E402
 
 from common import WORK, caffeinate, save_json, sha256_file  # noqa: E402
 
@@ -55,7 +55,7 @@ def main():
         "sha256": sha, "lines": lines, "tokens": tokens,
         "source": os.path.basename(args.data),
         "max_lines": args.max_lines, "sample_parts": args.sample_parts,
-        "sample_seed": args.seed, "cleaner": "prep_chat_context.clean",
+        "sample_seed": args.seed, "cleaner": "models/noun-collapse/text.clean",
     })
     print(f"frozen: {lines:,} lines, {tokens:,} tokens\nsha256: {sha}")
 

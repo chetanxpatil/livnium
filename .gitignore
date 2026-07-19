@@ -1,6 +1,3 @@
-# Local image datasets (COCO etc. — huge, download separately)
-images/
-
 # Python
 __pycache__/
 *.py[cod]
@@ -46,6 +43,14 @@ model_full_physics/
 # Datasets (download separately)
 data/
 anli_data/
+# Raw personal ChatGPT export used by chat-brain preprocessing. Never commit it.
+conversations.json
+
+# Private chat datasets and generated chat models
+/archive/chat-legacy/data/
+/research/chat-brain/data/
+/research/chat-brain/model/
+/research/exact-gradient/model/
 
 # Python / OS noise
 __pycache__/
@@ -59,12 +64,15 @@ livnium_wiki.html
 
 reached/
 
-# Ramsey work (hidden)
-ramsey/
-livnium_core/ramsey/
-
 # Generated reconstruction outputs (vision experiments)
 recon_*.png
 
 # Local scratch (never committed)
 scratch/
+
+# Website source and local Firebase deployment state
+/apps/website/
+/.firebase/
+/.firebaserc
+/firebase.json
+/firepit-log.txt

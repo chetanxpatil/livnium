@@ -27,8 +27,7 @@ boring baselines, plus the exact scripts that produced it. The write-up is in
 The datasets are **not** bundled (they're large and publicly available). To re-run:
 
 1. **SNLI** — download from https://nlp.stanford.edu/projects/snli/ and place
-   `snli_1.0_{train,dev,test}.jsonl` where the scripts expect them (see the path
-   constants at the top of `rung2_lib.py`).
+   `snli_1.0_{train,dev,test}.jsonl` in `benchmarks/nli/data/snli/`.
 2. **ANLI** — download `facebook/anli` (parquet) from Hugging Face and place the
    `anli_{train,test}_r{1,2,3}.parquet` files in a `benchmarks/nli/anli_data/` folder.
 3. Install deps: `pip install -r ../requirements.txt`

@@ -26,9 +26,9 @@ MATERIALIZED color_wells (group+offset), so it is a drop-in replacement for
 everything that reads pixel_color_pure.pt (label_pixels in img_from_state_*,
 img_fovea) — those get group-clustered color wells with zero code change.
 
-    python3 vision/pixel_color_group.py --train
-    python3 vision/pixel_color_group.py --probe 255 40 40    # color + blend
-    python3 vision/pixel_color_group.py --probe 0 128 128    # a blend case
+    python3 research/vision/pixel_color_group.py --train
+    python3 research/vision/pixel_color_group.py --probe 255 40 40    # color + blend
+    python3 research/vision/pixel_color_group.py --probe 0 128 128    # a blend case
 """
 
 import argparse
@@ -37,9 +37,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pixel_color_pure import COLORS, keep_awake  # noqa: E402
+from vision_paths import model_path
 
-BASE = "vision/model/pixel_color_pure.pt"
-OUT = "vision/model/pixel_color_group.pt"
+BASE = model_path("pixel_color_pure.pt")
+OUT = model_path("pixel_color_group.pt")
 
 # color families over the known anchors — edit freely, retrain cheaply
 GROUPS = {
@@ -191,7 +192,7 @@ def main():
                 "color_to_group": c2g.cpu(),
                 "groups": {g: list(cs) for g, cs in GROUPS.items()}}, args.out)
     print(f"saved -> {args.out}   (drop-in compatible with pixel_color_pure.pt "
-          f"readers)\nprobe:  python3 vision/pixel_color_group.py --probe 0 128 128")
+          f"readers)\nprobe:  python3 research/vision/pixel_color_group.py --probe 0 128 128")
 
 
 if __name__ == "__main__":

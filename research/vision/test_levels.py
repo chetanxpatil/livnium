@@ -5,7 +5,7 @@ re-implements both forward passes independently, and checks:
   L1: canonical color anchors classify to themselves; random RGB accuracy
       vs nearest-anchor ground truth
   L2: full pipeline (numpy L1 labels -> fovea encode -> decode) reproduces
-      the recon accuracies the Mac's torch run reported (0.560/0.278/0.510)
+      the current checkpoint's torch reconstruction accuracies.
 Agreement = both levels verified end to end by an independent implementation.
 """
 import io
@@ -14,6 +14,8 @@ import pickle
 import zipfile
 
 import numpy as np
+
+from vision_paths import model_path
 
 DTYPES = {"FloatStorage": np.float32, "DoubleStorage": np.float64,
           "LongStorage": np.int64, "IntStorage": np.int32,
@@ -157,7 +159,10 @@ def test_level2(ck, labels_np, reported):
           f"{1 / D ** 0.5:.3f}) {'<- drifted' if xt > 2 / D ** 0.5 else 'ok'}")
 
     if cfg.get("scan") == "spiral":
-        perm = np.argsort(r_norm * (2 * A) + a_bin / A, kind="stable")
+        order_key = r_norm * (2 * A) + a_bin / A
+        perm = np.argsort(order_key, kind="stable")
+        if cfg.get("outside_in", False):
+            perm = perm[::-1]
     elif cfg.get("scan") == "shuffled":
         raise SystemExit("shuffled scan: need torch RNG parity, skip")
     else:
@@ -174,9 +179,15 @@ def test_level2(ck, labels_np, reported):
         h = start.copy()
         for c0 in range(0, SS, P):
             t = T[c0:c0 + P]
-            align = (norm(h[None]) * t).sum(-1)
-            away = norm(h[None] - t)
-            h = h - ((s * g[c0:c0 + P] * (1.0 - align))[:, None] * away).sum(0)
+            h_norm = max(np.linalg.norm(h), 1e-8)
+            h_n = h / h_norm
+            align = (h_n[None] * t).sum(-1)
+            if cfg.get("energy_grad", False):
+                grad = -(t - h_n[None] * align[:, None]) / h_norm
+                h = h - ((s * g[c0:c0 + P])[:, None] * grad).sum(0)
+            else:
+                away = norm(h[None] - t)
+                h = h - ((s * g[c0:c0 + P] * (1.0 - align))[:, None] * away).sum(0)
             n = np.linalg.norm(h)
             if n > 10.0:
                 h = h * (10.0 / n)
@@ -198,17 +209,17 @@ if __name__ == "__main__":
     from pixel_color_pure import COLORS   # anchor definitions only, no torch
 
     print("=" * 72)
-    l1 = load_pt("vision/model/pixel_color_pure.pt")
+    l1 = load_pt(model_path("pixel_color_pure.pt"))
     test_level1(l1, COLORS)
 
     print("=" * 72)
-    cache = load_pt("vision/model/img_cache_rgb_64.pt")
+    cache = load_pt(model_path("img_cache_rgb_64.pt"))
     imgs = cache["imgs"]                                      # (N,64,64,3) uint8
     n_test = 3
     rgb = imgs[:n_test].reshape(-1, 3).astype(np.float64) / 255.0
     print(f"labeling {n_test} images with numpy L1 ...")
     labels = l1_forward(l1, rgb).reshape(n_test, -1)
 
-    l2 = load_pt("vision/model/img_fovea.pt")
-    test_level2(l2, labels, reported=[0.560, 0.278, 0.510])
+    l2 = load_pt(model_path("img_fovea.pt"))
+    test_level2(l2, labels, reported=[0.363, 0.178, 0.510])
     print("=" * 72)
