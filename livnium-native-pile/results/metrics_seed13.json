@@ -1,0 +1,71 @@
+{
+  "config": {
+    "seed": 13,
+    "steps": 500,
+    "batch_size": 256,
+    "learning_rate": 0.01,
+    "train_min_path": 1,
+    "train_max_path": 3,
+    "test_min_path": 4,
+    "test_max_path": 6,
+    "eval_examples": 4096
+  },
+  "chance_accuracy": 0.0013717421124828531,
+  "train": {
+    "initial_loss": 5.06868839263916,
+    "final_loss": 0.00027655510348267853,
+    "minimum_loss": 0.00027643676730804145
+  },
+  "tests": {
+    "seen_pile_seen_paths_hard_accuracy": 1.0,
+    "unseen_pile_seen_paths_hard_accuracy": 1.0,
+    "unseen_pile_longer_paths_hard_accuracy": 1.0,
+    "wrong_pile_control_accuracy": 0.0,
+    "shuffled_instruction_control_accuracy": 0.001953125,
+    "reversed_instruction_order_control_accuracy": 0.186279296875,
+    "reversed_order_endpoint_change_rate": 0.813720703125,
+    "reversed_order_changed_path_accuracy": 0.0,
+    "no_flow_control_accuracy": 0.003173828125,
+    "random_router_control_accuracy": 0.0029296875,
+    "target_payload_intervention_follow_rate": 1.0,
+    "non_target_intervention_stability": 1.0,
+    "pile_hash_restored_after_interventions": true,
+    "learned_action_mapping_accuracy": 1.0,
+    "exact_observer_round_trip_rate": 1.0
+  },
+  "hard_accuracy_by_path_length": {
+    "1": 1.0,
+    "2": 1.0,
+    "3": 1.0,
+    "4": 1.0,
+    "5": 1.0,
+    "6": 1.0
+  },
+  "learned_token_meanings": {
+    "0": "Oz+",
+    "1": "Ox-",
+    "2": "Rx-",
+    "3": "Oy+",
+    "4": "Ox+",
+    "5": "Rx+",
+    "6": "Oy-",
+    "7": "Oz-"
+  },
+  "hidden_true_token_meanings": {
+    "0": "Oz+",
+    "1": "Ox-",
+    "2": "Rx-",
+    "3": "Oy+",
+    "4": "Ox+",
+    "5": "Rx+",
+    "6": "Oy-",
+    "7": "Oz-"
+  },
+  "pile_hashes": {
+    "training_pile": "63232f945d86ab9431353b3e5c3bd51958a119e0418ee8727ee2078e417618ec",
+    "unseen_test_pile": "0370c715deb2bd6158e5dcce6e2ccb3776957ae7be3b59bb52ae60f8ea231e04",
+    "checkpoint_pile": "63232f945d86ab9431353b3e5c3bd51958a119e0418ee8727ee2078e417618ec"
+  },
+  "scope": "This demonstrates an embedded pile interface whose neural action head learned an obfuscated instruction-to-operation dictionary and composed those operations on unseen payload values. The memory read path itself is fixed, not autonomously learned. This does not prove language understanding or an advantage over flat memory.",
+  "verdict": "PASS"
+}
