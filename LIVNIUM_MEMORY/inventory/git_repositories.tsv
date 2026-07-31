@@ -1,0 +1,28 @@
+branch	commit	remote	path
+main	588dfc89f9a9fa9768c621f235ae91dbb2a4d99c	https://github.com/chetanxpatil/livnium-core.git	/Users/chetanpatil/Desktop/core
+main	84066fd0e70f8bc02274dc989ab76f9bf13b10dd	https://github.com/chetanxpatil/livnium.git	/Users/chetanpatil/Desktop/test/livnium-public
+feature/interaction-audit-hashing	38287d7a3093df7785863797a4b5b9d1e1aa3458	https://github.com/chetanxpatil/nova-memory.git	/Users/chetanpatil/Desktop/test/lab/nova/public
+main	fc5fce761f96da6008a2672ec24c66ab3f4a9d1c	https://github.com/chetanxpatil/nova.git	/Users/chetanpatil/Desktop/test/lab/nova
+main	588dfc89f9a9fa9768c621f235ae91dbb2a4d99c	https://github.com/chetanxpatil/livnium-core.git	/Users/chetanpatil/Desktop/test/lab/infected/realcore
+main	b6d9c07e1d883979f4ed92ab24ef9c85c12b6589	https://github.com/chetanxpatil/clean-nova.git	/Users/chetanpatil/Desktop/test/lab/infected/python/clean-nova
+cleanup/structure	f589b90195aa63e3c8434c9e9787ccf9913e431b	https://github.com/chetanxpatil/livnium.core.git	/Users/chetanpatil/Desktop/test/lab/infected/python/clean-nova-livnium
+structural-phase2.2-testing	443298242bf13a2eb56db83d5d4b39432c813493	https://github.com/chetanxpatil/clean-nova-livnium.git	/Users/chetanpatil/Desktop/test/lab/infected/python/clean-nova-livnium 2
+main	369ab2ae6bea3a77a48e8ab9b6ece03d78c3a4d8	https://github.com/chetanxpatil/nova-livnium.git	/Users/chetanpatil/Desktop/test/lab/infected/python/nova-livnium
+main	f58be369d997eb195e3df628c895116b610c0d38	https://github.com/chetanxpatil/livnium.core.git	/Users/chetanpatil/Desktop/test/lab/infected/workspace/clean-nova-livnium
+main	588dfc89f9a9fa9768c621f235ae91dbb2a4d99c	https://github.com/chetanxpatil/livnium-core.git	/Users/chetanpatil/Desktop/test/lab/flutter/realcore
+main	fc5fce761f96da6008a2672ec24c66ab3f4a9d1c	https://github.com/chetanxpatil/nova.git	/Users/chetanpatil/Desktop/test/nova
+main	040f674640c5596ed283a6824535eaf53aa39cf8	https://github.com/chetanxpatil/livnium.git	/Users/chetanpatil/Desktop/test
+main	83197ccb7a137c8fc4b4ff7c189e2933d2df51e7	https://github.com/chetanxpatil/cbs-report-studio.git	/Users/chetanpatil/Desktop/idsspl_studio
+merge_code_dev	84f251d162ad80253592fb5658f8ce433e6ed23c	https://github.com/IDSSPL2023/IDSSPL-React.git	/Users/chetanpatil/Desktop/solve-branch/IDSSPL-React
+feature/qid_normal	a4d26c5de114b9a3af6918335080a9ac25afe921	https://bitbucket.org/mannai_mobility/retail_flutter.git	/Users/chetanpatil/Desktop/flutter/retail_flutter
+development/dev_v0.1	5d18097d19b5f7c09b1f1c5ee0252a3244feb0a6	ssh://khushigarg1@bitbucket.org/mannai_mobility/retail_flutter.git	/Users/chetanpatil/Desktop/flutter/Mannai/retail_flutter
+design/change/v3.1	29e63d1a60671b3a9802c7e9173ac871fcbab4fa	https://bitbucket.org/mannai_mobility/retail_flutter_components.git	/Users/chetanpatil/Desktop/flutter/retail_flutter_components
+feature/cards/card_image_cache_refactor	fb0c2aa543ac70687730543c750ec1cb8f48a2a4	@bitbucket.org/mannai_mobility/retail_flutter.git	/Users/chetanpatil/Desktop/flutter/backup/retail_flutter
+main	7b410317ef7af3d0696d3071c34292b99dc4af7c	https://github.com/chetanxpatil/livgpt.git	/Users/chetanpatil/Desktop/flutter/livgpt
+main	296b4d451a58519b3b11c50dd8814bcb63609806	https://github.com/IDSSPL-CBS-BACKEND/idssplcbs.git	/Users/chetanpatil/Desktop/BPSB/idsspl-core/idssplcbs
+main	296b4d451a58519b3b11c50dd8814bcb63609806	https://github.com/IDSSPL-CBS-BACKEND/idssplcbs.git	/Users/chetanpatil/Desktop/BPSB/idsspl-core
+main	37faef08d3177a5ebbfadc73e11b5a2bbe9a68b8	https://github.com/chetanxpatil/livnium.git	/Users/chetanpatil/Desktop/livnium
+refactor/repository-layout	72af212acb4cbcfd8ffd1ac1cfc090827d199c7f	https://github.com/chetanxpatil/livnium.git	/Users/chetanpatil/Desktop/lets_clean_it/livnium
+i18n	2a79ade6605d91a7748fbd883be1f0bfd135dc58	https://github.com/mr-kunal-07/IDSSPL-CBS.git	/Users/chetanpatil/Desktop/idsspl
+feature/cards/details_card_dynamic_cvv	6a04d6e703f77c51735837058d37f673e3bc2e08		/Users/chetanpatil/Desktop/cult/livngo-ui-main
+main	47ed4315f2a942028ec3a9615bf41f02ff149298		/Users/chetanpatil/Desktop/404dab-portfolio
