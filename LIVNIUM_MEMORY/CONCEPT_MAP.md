@@ -204,7 +204,7 @@ programming language changed.
   counter-fitting, and sequential sentence state are incorporated in
   `CUBE_EMBED_LINEAGE_AUDIT.md`; direct semantic features beat the sign-losing
   transform and lexical constraints must be firewalled from evaluation.
-- External domains: markets, banking, vision, document reconciliation.
+- External domains: markets, vision, document reconciliation.
 
 ## 7. The recurring restart loop
 

@@ -136,15 +136,6 @@ excluded before review.
   - `/Users/chetanpatil/Desktop/flutter/livnium`
   - Recorded as a product/UI branch, not audited as part of the research core.
 
-## C. Recorded as outside Livnium unless you say otherwise
-
-- [ ] Banking/business: `BPSB`, `idsspl`, `idsspl_studio`,
-  `new_core_banking`
-- [ ] Product/community: `cult`, `404dab-portfolio`,
-  `404dab-firebase-deploy`
-- [ ] Other application work: `solve-branch`, `data-search`
-- [ ] Personal/customer folders: `ajay`, `divij`, `untitled folder 2`
-
 ## What to tell me
 
 Reply with the labels that matter, for example:
@@ -152,7 +143,6 @@ Reply with the labels that matter, for example:
 - `Cover B1, B2, B5, B6, and B8`
 - `All B clusters are Livnium`
 - `B7 and B10 are products; keep separate`
-- `C item ____ is actually connected to Livnium`
 
 The next audit should begin with content-hash comparison among B1/B2/B8/B9 so
 copies are not mistaken for independent work.

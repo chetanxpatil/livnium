@@ -958,3 +958,16 @@ Append one compact entry at the end of every work session.
 - **Final state:** the named recovery is complete, source trees remain
   untouched, and private forensic memory is separated from the GitHub-safe
   package.
+
+## 2026-10-15 — Scope repository records to Livnium
+
+- Removed unrelated project-family listings, repository rows, and external
+  project identifiers from the memory records.
+- Retained 15 original Git inventory rows within the seven declared Livnium
+  roots; limited future repository discovery to those roots.
+- Verified the inventory builder in an isolated fixture, including nested
+  repositories, paths with spaces, missing roots, and remote redaction.
+- Validation: 85 tests pass; shell syntax, inventory schemas, reference scans,
+  and diff whitespace checks pass.
+- Repository-wide Ruff and Black checks report existing issues in unchanged
+  Python files.

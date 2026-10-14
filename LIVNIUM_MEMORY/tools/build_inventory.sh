@@ -77,21 +77,26 @@ for root in "${roots[@]}"; do
       done >> "${large_tmp}" || true
 done
 
-# Some dependency worktrees (notably ECW-BT's WikiExtractor copies) sit more
-# than six levels below Desktop. Keep a generous finite bound so the registry
-# sees them without walking unrelated mounted trees.
-find /Users/chetanpatil/Desktop -maxdepth 14 -type d -name .git -prune -print0 \
-  | while IFS= read -r -d '' git_dir; do
-      repo="${git_dir%/.git}"
-      branch="$(git -C "${repo}" branch --show-current 2>/dev/null || true)"
-      commit="$(git -C "${repo}" rev-parse HEAD 2>/dev/null || true)"
-      remote="$(git -C "${repo}" remote get-url origin 2>/dev/null || true)"
-      # Never persist credentials or user-info embedded in an HTTPS remote.
-      if [[ "${remote}" == http://*@* || "${remote}" == https://*@* ]]; then
-        remote="HTTPS_REMOTE_REDACTED_USERINFO"
-      fi
-      printf '%s\t%s\t%s\t%s\n' "${branch}" "${commit}" "${remote}" "${repo}"
-    done >> "${repos_tmp}" || true
+# Keep repository discovery within the same Livnium roots as the manifests.
+# The depth bound still includes deeply nested dependency worktrees.
+for root in "${roots[@]}"; do
+  if [[ ! -d "${root}" ]]; then
+    continue
+  fi
+
+  find "${root}" -maxdepth 14 -type d -name .git -prune -print0 \
+    | while IFS= read -r -d '' git_dir; do
+        repo="${git_dir%/.git}"
+        branch="$(git -C "${repo}" branch --show-current 2>/dev/null || true)"
+        commit="$(git -C "${repo}" rev-parse HEAD 2>/dev/null || true)"
+        remote="$(git -C "${repo}" remote get-url origin 2>/dev/null || true)"
+        # Never persist credentials or user-info embedded in an HTTPS remote.
+        if [[ "${remote}" == http://*@* || "${remote}" == https://*@* ]]; then
+          remote="HTTPS_REMOTE_REDACTED_USERINFO"
+        fi
+        printf '%s\t%s\t%s\t%s\n' "${branch}" "${commit}" "${remote}" "${repo}"
+      done >> "${repos_tmp}" || true
+done
 
 mv "${roots_tmp}" "${inventory_root}/roots.tsv"
 mv "${sources_tmp}" "${inventory_root}/source_files.tsv"
