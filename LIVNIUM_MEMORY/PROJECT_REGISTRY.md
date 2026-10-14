@@ -168,32 +168,14 @@ They contain 1,898 conversations ending on 2025-12-15. They do not contain the
 later 2026 audit sessions, which are instead represented by files, Git history,
 and the `_ORGANIZED` session documents.
 
-## Other Desktop project families
+## Git repositories within Livnium roots
 
-These were discovered but not interpreted as Livnium unless a later content
-review establishes a link:
-
-- Banking/business: `BPSB`, `idsspl`, `idsspl_studio`, `new_core_banking`
-- Product/community: `cult`, `404dab-portfolio`, `404dab-firebase-deploy`
-- Application development: `flutter`, `solve-branch`, `data-search`
-- Small personal/customer folders: `ajay`, `divij`, `untitled folder 2`
-
-Their presence is recorded so the Livnium recovery process does not accidentally
-absorb or delete unrelated work.
-
-## Git repositories discovered on Desktop
-
-- `404dab-portfolio`
-- `BPSB/idsspl-core`
-- `BPSB/idsspl-core/idssplcbs`
 - `core`
-- `cult/livngo-ui-main`
-- several repositories under `flutter/`
-- `idsspl`
-- `idsspl_studio`
 - `lets_clean_it/livnium`
 - `livnium`
-- `solve-branch/IDSSPL-React`
 - `test` and the Livnium/Nova repositories nested inside it
+
+Repository discovery is limited to the Livnium roots listed in
+`tools/build_inventory.sh`. Unrelated Desktop projects are excluded.
 
 Run `tools/build_inventory.sh` to regenerate the machine-readable registry.

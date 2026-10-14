@@ -4,7 +4,7 @@ Updated: 2026-07-27
 
 ## Embedded Git credential
 
-During Desktop Git discovery, one unrelated Flutter backup repository had an
+During Desktop Git discovery, one unrelated repository had an
 HTTPS remote containing embedded user-info that appeared credential-like.
 
 Actions taken:
@@ -16,13 +16,9 @@ Actions taken:
 
 Remaining user action:
 
-- Rotate or revoke that Bitbucket credential.
+- Rotate or revoke the affected credential.
 - Replace the affected local remote with a credential-free URL and use the
   system credential manager instead.
-
-The affected repository is the backup copy under:
-
-`/Users/chetanpatil/Desktop/flutter/backup/retail_flutter`
 
 Do not paste the old remote URL into chat or documentation.
 

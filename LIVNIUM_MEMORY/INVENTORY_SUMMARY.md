@@ -1,6 +1,7 @@
 # Inventory Summary
 
-Generated: 2026-07-26; audit coverage updated 2026-07-27
+Generated: 2026-07-26; audit coverage updated 2026-07-27;
+repository scope cleaned 2026-10-15
 
 This is a content inventory, not a quality ranking. A file absent from the July
 repository is protected for review; it is not automatically valuable or active.
@@ -13,7 +14,7 @@ repository is protected for review; it is not automatically valuable or active.
 - Hash groups with more than one copy: **2,249**
 - Extra duplicate copies represented by those groups: **11,271**
 - Large artifacts indexed by path, size, and time: **767**
-- Git repositories in the generated broad registry: **27**
+- Git repositories retained within Livnium roots: **15**
 - Additional deep Git worktrees found during focused closure: **3** exact
   third-party WikiExtractor checkouts
 
@@ -91,6 +92,10 @@ The three WikiExtractor checkouts were missed because the original Git scan
 stopped at depth six. `tools/build_inventory.sh` now searches to depth fourteen;
 the TSV remains a dated 2026-07-26 snapshot until the expensive full inventory
 is deliberately regenerated.
+
+On 2026-10-15, unrelated repository rows were removed from the Git registry.
+The retained rows preserve their original snapshot metadata. Future Git scans
+are limited to the same seven Livnium roots used by the other manifests.
 
 ## Large artifacts
 
